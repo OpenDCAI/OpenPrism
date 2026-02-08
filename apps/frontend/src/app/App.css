@@ -3438,3 +3438,74 @@ textarea.input {
   background: #fffdf9;
   margin: 4px 10px;
 }
+
+.collab-join {
+  min-height: 100vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+
+.collab-join-card {
+  width: min(420px, 92vw);
+}
+
+.collab-join-body {
+  padding: 20px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.collab-panel {
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.collab-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.collab-row .input {
+  flex: 1;
+}
+
+.collab-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 98, 83, 0.2);
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--muted);
+}
+
+.collab-users {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.collab-user {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(120, 98, 83, 0.2);
+  font-size: 11px;
+  background: rgba(255, 255, 255, 0.8);
+}
+
+.collab-user .dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}

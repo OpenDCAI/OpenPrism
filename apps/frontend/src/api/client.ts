@@ -52,6 +52,8 @@ export interface ArxivPaper {
 
 const API_BASE = '';
 const LANG_KEY = 'openprism-lang';
+const COLLAB_TOKEN_KEY = 'openprism-collab-token';
+const COLLAB_SERVER_KEY = 'openprism-collab-server';
 
 function getLangHeader() {
   if (typeof window === 'undefined') return 'zh-CN';
@@ -59,11 +61,45 @@ function getLangHeader() {
   return stored === 'en-US' ? 'en-US' : 'zh-CN';
 }
 
+export function setCollabToken(token: string) {
+  if (typeof window === 'undefined') return;
+  if (!token) return;
+  window.sessionStorage.setItem(COLLAB_TOKEN_KEY, token);
+}
+
+export function clearCollabToken() {
+  if (typeof window === 'undefined') return;
+  window.sessionStorage.removeItem(COLLAB_TOKEN_KEY);
+}
+
+export function getCollabToken() {
+  if (typeof window === 'undefined') return '';
+  return window.sessionStorage.getItem(COLLAB_TOKEN_KEY) || '';
+}
+
+export function setCollabServer(server: string) {
+  if (typeof window === 'undefined') return;
+  if (!server) return;
+  window.localStorage.setItem(COLLAB_SERVER_KEY, server);
+}
+
+export function getCollabServer() {
+  if (typeof window === 'undefined') return '';
+  return window.localStorage.getItem(COLLAB_SERVER_KEY) || '';
+}
+
+function getAuthHeader() {
+  const token = getCollabToken();
+  if (!token) return {};
+  return { Authorization: `Bearer ${token}` };
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const lang = getLangHeader();
   const mergedHeaders = {
     'Content-Type': 'application/json',
     'x-lang': lang,
+    ...getAuthHeader(),
     ...(options?.headers || {})
   };
   const res = await fetch(`${API_BASE}${url}`, {
@@ -188,13 +224,40 @@ export async function uploadFiles(projectId: string, files: File[], basePath?: s
     method: 'POST',
     body: form,
     headers: {
-      'x-lang': getLangHeader()
+      'x-lang': getLangHeader(),
+      ...getAuthHeader()
     }
   });
   if (!res.ok) {
     throw new Error(await res.text());
   }
   return res.json() as Promise<{ ok: boolean; files?: string[] }>;
+}
+
+export function createCollabInvite(id: string) {
+  return request<{ ok: boolean; token: string }>(`/api/projects/${id}/collab/invite`, {
+    method: 'POST',
+    body: JSON.stringify({})
+  });
+}
+
+export function resolveCollabToken(token: string) {
+  const qs = new URLSearchParams({ token }).toString();
+  return request<{ ok: boolean; projectId: string; projectName: string; role: string }>(`/api/collab/resolve?${qs}`);
+}
+
+export function flushCollabFile(id: string, filePath: string) {
+  return request<{ ok: boolean }>(`/api/projects/${id}/collab/flush`, {
+    method: 'POST',
+    body: JSON.stringify({ path: filePath })
+  });
+}
+
+export function getCollabStatus(id: string, filePath: string) {
+  const qs = new URLSearchParams({ path: filePath }).toString();
+  return request<{ ok: boolean; diagnostics: { conns: number; lastError: string | null } | null }>(
+    `/api/projects/${id}/collab/status?${qs}`
+  );
 }
 
 export function runAgent(payload: {
@@ -294,7 +357,8 @@ export async function importZip(payload: { file: File; projectName?: string }) {
     method: 'POST',
     body: form,
     headers: {
-      'x-lang': getLangHeader()
+      'x-lang': getLangHeader(),
+      ...getAuthHeader()
     }
   });
   if (!res.ok) {
@@ -310,6 +374,8 @@ export function importArxivSSE(
   return new Promise((resolve, reject) => {
     const params = new URLSearchParams({ arxivIdOrUrl: payload.arxivIdOrUrl });
     if (payload.projectName) params.set('projectName', payload.projectName);
+    const token = getCollabToken();
+    if (token) params.set('token', token);
     const es = new EventSource(`/api/projects/import-arxiv-sse?${params.toString()}`);
 
     es.addEventListener('progress', (e) => {
@@ -357,7 +423,8 @@ export async function visionToLatex(payload: {
     method: 'POST',
     body: form,
     headers: {
-      'x-lang': getLangHeader()
+      'x-lang': getLangHeader(),
+      ...getAuthHeader()
     }
   });
   if (!res.ok) {

@@ -6,7 +6,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { basicSetup } from 'codemirror';
 import { latex } from '../latex/lang';
-import { EditorState, StateEffect, StateField } from '@codemirror/state';
+import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/state';
 import { Decoration, EditorView, DecorationSet, WidgetType, keymap } from '@codemirror/view';
 import { search, searchKeymap } from '@codemirror/search';
 import { autocompletion, CompletionContext } from '@codemirror/autocomplete';
@@ -19,10 +19,13 @@ import {
   arxivBibtex,
   arxivSearch,
   createFolder as createFolderApi,
+  createCollabInvite,
   compileProject,
   getAllFiles,
+  getCollabServer,
   getFile,
   getProjectTree,
+  getCollabToken,
   listProjects,
   renamePath,
   updateFileOrder,
@@ -31,11 +34,17 @@ import {
   callLLM,
   uploadFiles,
   visionToLatex,
-  writeFile
+  writeFile,
+  flushCollabFile,
+  setCollabServer
 } from '../api/client';
 import type { ArxivPaper } from '../api/client';
 import { createTwoFilesPatch, diffLines } from 'diff';
 import type { CompileOutcome } from '../latex/engine';
+import * as Y from 'yjs';
+import { Awareness } from 'y-protocols/awareness';
+import { yCollab } from 'y-codemirror.next';
+import { CollabProvider } from '../collab/provider';
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -111,6 +120,9 @@ const DEFAULT_SETTINGS: AppSettings = {
   compileEngine: 'pdflatex'
 };
 
+const COLLAB_NAME_KEY = 'openprism-collab-name';
+const COLLAB_COLORS = ['#b44a2f', '#2f6fb4', '#2f9b74', '#b48a2f', '#6b2fb4', '#b42f6d', '#2f8fb4'];
+
 function loadSettings(): AppSettings {
   if (typeof window === 'undefined') return DEFAULT_SETTINGS;
   try {
@@ -142,8 +154,49 @@ function persistSettings(settings: AppSettings) {
   }
 }
 
+function loadCollabName() {
+  if (typeof window === 'undefined') return '';
+  try {
+    return window.localStorage.getItem(COLLAB_NAME_KEY) || '';
+  } catch {
+    return '';
+  }
+}
+
+function persistCollabName(name: string) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(COLLAB_NAME_KEY, name);
+  } catch {
+    // ignore
+  }
+}
+
+function pickCollabColor(seed?: string) {
+  if (!seed) {
+    return COLLAB_COLORS[Math.floor(Math.random() * COLLAB_COLORS.length)];
+  }
+  let hash = 0;
+  for (let i = 0; i < seed.length; i += 1) {
+    hash = (hash * 31 + seed.charCodeAt(i)) % 997;
+  }
+  return COLLAB_COLORS[hash % COLLAB_COLORS.length];
+}
+
+function normalizeServerUrl(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) return '';
+  if (/^https?:\/\//i.test(trimmed)) return trimmed;
+  return `http://${trimmed}`;
+}
+
 const FIGURE_EXTS = ['.png', '.jpg', '.jpeg', '.pdf', '.svg', '.eps'];
 const TEXT_EXTS = ['.sty', '.cls', '.bst', '.txt', '.md', '.json', '.yaml', '.yml', '.csv', '.tsv'];
+
+function isTextPath(filePath: string) {
+  const lower = filePath.toLowerCase();
+  return lower.endsWith('.tex') || lower.endsWith('.bib') || TEXT_EXTS.some((ext) => lower.endsWith(ext));
+}
 
 const SECTION_LEVELS: Record<string, number> = {
   section: 1,
@@ -1151,7 +1204,7 @@ export default function EditorPage() {
   const [rightView, setRightView] = useState<'pdf' | 'figures' | 'diff' | 'log' | 'toc' | 'review'>('pdf');
   const [selectedFigure, setSelectedFigure] = useState<string>('');
   const [diffFocus, setDiffFocus] = useState<PendingChange | null>(null);
-  const [activeSidebar, setActiveSidebar] = useState<'files' | 'agent' | 'vision' | 'search' | 'websearch' | 'plot' | 'review'>('files');
+  const [activeSidebar, setActiveSidebar] = useState<'files' | 'agent' | 'vision' | 'search' | 'websearch' | 'plot' | 'review' | 'collab'>('files');
   const [sidebarOpen, setSidebarOpen] = useState(true);
   const [columnSizes, setColumnSizes] = useState({ sidebar: 260, editor: 640, right: 420 });
   const [editorSplit, setEditorSplit] = useState(0.7);
@@ -1211,6 +1264,14 @@ export default function EditorPage() {
   const [reviewReportBusy, setReviewReportBusy] = useState(false);
   const [diagnoseBusy, setDiagnoseBusy] = useState(false);
   const [websearchSelectedAll, setWebsearchSelectedAll] = useState(false);
+  const [collabEnabled, setCollabEnabled] = useState(() => Boolean(getCollabToken()));
+  const [collabStatus, setCollabStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
+  const [collabInviteBusy, setCollabInviteBusy] = useState(false);
+  const [collabInviteLink, setCollabInviteLink] = useState('');
+  const [collabServer, setCollabServerState] = useState(() => getCollabServer() || (typeof window === 'undefined' ? '' : window.location.origin));
+  const [collabName, setCollabName] = useState(() => loadCollabName() || 'Guest');
+  const [collabToken] = useState(() => getCollabToken());
+  const [collabPeers, setCollabPeers] = useState<{ id: number; name: string; color: string }[]>([]);
   const editorHostRef = useRef<HTMLDivElement | null>(null);
   const editorAreaRef = useRef<HTMLDivElement | null>(null);
   const cmViewRef = useRef<EditorView | null>(null);
@@ -1232,6 +1293,11 @@ export default function EditorPage() {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
   const saveTimerRef = useRef<number | null>(null);
+  const collabProviderRef = useRef<CollabProvider | null>(null);
+  const collabDocRef = useRef<{ doc: Y.Doc; text: Y.Text; awareness: Awareness } | null>(null);
+  const collabActiveRef = useRef(false);
+  const collabColorRef = useRef<string>(pickCollabColor(collabName));
+  const collabCompartment = useMemo(() => new Compartment(), []);
 
   const {
     llmEndpoint,
@@ -1249,6 +1315,30 @@ export default function EditorPage() {
   useEffect(() => {
     persistSettings(settings);
   }, [settings]);
+
+  useEffect(() => {
+    if (collabServer) {
+      setCollabServer(collabServer);
+    }
+  }, [collabServer]);
+
+  useEffect(() => {
+    persistCollabName(collabName);
+    collabColorRef.current = pickCollabColor(collabName);
+    if (collabDocRef.current) {
+      collabDocRef.current.awareness.setLocalStateField('user', {
+        name: collabName,
+        color: collabColorRef.current
+      });
+    }
+  }, [collabName]);
+
+  useEffect(() => {
+    collabActiveRef.current = collabEnabled;
+    if (collabEnabled) {
+      setIsDirty(false);
+    }
+  }, [collabEnabled]);
 
   const llmConfig = useMemo(
     () => ({
@@ -1299,6 +1389,113 @@ export default function EditorPage() {
     activePathRef.current = activePath;
   }, [activePath]);
 
+  useEffect(() => {
+    const view = cmViewRef.current;
+    if (!view) return;
+    if (!collabEnabled || !projectId || !activePath) {
+      if (collabProviderRef.current) {
+        collabProviderRef.current.disconnect();
+        collabProviderRef.current = null;
+      }
+      collabDocRef.current = null;
+      view.dispatch({ effects: collabCompartment.reconfigure([]) });
+      setCollabStatus('disconnected');
+      setCollabPeers([]);
+      return;
+    }
+    if (!isTextPath(activePath)) {
+      if (collabProviderRef.current) {
+        collabProviderRef.current.disconnect();
+        collabProviderRef.current = null;
+      }
+      collabDocRef.current = null;
+      view.dispatch({ effects: collabCompartment.reconfigure([]) });
+      setCollabPeers([]);
+      setStatus(t('协作暂不支持该文件类型。'));
+      return;
+    }
+    const ydoc = new Y.Doc();
+    const ytext = ydoc.getText('content');
+    const awareness = new Awareness(ydoc);
+    awareness.setLocalStateField('user', {
+      name: collabName,
+      color: collabColorRef.current
+    });
+    const provider = new CollabProvider({
+      serverUrl: normalizeServerUrl(collabServer) || (typeof window === 'undefined' ? '' : window.location.origin),
+      token: collabToken || undefined,
+      projectId,
+      filePath: activePath,
+      doc: ydoc,
+      awareness,
+      onStatus: setCollabStatus,
+      onError: (error) => setStatus(t('协作连接失败: {{error}}', { error }))
+    });
+    provider.connect();
+    collabProviderRef.current = provider;
+    collabDocRef.current = { doc: ydoc, text: ytext, awareness };
+    view.dispatch({ effects: collabCompartment.reconfigure(yCollab(ytext, awareness)) });
+
+    const updatePeers = () => {
+      const peers: { id: number; name: string; color: string }[] = [];
+      awareness.getStates().forEach((state, id) => {
+        const user = (state as { user?: { name?: string; color?: string } }).user;
+        if (!user) return;
+        peers.push({
+          id,
+          name: user.name || `User-${id}`,
+          color: user.color || '#b44a2f'
+        });
+      });
+      setCollabPeers(peers);
+    };
+    awareness.on('update', updatePeers);
+    updatePeers();
+
+    return () => {
+      awareness.off('update', updatePeers);
+      provider.disconnect();
+      collabProviderRef.current = null;
+      collabDocRef.current = null;
+      ydoc.destroy();
+      view.dispatch({ effects: collabCompartment.reconfigure([]) });
+      setCollabPeers([]);
+    };
+  }, [activePath, collabCompartment, collabEnabled, collabName, collabServer, collabToken, projectId, t]);
+
+  const handleCreateInvite = useCallback(async () => {
+    if (!projectId) return;
+    setCollabInviteBusy(true);
+    try {
+      const res = await createCollabInvite(projectId);
+      if (!res.ok || !res.token) {
+        throw new Error(t('邀请生成失败'));
+      }
+      const baseInput = normalizeServerUrl(collabServer) || (typeof window === 'undefined' ? '' : window.location.origin);
+      const base = baseInput.replace(/\/$/, '');
+      const link = `${base}/collab?token=${encodeURIComponent(res.token)}`;
+      setCollabInviteLink(link);
+      if (!collabEnabled) {
+        setCollabEnabled(true);
+      }
+      setStatus(t('邀请链接已生成'));
+    } catch (err) {
+      setStatus(t('生成邀请失败: {{error}}', { error: String(err) }));
+    } finally {
+      setCollabInviteBusy(false);
+    }
+  }, [collabServer, projectId, t]);
+
+  const copyInviteLink = useCallback(async () => {
+    if (!collabInviteLink) return;
+    try {
+      await navigator.clipboard.writeText(collabInviteLink);
+      setStatus(t('邀请链接已复制'));
+    } catch (err) {
+      setStatus(t('复制失败: {{error}}', { error: String(err) }));
+    }
+  }, [collabInviteLink, t]);
+
   const refreshTree = async (keepActive = true) => {
     if (!projectId) return;
     const res = await getProjectTree(projectId);
@@ -1330,7 +1527,7 @@ export default function EditorPage() {
       if (update.docChanged) {
         const value = update.state.doc.toString();
         setEditorValue(value);
-        if (!suppressDirtyRef.current) {
+        if (!suppressDirtyRef.current && !collabActiveRef.current) {
           setIsDirty(true);
         } else {
           suppressDirtyRef.current = false;
@@ -1427,6 +1624,7 @@ export default function EditorPage() {
         foldService.of(latexFoldService),
         EditorView.lineWrapping,
         editorTheme,
+        collabCompartment.of([]),
         ghostField,
         search(),
         autocompletion({ override: [latexCompletionSource] }),
@@ -1665,6 +1863,22 @@ export default function EditorPage() {
   const saveActiveFile = useCallback(
     async (opts?: { silent?: boolean }) => {
       if (!activePath) return;
+      if (collabActiveRef.current) {
+        setIsSaving(true);
+        try {
+          await flushCollabFile(projectId, activePath);
+          setSavePulse(true);
+          window.setTimeout(() => setSavePulse(false), 1200);
+          if (!opts?.silent) {
+            setStatus(t('协作已同步 {{path}}', { path: activePath }));
+          }
+        } catch (err) {
+          setStatus(t('协作同步失败: {{error}}', { error: String(err) }));
+        } finally {
+          setIsSaving(false);
+        }
+        return;
+      }
       setIsSaving(true);
       try {
         await writeFile(projectId, activePath, editorValue);
@@ -1683,6 +1897,20 @@ export default function EditorPage() {
     [activePath, editorValue, projectId, t]
   );
 
+  const writeFileCompat = useCallback(
+    async (path: string, content: string) => {
+      if (collabActiveRef.current && collabDocRef.current && path === activePath) {
+        const { text } = collabDocRef.current;
+        text.delete(0, text.length);
+        text.insert(0, content);
+        setIsDirty(false);
+        return { ok: true };
+      }
+      return writeFile(projectId, path, content);
+    },
+    [activePath, projectId]
+  );
+
   useEffect(() => {
     saveActiveFileRef.current = () => saveActiveFile();
   }, [saveActiveFile]);
@@ -1693,6 +1921,7 @@ export default function EditorPage() {
   }, [editorValue, setEditorDoc]);
 
   useEffect(() => {
+    if (collabActiveRef.current) return;
     if (!isDirty || !activePath) return;
     if (saveTimerRef.current) {
       window.clearTimeout(saveTimerRef.current);
@@ -1706,7 +1935,7 @@ export default function EditorPage() {
         saveTimerRef.current = null;
       }
     };
-  }, [activePath, editorValue, isDirty, saveActiveFile]);
+  }, [activePath, editorValue, isDirty, saveActiveFile, collabEnabled]);
 
   const createBibFile = async () => {
     if (!projectId) return;
@@ -1715,7 +1944,7 @@ export default function EditorPage() {
       : getParentPath(selectedPath || activePath || '');
     const path = parent ? `${parent}/references.bib` : 'references.bib';
     const content = '% Add BibTeX entries here\n';
-    await writeFile(projectId, path, content);
+    await writeFileCompat(path, content);
     await refreshTree();
     await openFile(path);
     return path;
@@ -1966,7 +2195,7 @@ export default function EditorPage() {
         if (content && !content.endsWith('\n')) content += '\n';
         content += `${normalizedBibtex.trim()}\n`;
       }
-      await writeFile(projectId, targetBib, content);
+      await writeFileCompat(targetBib, content);
       setFiles((prev) => ({ ...prev, [targetBib]: content }));
       if (activePath === targetBib) {
         setEditorValue(content);
@@ -2283,7 +2512,7 @@ export default function EditorPage() {
       if (content && !content.endsWith('\n')) content += '\n';
       content += `${normalized.trim()}\n`;
     });
-    await writeFile(projectId, targetBib, content);
+    await writeFileCompat(targetBib, content);
     setFiles((prev) => ({ ...prev, [targetBib]: content }));
     appendLog(setWebsearchLog, t('Bib 写入完成: {{path}}', { path: targetBib }));
 
@@ -2301,7 +2530,7 @@ export default function EditorPage() {
       const targetContent = await ensureFileContent(targetFile);
       const insertText = insertBlock ? `\n${insertBlock}\n` : '\n';
       const nextContent = `${targetContent}\n${insertText}`.replace(/\n{3,}/g, '\n\n');
-      await writeFile(projectId, targetFile, nextContent);
+      await writeFileCompat(targetFile, nextContent);
       setFiles((prev) => ({ ...prev, [targetFile]: nextContent }));
       if (activePath === targetFile) {
         setEditorValue(nextContent);
@@ -2423,7 +2652,7 @@ export default function EditorPage() {
         await persistFileOrder(parent, [...fileOrder[parent], value]);
       }
     } else {
-      await writeFile(projectId, target, '');
+      await writeFileCompat(target, '');
       if (isTextFile(target)) {
         await openFile(target);
       }
@@ -3223,7 +3452,7 @@ export default function EditorPage() {
   const applyPending = async (change?: PendingChange) => {
     const list = change ? [change] : pendingChanges;
     for (const item of list) {
-      await writeFile(projectId, item.filePath, item.proposed);
+      await writeFileCompat(item.filePath, item.proposed);
       setFiles((prev) => ({ ...prev, [item.filePath]: item.proposed }));
       if (activePath === item.filePath) {
         setEditorDoc(item.proposed);
@@ -3394,6 +3623,14 @@ export default function EditorPage() {
                 >
                   <span className="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg></span>
                   <span className="tab-text">{t('Files')}</span>
+                </button>
+                <button
+                  className={`tab-btn ${activeSidebar === 'collab' ? 'active' : ''}`}
+                  onClick={() => setActiveSidebar('collab')}
+                  title={t('协作')}
+                >
+                  <span className="tab-icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M17 21v-2a4 4 0 0 0-3-3.87"/><path d="M7 21v-2a4 4 0 0 1 3-3.87"/><circle cx="7" cy="7" r="3"/><circle cx="17" cy="7" r="3"/></svg></span>
+                  <span className="tab-text">{t('协作')}</span>
                 </button>
                 <button
                   className={`tab-btn ${activeSidebar === 'agent' ? 'active' : ''}`}
@@ -3571,6 +3808,83 @@ export default function EditorPage() {
                   ) : (
                     <div className="muted outline-empty">{t('打开 .tex 文件以显示 Outline。')}</div>
                   ))}
+                </div>
+              </>
+            ) : activeSidebar === 'collab' ? (
+              <>
+                <div className="panel-header">
+                  <div>{t('协作')}</div>
+                  <div className="panel-actions">
+                    <div className="collab-status">
+                      <span>{collabStatus === 'connected' ? t('已连接') : collabStatus === 'connecting' ? t('连接中...') : t('未连接')}</span>
+                    </div>
+                  </div>
+                </div>
+                <div className="collab-panel">
+                  <div className="collab-row">
+                    <input
+                      className="input"
+                      value={collabServer}
+                      onChange={(e) => setCollabServerState(e.target.value)}
+                      placeholder={t('协作服务器地址')}
+                    />
+                  </div>
+                  <div className="collab-row">
+                    <input
+                      className="input"
+                      value={collabName}
+                      onChange={(e) => setCollabName(e.target.value)}
+                      placeholder={t('显示名称')}
+                    />
+                    <button
+                      className="ios-btn secondary"
+                      onClick={() => setCollabEnabled((prev) => !prev)}
+                      disabled={!activePath || !isTextPath(activePath)}
+                    >
+                      {collabEnabled ? t('断开') : t('连接')}
+                    </button>
+                  </div>
+                  <div className="collab-row">
+                    <button
+                      className="ios-btn primary"
+                      onClick={() => handleCreateInvite()}
+                      disabled={collabInviteBusy || !projectId}
+                    >
+                      {collabInviteBusy ? t('生成中...') : t('生成邀请链接')}
+                    </button>
+                    <button
+                      className="ios-btn secondary"
+                      onClick={() => copyInviteLink()}
+                      disabled={!collabInviteLink}
+                    >
+                      {t('复制')}
+                    </button>
+                  </div>
+                  <div className="collab-row">
+                    <input
+                      className="input"
+                      readOnly
+                      value={collabInviteLink || ''}
+                      placeholder={t('尚未生成邀请链接')}
+                    />
+                  </div>
+                  <div className="collab-row">
+                    <div className="muted">
+                      {activePath ? t('当前文件: {{path}}', { path: activePath }) : t('未选择文件')}
+                    </div>
+                  </div>
+                  <div className="collab-users">
+                    {collabPeers.length === 0 ? (
+                      <div className="muted">{t('暂无协作者在线')}</div>
+                    ) : (
+                      collabPeers.map((peer) => (
+                        <div key={peer.id} className="collab-user">
+                          <span className="dot" style={{ background: peer.color }} />
+                          <span>{peer.name}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
                 </div>
               </>
             ) : activeSidebar === 'agent' ? (

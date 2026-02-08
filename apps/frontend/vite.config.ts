@@ -6,7 +6,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      '/api': 'http://localhost:8787',
+      '/api': {
+        target: 'http://localhost:8787',
+        changeOrigin: true,
+        ws: true,
+        xfwd: true
+      },
       '/texlive': {
         target: 'https://texlive.swiftlatex.com',
         changeOrigin: true,

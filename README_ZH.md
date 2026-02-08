@@ -31,6 +31,10 @@
 |:---:|:---:|:---:|
 | WebSearch / PaperSearch | 表格直出图表 | 公式/图表智能识别 |
 
+| 👥 实时协作 | 📝 同行评审 | |
+|:---:|:---:|:---:|
+| 多人协同编辑<br>光标同步与在线管理 | AI 审稿报告 / 一致性检查<br>缺失引用 / 编译摘要 | |
+
 ---
 
 [![快速开始](https://img.shields.io/badge/📖-快速开始-blue?style=for-the-badge)](#-快速开始)
@@ -41,6 +45,12 @@
 </a>
 
 </div>
+
+## 📢 最新动态
+
+> [!TIP]
+> 🆕 <strong>2025-02 · 实时协作上线</strong><br>
+> 支持多人同时编辑同一文档，基于 CRDT 实现光标同步与冲突自动解决。当前版本需要公网服务器部署，通过邀请令牌邀请远程协作者加入。
 
 ---
 
@@ -108,6 +118,13 @@ OpenPrism 是一个面向学术写作的本地部署 LaTeX + AI 工作台，强�
 - **一致性检查**：术语与符号一致性检测
 - **缺失引用检测**：查找需要补充引用的陈述
 - **编译日志摘要**：汇总编译错误与修复建议
+
+### 👥 实时协作
+
+- **多人协同编辑**：多用户同时编辑同一文档，实时同步
+- **光标与选区同步**：不同用户的光标以不同颜色显示，实时可见
+- **在线用户列表**：协作面板展示当前在线用户及状态
+- **邀请协作**：通过邀请链接或令牌邀请他人加入协作
 
 ---
 
@@ -212,13 +229,21 @@ OpenPrism 是一个面向学术写作的本地部署 LaTeX + AI 工作台，强�
 <br><br>
 </div>
 
+### 👥 实时协作
+
+<div align="center">
+<br>
+<img src="static/协作.png" alt="实时协作" width="85%"/>
+<br>
+<sub>✨ 多人实时协同编辑，光标同步与在线用户管理</sub>
+<br><br>
+</div>
+
 ---
 
 <!-- ## 🔄 OpenPrism vs Prism 功能对比
 
 > **Prism** 是 OpenAI 于 2026-01-27 发布的云端 LaTeX 写作平台。**OpenPrism** 是开源、可自托管的替代方案，强调隐私与数据自主。
-
-<div align="center">
 
 ### 📝 写作与编辑
 
@@ -284,8 +309,6 @@ OpenPrism 是一个面向学术写作的本地部署 LaTeX + AI 工作台，强�
 | 评论批注 | 🗺️ 规划中 | ✅ |
 | 会议模板系统 | ✅ ACL / CVPR / NeurIPS / ICML | ❌ |
 | 模板一键转换 | 🗺️ 规划中 | ❌ |
-
-</div>
 
 > 💡 **总结**：Prism 依托 GPT-5.2 与云端协作提供开箱即用的体验，但数据完全托管在 OpenAI。OpenPrism 作为开源替代，支持**本地部署、私域协作、自定义模型**，适合对数据隐私和自主可控有要求的团队与个人。
 
@@ -486,6 +509,56 @@ data/
 
 ---
 
+## 👥 协作模式使用指南
+
+OpenPrism 内置基于 CRDT（Yjs）+ WebSocket 的实时协作系统，支持多人同时编辑同一文档，无需第三方服务。
+
+### 协作环境变量
+
+在 `.env` 中添加以下配置：
+
+```bash
+# 令牌签名密钥（生产环境务必修改）
+OPENPRISM_COLLAB_TOKEN_SECRET=your-secure-random-string
+
+# 是否强制令牌验证（默认 true，本地开发可设为 false）
+OPENPRISM_COLLAB_REQUIRE_TOKEN=true
+
+# 令牌有效期，单位秒（默认 86400 = 24 小时）
+OPENPRISM_COLLAB_TOKEN_TTL=86400
+```
+
+### 使用步骤
+
+1. **部署服务**：将 OpenPrism 部署到有公网 IP 的服务器，配置域名与 HTTPS
+2. **生成邀请**：在编辑页面的协作面板中点击「生成邀请链接」
+3. **分享链接**：将生成的链接发送给协作者
+4. **加入协作**：协作者打开链接，令牌自动验证后进入编辑器
+5. **实时编辑**：多人光标实时可见，编辑内容自动同步，冲突自动解决
+
+### Nginx 反向代理配置（推荐）
+
+协作依赖 WebSocket，Nginx 需要配置升级头：
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+> **提示**：本地访问（127.0.0.1）默认免令牌验证，适合本地开发调试。
+
+---
+
 ## 🎯 使用指南（简版）
 
 1. **创建项目**：在 Projects 面板新建项目并选择模板
@@ -517,12 +590,43 @@ OpenPrism/
 
 ## 🗺️ Roadmap
 
-- 修复部分 bug
-- **私域协作编辑**：面向自托管的在线协作方案 —— 用户在本地或内网部署协作服务，通过邀请令牌加入，无需依赖第三方云托管，数据与隐私完全自主可控
-- **会议模板一键转换**：支持不同会议模板间快速转换（如 ACL → NeurIPS），方便转投，保留正文内容与格式
-- 版本快照与回滚
-- 引用检索助手（BibTeX 自动生成）
-- 插件系统 / 主题系统
+<table>
+<tr>
+<th width="35%">功能</th>
+<th width="15%">状态</th>
+<th width="50%">说明</th>
+</tr>
+<tr>
+<td><strong>👥 私域协作编辑</strong></td>
+<td><img src="https://img.shields.io/badge/✅-已完成-success?style=flat-square" alt="Done"/></td>
+<td>多人实时协同编辑，光标同步与在线用户管理（当前需公网服务器部署）</td>
+</tr>
+<tr>
+<td><strong>🌐 无服务器协作</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-规划中-yellow?style=flat-square" alt="Planned"/></td>
+<td>支持无公网服务器的本地协作：① 内置内网穿透集成（ngrok / Cloudflare Tunnel）一键暴露本地服务；② 基于 WebRTC 的 P2P 点对点直连，数据不经第三方中转</td>
+</tr>
+<tr>
+<td><strong>🔍 增强 WebSearch</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-规划中-yellow?style=flat-square" alt="Planned"/></td>
+<td>增强联网检索能力，接入第三方 Search API（如 Google / Baidu / SerpAPI），提升搜索质量与覆盖范围</td>
+</tr>
+<tr>
+<td><strong>📚 会议模板一键转换</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-规划中-yellow?style=flat-square" alt="Planned"/></td>
+<td>支持不同会议模板间快速转换（如 ACL → NeurIPS），方便转投，保留正文内容与格式</td>
+</tr>
+<tr>
+<td><strong>📸 版本快照与回滚</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-规划中-yellow?style=flat-square" alt="Planned"/></td>
+<td>项目版本管理，支持快照保存与一键回滚</td>
+</tr>
+<tr>
+<td><strong>📖 引用检索助手</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-规划中-yellow?style=flat-square" alt="Planned"/></td>
+<td>自动检索相关文献并生成 BibTeX 引用</td>
+</tr>
+</table>
 
 ---
 

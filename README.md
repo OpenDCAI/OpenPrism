@@ -31,6 +31,10 @@
 |:---:|:---:|:---:|
 | WebSearch / PaperSearch | Chart from tables | Formula/Chart recognition |
 
+| 👥 Collaboration | 📝 Peer Review | |
+|:---:|:---:|:---:|
+| Multi-user real-time editing<br>Cursor sync & online management | AI Review Report / Consistency<br>Missing Citations / Compile Summary | |
+
 ---
 
 <a href="#-quick-start" target="_self">
@@ -47,6 +51,12 @@
 </a>
 
 </div>
+
+## 📢 News
+
+> [!TIP]
+> 🆕 <strong>2025-02 · Real-time Collaboration</strong><br>
+> Multi-user simultaneous editing is now available, powered by CRDT with automatic conflict resolution and cursor sync. Current version requires a server with a public IP; invite remote collaborators via token-based links.
 
 ---
 
@@ -114,6 +124,13 @@ OpenPrism is a local-first LaTeX + AI workspace for academic writing, optimized 
 - **Consistency Check**: terminology and symbol consistency detection
 - **Missing Citations**: find statements that need citations
 - **Compile Log Summary**: summarize compile errors and fix suggestions
+
+### 👥 Real-time Collaboration
+
+- **Multi-user editing**: multiple users edit the same document simultaneously with real-time sync
+- **Cursor & selection sync**: each user's cursor displayed in a distinct color, visible in real time
+- **Online user list**: collaboration panel shows currently connected users and their status
+- **Invite to collaborate**: invite others via link or token to join the editing session
 
 ---
 
@@ -214,6 +231,16 @@ OpenPrism is a local-first LaTeX + AI workspace for academic writing, optimized 
 <img src="static/同行评审.png" alt="Peer Review" width="85%"/>
 <br>
 <sub>✨ AI Quality Check: Review Report / Consistency Check / Missing Citations / Compile Summary</sub>
+<br><br>
+</div>
+
+### 👥 Real-time Collaboration
+
+<div align="center">
+<br>
+<img src="static/协作.png" alt="Real-time Collaboration" width="85%"/>
+<br>
+<sub>✨ Multi-user real-time collaborative editing with cursor sync and online user management</sub>
 <br><br>
 </div>
 
@@ -414,6 +441,56 @@ data/
 
 ---
 
+## 👥 Collaboration Guide
+
+OpenPrism includes a built-in real-time collaboration system based on CRDT (Yjs) + WebSocket, allowing multiple users to edit the same document simultaneously without any third-party service.
+
+### Collaboration Environment Variables
+
+Add the following to your `.env` file:
+
+```bash
+# Token signing secret (must change for production)
+OPENPRISM_COLLAB_TOKEN_SECRET=your-secure-random-string
+
+# Require token for collaboration (default: true, set false for local dev)
+OPENPRISM_COLLAB_REQUIRE_TOKEN=true
+
+# Token TTL in seconds (default: 86400 = 24 hours)
+OPENPRISM_COLLAB_TOKEN_TTL=86400
+```
+
+### How to Use
+
+1. **Deploy**: Deploy OpenPrism to a server with a public IP, configure a domain and HTTPS
+2. **Generate invite**: Click "Generate Invite Link" in the collaboration panel on the editor page
+3. **Share link**: Send the generated link to your collaborator
+4. **Join**: Collaborator opens the link, token is verified automatically, and they enter the editor
+5. **Edit together**: Multiple cursors visible in real time, edits sync automatically, conflicts resolved by CRDT
+
+### Nginx Reverse Proxy (Recommended)
+
+Collaboration requires WebSocket. Nginx must be configured with upgrade headers:
+
+```nginx
+server {
+    listen 443 ssl;
+    server_name your-domain.com;
+
+    location / {
+        proxy_pass http://127.0.0.1:8787;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+    }
+}
+```
+
+> **Tip**: Local access (127.0.0.1) bypasses token verification by default, suitable for local development.
+
+---
+
 ## 🎯 Usage Guide (Quick)
 
 1. **Create Project**: Create new project in Projects panel and select template
@@ -445,11 +522,43 @@ OpenPrism/
 
 ## 🗺️ Roadmap
 
-- Fix some bugs
-- Collaborative editing and comments
-- Version snapshots and rollback
-- Citation search assistant (auto-generate BibTeX)
-- Plugin system / Theme system
+<table>
+<tr>
+<th width="35%">Feature</th>
+<th width="15%">Status</th>
+<th width="50%">Description</th>
+</tr>
+<tr>
+<td><strong>👥 Real-time Collaboration</strong></td>
+<td><img src="https://img.shields.io/badge/✅-Done-success?style=flat-square" alt="Done"/></td>
+<td>Multi-user real-time editing with cursor sync and online user management (currently requires a server with public IP)</td>
+</tr>
+<tr>
+<td><strong>🌐 Serverless Collaboration</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-Planned-yellow?style=flat-square" alt="Planned"/></td>
+<td>Local collaboration without a public server: ① built-in tunnel integration (ngrok / Cloudflare Tunnel) to expose local services in one click; ② WebRTC-based P2P direct connection without third-party relay</td>
+</tr>
+<tr>
+<td><strong>🔍 Enhanced WebSearch</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-Planned-yellow?style=flat-square" alt="Planned"/></td>
+<td>Integrate third-party Search APIs (e.g. Google / Baidu / SerpAPI) for improved search quality and coverage</td>
+</tr>
+<tr>
+<td><strong>📚 One-click Template Conversion</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-Planned-yellow?style=flat-square" alt="Planned"/></td>
+<td>Quick conversion between conference templates (e.g. ACL → NeurIPS) while preserving content and formatting</td>
+</tr>
+<tr>
+<td><strong>📸 Version Snapshots &amp; Rollback</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-Planned-yellow?style=flat-square" alt="Planned"/></td>
+<td>Project version management with snapshot saving and one-click rollback</td>
+</tr>
+<tr>
+<td><strong>📖 Citation Search Assistant</strong></td>
+<td><img src="https://img.shields.io/badge/⏳-Planned-yellow?style=flat-square" alt="Planned"/></td>
+<td>Auto-search related papers and generate BibTeX citations</td>
+</tr>
+</table>
 
 ---
 

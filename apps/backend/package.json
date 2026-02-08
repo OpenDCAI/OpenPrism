@@ -8,14 +8,18 @@
   "dependencies": {
     "@fastify/cors": "^8.5.0",
     "@fastify/multipart": "^8.3.1",
+    "@fastify/websocket": "^8.3.1",
     "@langchain/core": "^0.2.10",
     "@langchain/openai": "^0.2.6",
     "diff": "^5.2.0",
     "fast-xml-parser": "^4.4.1",
     "fastify": "^4.26.2",
+    "lib0": "^0.2.95",
     "langchain": "^0.2.10",
     "tar": "^6.2.1",
     "unzipper": "^0.10.14",
+    "y-protocols": "^1.0.6",
+    "yjs": "^13.6.14",
     "zod": "^3.23.8"
   }
 }
