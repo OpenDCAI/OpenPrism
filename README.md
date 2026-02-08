@@ -4,7 +4,7 @@
 
 # OpenPrism
 
-### OpenPrism - 氛围写作平台
+### OpenPrism — Vibe Writing for Academia
 
 [![Node.js Version](https://img.shields.io/badge/node-%3E%3D18.0.0-brightgreen)](https://nodejs.org/)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
@@ -15,27 +15,33 @@
 
 ---
 
-### ✨ 核心特性一览
+### ✨ Highlights
 
-| 🤖 AI 智能助手 | ✍️ 编译与预览 | 📚 模板系统 |
+| 🤖 AI Assistant | ✍️ Compile & Preview | 📚 Templates |
 |:---:|:---:|:---:|
-| Chat / Agent 双轨历史<br>Tools 多轮工具调用 | TexLive / Tectonic / Auto<br>PDF 预览与下载 | ACL / CVPR / NeurIPS / ICML<br>模板一键切换 |
+| Chat / Agent history<br>Tools multi-step edits | TexLive / Tectonic / Auto<br>PDF preview & download | ACL / CVPR / NeurIPS / ICML<br>One-click conversion |
 
-| 🔧 高级编辑 | 🗂️ 项目管理 | ⚙️ 灵活配置 |
+| 🔧 Advanced Editing | 🗂️ Project Management | ⚙️ Configuration |
 |:---:|:---:|:---:|
-| AI 自动补全 / Diff / 诊断 | 多项目管理 + 文件树 + 上传 | OpenAI 兼容端点<br>本地部署数据安全 |
+| AI autocomplete / Diff / diagnose | Multi-project + file tree + upload | OpenAI-compatible endpoint<br>Local-first privacy |
 
-| 🔍 检索能力 | 📊 图表生成 | 🧠 智能识别 |
+| 🔍 Search | 📊 Charting | 🧠 Recognition |
 |:---:|:---:|:---:|
-| WebSearch / PaperSearch | 表格直出图表 | 公式/图表智能识别 |
+| WebSearch / PaperSearch | Chart from tables | Formula/Chart recognition |
 
 ---
 
-[![快速开始](https://img.shields.io/badge/📖-快速开始-blue?style=for-the-badge)](#-快速开始)
-[![功能概览](https://img.shields.io/badge/✨-功能概览-orange?style=for-the-badge)](#-核心功能)
-[![贡献指南](https://img.shields.io/badge/🤝-贡献指南-purple?style=for-the-badge)](#-贡献指南)
+<a href="#-quick-start" target="_self">
+  <img alt="Quickstart" src="https://img.shields.io/badge/🚀-Quick_Start-2F80ED?style=for-the-badge" />
+</a>
+<a href="#-core-features" target="_self">
+  <img alt="Features" src="https://img.shields.io/badge/✨-Features-orange?style=for-the-badge" />
+</a>
+<a href="#-contributing" target="_self">
+  <img alt="Contributing" src="https://img.shields.io/badge/🤝-Contributing-purple?style=for-the-badge" />
+</a>
 <a href="#wechat-group" target="_self">
-  <img alt="WeChat" src="https://img.shields.io/badge/💬-微信群-07C160?style=for-the-badge" />
+  <img alt="WeChat" src="https://img.shields.io/badge/💬-WeChat_Group-07C160?style=for-the-badge" />
 </a>
 
 </div>
@@ -44,103 +50,102 @@
 
 <div align="center">
 <br>
-<img src="static/首页.gif" alt="OpenPrism 主页面" width="90%"/>
+<img src="static/首页.gif" alt="OpenPrism Home" width="90%"/>
 <br>
-<sub>✨ 主页面预览：三栏工作区 + 编辑器 + 预览</sub>
+<sub>✨ Home preview: three-panel workspace + editor + preview</sub>
 <br><br>
 </div>
 
 ---
 
-## ✨ 核心功能
+## ✨ Core Features
 
-OpenPrism 是一个面向学术写作的本地部署 LaTeX + AI 工作台，强调高效编辑、可控改动与隐私安全。
+OpenPrism is a local-first LaTeX + AI workspace for academic writing, optimized for fast editing, controlled changes, and privacy.
 
-### 🤖 AI 智能助手
+### 🤖 AI Assistant
 
-- **Chat 模式**：只读对话，不改文件，适合快速问答
-- **Agent 模式**：生成 Diff，用户确认后应用
-- **Tools 模式**：多轮工具调用，跨文件修改（如章节 + bib）
-- **任务类型**：润色、改写、结构调整、翻译、自定义
-- **自动补全**：Option/Alt + / 或 Cmd/Ctrl + Space 触发，Tab 接受
+- **Chat mode**: read-only Q&A
+- **Agent mode**: generate diffs for confirmation
+- **Tools mode**: multi-step tools + multi-file edits
+- **Tasks**: polish, rewrite, restructure, translate, custom
+- **Autocomplete**: Option/Alt + / or Cmd/Ctrl + Space, Tab to accept
 
-### ✍️ 编译与预览
+### ✍️ Compile & Preview
 
-- **编译引擎**：TexLive / Tectonic / Auto 自动回退
-- **预览工具栏**：缩放、适合宽度、100%、下载 PDF
-- **编译日志**：错误解析 + 一键诊断 + 跳转定位
-- **多视图**：PDF / 图片列表 / Diff 视图
+- **Engines**: TexLive / Tectonic / Auto fallback
+- **Preview toolbar**: zoom, fit width, 100%, download PDF
+- **Compile log**: error parsing + one-click diagnose + jump to error
+- **Views**: PDF / Figures / Diff
 
-### 📚 模板系统
+### 📚 Template System
 
-- **内置模板**：ACL / CVPR / NeurIPS / ICML
-- **模板转换**：一键切换模板并保留正文内容
+- **Built-ins**: ACL / CVPR / NeurIPS / ICML
+- **Conversion**: one-click template switch with content preserved
 
-### 🗂️ 项目管理
+### 🗂️ Project Management
 
-- **多项目管理**：Projects 独立面板
-- **文件树管理**：新建/重命名/删除/上传/拖拽
-- **BibTeX 支持**：快速创建 references.bib
+- **Projects panel**: manage multiple projects
+- **File tree**: create/rename/delete/upload/drag
+- **BibTeX**: quick create `references.bib`
 
-### ⚙️ 灵活配置
+### ⚙️ Configuration
 
-- **LLM Endpoint**：兼容 OpenAI API，包括自定义 base_url
-- **本地存储**：设置保存在浏览器 localStorage
-- **TexLive 配置**：可自定义 TexLive 资源
-- **语言切换**：顶栏一键中英文切换，配置自动保存
+- **LLM Endpoint**: OpenAI-compatible, supports custom base_url
+- **Local storage**: settings saved to browser localStorage
+- **TexLive config**: customizable TexLive resources
+- **Language switch**: toggle 中文/English in the top bar
 
-### 🔍 检索与阅读
+### 🔍 Search & Reading
 
-- **WebSearch**：联网检索与摘要
-- **PaperSearch**：学术论文检索与引用信息
+- **WebSearch**: online search with summaries
+- **PaperSearch**: academic paper search with citation info
 
-### 📊 图表与识别
+### 📊 Charts & Recognition
 
-- **表格绘图**：根据表格直接生成图表
-- **智能识别**：公式与图表结构自动识别
+- **Table-to-chart**: generate charts directly from tables
+- **Smart recognition**: formulas and charts auto-detected
 
 ---
 
-## 🎨 功能展示
+## 🎨 Showcase
 
-
-### 🖥️ 三栏工作区
+### 🖥️ Three-Panel Workspace
 
 <div align="center">
 <br>
-<img src="static/三栏界面.png" alt="三栏工作界面" width="90%"/>
+<img src="static/三栏界面.png" alt="Three-panel workspace" width="90%"/>
 <br>
-<sub>✨ 左侧 AI 助手 | 中间 LaTeX 编辑器 | 右侧 PDF 预览</sub>
+<sub>✨ AI Assistant | LaTeX Editor | PDF Preview</sub>
 <br><br>
 </div>
 
-### ✍️ 编辑页面
+### ✍️ Editor View
 
 <div align="center">
 <br>
-<img src="static/编辑页面的界面.png" alt="编辑页面" width="90%"/>
+<img src="static/编辑页面的界面.png" alt="Editor view" width="90%"/>
 <br>
-<sub>✨ LaTeX 编辑器 + 右侧预览的同步工作流</sub>
+<sub>✨ Synchronized editing and preview</sub>
 <br><br>
 </div>
 
-### 🤖 AI 智能助手
+### 🤖 Agent Mode
 
 <div align="center">
 <br>
-<img src="static/Agent模式.gif" alt="Agent 模式" width="85%"/>
+<img src="static/Agent模式.gif" alt="Agent mode" width="85%"/>
 <br>
-<sub>✨ Agent 模式：生成可编辑建议 + Diff 预览</sub>
+<sub>✨ Generate diff suggestions for review</sub>
 <br><br>
 </div>
 
-### 🧪 一键诊断
+### 🧪 One-Click Diagnose
 
 <div align="center">
 <br>
-<img src="static/一键诊断.gif" alt="一键诊断" width="85%"/>
+<img src="static/一键诊断.gif" alt="One-click diagnose" width="85%"/>
 <br>
-<sub>✨ 编译错误自动解析 + 定位</sub>
+<sub>✨ Parse compile errors and jump to locations</sub>
 <br><br>
 </div>
 
@@ -148,9 +153,9 @@ OpenPrism 是一个面向学术写作的本地部署 LaTeX + AI 工作台，强�
 
 <div align="center">
 <br>
-<img src="static/网络搜索.gif" alt="网络搜索" width="85%"/>
+<img src="static/网络搜索.gif" alt="WebSearch" width="85%"/>
 <br>
-<sub>✨ 联网检索与要点提炼</sub>
+<sub>✨ Online search with concise summaries</sub>
 <br><br>
 </div>
 
@@ -158,96 +163,84 @@ OpenPrism 是一个面向学术写作的本地部署 LaTeX + AI 工作台，强�
 
 <div align="center">
 <br>
-<img src="static/论文检索.gif" alt="论文检索" width="85%"/>
+<img src="static/论文检索.gif" alt="PaperSearch" width="85%"/>
 <br>
-<sub>✨ 论文检索与引用信息获取</sub>
+<sub>✨ Academic search and citation info</sub>
 <br><br>
 </div>
 
-### 📊 表格直出图表
+### 📊 Table-to-Chart
 
 <div align="center">
 <br>
-<img src="static/图表生成.png" alt="图表生成" width="85%"/>
-<br><sub>✨ 表格数据一键生成图表</sub>
+<img src="static/图表生成.png" alt="Chart generation" width="85%"/>
+<br><sub>✨ Turn tables into charts in one step</sub>
 <br><br>
 </div>
 
-### 🧠 公式/图表智能识别
+### 🧠 Formula/Chart Recognition
 
 <div align="center">
 <br>
-<img src="static/公式识别.png" alt="公式识别" width="85%"/>
-<br><sub>✨ 识别结构并转换为可编辑内容</sub>
+<img src="static/公式识别.png" alt="Formula recognition" width="85%"/>
+<br><sub>✨ Recognize structures for editable outputs</sub>
 <br><br>
 </div>
 
-### 🔧 AI 自动补全
+### 🔧 AI Autocomplete
 
 <div align="center">
 <br>
-<img src="static/AI自动补全.gif" alt="AI 自动补全" width="85%"/>
+<img src="static/AI自动补全.gif" alt="AI autocomplete" width="85%"/>
 <br>
-<sub>✨ Option/Alt + / 触发补全，Tab 接受建议</sub>
+<sub>✨ Option/Alt + / to trigger, Tab to accept</sub>
 <br><br>
 </div>
 
-### 🧾 Diff 预览
+### 🧾 Diff Preview
 
 <div align="center">
 <br>
-<img src="static/Diff预览.gif" alt="Diff 预览" width="85%"/>
+<img src="static/Diff预览.gif" alt="Diff preview" width="85%"/>
 <br>
-<sub>✨ 分栏 Diff + 全屏放大查看</sub>
+<sub>✨ Side-by-side diff with full-screen view</sub>
 <br><br>
 </div>
-
-<!-- ### 📚 模板切换
-
-<div align="center">
-<br>
-<img src="static/screenshots/templates/template-switch.gif" alt="模板切换" width="85%"/>
-<br>
-<sub>✨ 一键切换 ACL / CVPR / NeurIPS / ICML</sub>
-<br><br>
-</div> -->
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 📋 环境要求
+### Requirements
 
-- **Node.js** >= 18
-- **npm** >= 9
-- **操作系统**：Windows / macOS / Linux
-- **（可选）Tectonic**：启用服务器端编译
+- **OS**: Windows / macOS / Linux
+- **(Optional) Tectonic**: enable server-side compile
 
-### 📦 安装与启动
+### Install & Run
 
 ```bash
-# 1. 克隆仓库
+# 1. clone
 git clone https://github.com/yourusername/OpenPrism.git
 cd OpenPrism
 
-# 2. 安装依赖
+# 2. install
 npm install
 
-# 3. 启动开发服务器（前端 + 后端）
+# 3. dev server (frontend + backend)
 npm run dev
 ```
 
-启动后访问：
-- **前端**：http://localhost:5173
-- **后端**：http://localhost:8787
+Open:
+- Frontend: http://localhost:5173  
+- Backend: http://localhost:8787
 
 ---
 
-## ⚙️ 配置说明
+## ⚙️ Configuration
 
-### LLM 配置（可选）
+### LLM Configuration (Optional)
 
-OpenPrism 支持任何 **OpenAI 兼容**接口，包括自定义 base_url：
+OpenPrism supports any **OpenAI-compatible** endpoint, including custom base_url:
 
 ```bash
 # .env
@@ -256,63 +249,63 @@ OPENPRISM_LLM_API_KEY=your-api-key
 OPENPRISM_LLM_MODEL=gpt-4o-mini
 ```
 
-也可以在前端“设置”面板直接填写，配置保存在浏览器 localStorage。
+You can also configure directly in the frontend "Settings" panel. Settings are saved to browser localStorage.
 
-> 示例：第三方兼容服务 `https://api.apiyi.com/v1`
+> Example: Third-party compatible service `https://api.apiyi.com/v1`
 
-### TexLive 配置
+### TexLive Configuration
 
-默认使用 TexLive，也可在设置中自定义资源。
-
----
-
-## 🎯 使用指南（简版）
-
-1. **创建项目**：在 Projects 面板新建项目并选择模板
-2. **编写论文**：在 Files 树中编辑 LaTeX
-3. **AI 修改**：切换 Agent / Tools，生成 diff 并确认应用
-4. **编译预览**：点击“编译 PDF”，在右侧预览
-5. **导出 PDF**：在预览工具栏点击“下载 PDF”
+Default uses TexLive. You can customize resources in settings.
 
 ---
 
-## 📁 项目结构
+## 🎯 Usage Guide (Quick)
+
+1. **Create Project**: Create new project in Projects panel and select template
+2. **Write Paper**: Edit LaTeX in Files tree
+3. **AI Edits**: Switch to Agent / Tools, generate diff and confirm
+4. **Compile & Preview**: Click "Compile PDF", preview on right side
+5. **Export PDF**: Click "Download PDF" in preview toolbar
+
+---
+
+## 📁 Project Structure
 
 ```
 OpenPrism/
 ├── apps/
-│   ├── frontend/              # React + Vite 前端
+│   ├── frontend/              # React + Vite frontend
 │   │   ├── src/
-│   │   │   ├── app/App.tsx     # 主应用逻辑
-│   │   │   ├── api/client.ts   # API 调用
-│   │   │   └── latex/          # TexLive 集成
-│   └── backend/               # Fastify 后端
-│       └── src/index.js        # API / 编译 / LLM 代理
-├── templates/                 # LaTeX 模板（ACL/CVPR/NeurIPS/ICML）
-├── data/                      # 项目存储目录（默认）
+│   │   │   ├── app/App.tsx     # Main application logic
+│   │   │   ├── api/client.ts   # API calls
+│   │   │   └── latex/          # TexLive integration
+│   └── backend/               # Fastify backend
+│       └── src/index.js        # API / compile / LLM proxy
+├── templates/                 # LaTeX templates (ACL/CVPR/NeurIPS/ICML)
+├── data/                      # Project storage directory (default)
 └── README.md
 ```
 
 ---
 
-## 🗺️ Roadmap（建议方向）
+## 🗺️ Roadmap
 
-- 协作编辑与评论
-- 版本快照与回滚
-- 引用检索助手（BibTeX 自动生成）
-- 插件系统 / 主题系统
+- Collaborative editing and comments
+- Version snapshots and rollback
+- Citation search assistant (auto-generate BibTeX)
+- Plugin system / Theme system
 
 ---
 
-## 🤝 贡献指南
+## 🤝 Contributing
 
-欢迎提交 Issue 或 PR：
-1. Fork 仓库
-2. 新建分支
-3. 提交变更
-4. 发起 PR
+Welcome to submit Issues or PRs:
+1. Fork the repository
+2. Create a new branch
+3. Commit your changes
+4. Submit a PR
 
-开发命令：
+Development commands:
 ```bash
 npm run dev
 npm run dev:frontend
@@ -322,13 +315,13 @@ npm run build
 
 ---
 
-## 📄 开源协议
+## 📄 License
 
 MIT License. See [LICENSE](LICENSE).
 
 ---
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
 - Tectonic
 - CodeMirror
@@ -336,9 +329,11 @@ MIT License. See [LICENSE](LICENSE).
 - LangChain
 - React / Fastify
 
+---
+
 <div align="center">
 
-**如果这个项目对你有帮助，请给我们一个 ⭐️ Star！**
+**If this project helps you, please give us a ⭐️ Star!**
 
 [![GitHub stars](https://img.shields.io/github/stars/yourusername/OpenPrism?style=social)](https://github.com/yourusername/OpenPrism/stargazers)
 [![GitHub forks](https://img.shields.io/github/forks/yourusername/OpenPrism?style=social)](https://github.com/yourusername/OpenPrism/network/members)
@@ -346,9 +341,9 @@ MIT License. See [LICENSE](LICENSE).
 <br>
 
 <a name="wechat-group"></a>
-<img src="static/wechat.png" alt="OpenPrism 微信交流群" width="300"/>
+<img src="static/wechat.png" alt="OpenPrism WeChat Community" width="300"/>
 <br>
-<sub>扫码加入微信交流群</sub>
+<sub>Scan to join the community WeChat group</sub>
 
 <p align="center">
   <em>Made with ❤️ by OpenPrism Team</em>
