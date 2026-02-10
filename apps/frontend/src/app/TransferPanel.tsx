@@ -18,7 +18,7 @@ interface TransferPanelProps {
   onJobUpdate?: (job: { jobId: string; status: string; progressLog: string[]; error?: string }) => void;
 }
 
-const ENGINES = ['pdflatex', 'xelatex', 'lualatex', 'latexmk'] as const;
+const ENGINES = ['pdflatex', 'xelatex', 'lualatex', 'latexmk', 'tectonic'] as const;
 
 export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelProps) {
   const { t } = useTranslation();
