@@ -206,6 +206,20 @@ export function renamePath(id: string, from: string, to: string) {
   });
 }
 
+export async function deleteFile(id: string, filePath: string) {
+  const qs = new URLSearchParams({ path: filePath }).toString();
+  const res = await fetch(`/api/projects/${id}/file?${qs}`, {
+    method: 'DELETE',
+    headers: {
+      'x-lang': getLangHeader()
+    }
+  });
+  if (!res.ok) {
+    throw new Error(await res.text());
+  }
+  return res.json() as Promise<{ ok: boolean; error?: string }>;
+}
+
 export function updateFileOrder(id: string, folder: string, order: string[]) {
   return request<{ ok: boolean }>(`/api/projects/${id}/file-order`, {
     method: 'POST',

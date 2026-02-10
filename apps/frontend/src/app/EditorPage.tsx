@@ -28,6 +28,7 @@ import {
   getCollabToken,
   listProjects,
   renamePath,
+  deleteFile,
   updateFileOrder,
   runAgent,
   plotFromTable,
@@ -2610,6 +2611,33 @@ export default function EditorPage() {
     if (!target) return;
     const name = target.split('/').pop() || target;
     setInlineEdit({ kind: 'rename', path: target, value: name });
+  };
+
+  const handleDeleteFile = async () => {
+    if (!projectId) return;
+    const target = selectedPath || activePath;
+    if (!target) return;
+
+    const confirmMessage = t('确定要删除 "{name}" 吗？此操作不可恢复。', { name: target.split('/').pop() || target });
+    if (!window.confirm(confirmMessage)) return;
+
+    try {
+      const result = await deleteFile(projectId, target);
+      if (result.ok) {
+        // If deleted file was the active file, clear it
+        if (target === activePath) {
+          setActivePath('');
+          setContent('');
+        }
+        // Refresh the file tree
+        refreshTree();
+      } else {
+        alert(result.error || t('删除失败'));
+      }
+    } catch (err) {
+      console.error('Delete error:', err);
+      alert(t('删除失败') + ': ' + String(err));
+    }
   };
 
   const confirmInlineEdit = async () => {
@@ -5309,6 +5337,8 @@ Be thorough. Read ALL .tex files before reporting. Group findings by category. I
             <button className="ctx-menu-item" onClick={() => { setAllFolders(true); setFileContextMenu(null); }}>{t('展开全部')}</button>
             <button className="ctx-menu-item" onClick={() => { setAllFolders(false); setFileContextMenu(null); }}>{t('收起全部')}</button>
             <button className="ctx-menu-item" onClick={() => { beginInlineRename(); setFileContextMenu(null); }}>{t('重命名')}</button>
+            <div className="ctx-menu-sep" />
+            <button className="ctx-menu-item ctx-menu-danger" onClick={() => { handleDeleteFile(); setFileContextMenu(null); }}>{t('删除')}</button>
             <button className="ctx-menu-item" onClick={() => { refreshTree(); setFileContextMenu(null); }}>{t('刷新')}</button>
           </div>
         </div>

@@ -163,6 +163,7 @@
   "复制失败: {{error}}": "Copy failed: {{error}}",
   "删除": "Delete",
   "删除失败: {{error}}": "Delete failed: {{error}}",
+  "确定要删除 \"{name}\" 吗？此操作不可恢复。": "Are you sure you want to delete \"{name}\"? This action cannot be undone.",
   "删除项目 {{name}}？此操作不可撤销。": "Delete project {{name}}? This cannot be undone.",
   "刷新": "Refresh",
   "加载文件树失败: {{error}}": "Failed to load file tree: {{error}}",

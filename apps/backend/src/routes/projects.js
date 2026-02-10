@@ -431,4 +431,27 @@ export function registerProjectRoutes(fastify) {
     await fs.rename(absFrom, absTo);
     return { ok: true };
   });
+
+  fastify.delete('/api/projects/:id/file', async (req) => {
+    const { id } = req.params;
+    const { path: filePath } = req.query || {};
+    if (!filePath) return { ok: false, error: 'Missing file path' };
+    const projectRoot = await getProjectRoot(id);
+    const abs = safeJoin(projectRoot, filePath);
+    // Check if it's a directory
+    try {
+      const stat = await fs.stat(abs);
+      if (stat.isDirectory()) {
+        await fs.rm(abs, { recursive: true, force: true });
+      } else {
+        await fs.rm(abs, { force: true });
+      }
+    } catch (err) {
+      if (err.code === 'ENOENT') {
+        return { ok: false, error: 'File not found' };
+      }
+      throw err;
+    }
+    return { ok: true };
+  });
 }
