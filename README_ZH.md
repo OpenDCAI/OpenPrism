@@ -393,6 +393,28 @@ npm run dev
 - **前端**：http://localhost:5173
 - **后端**：http://localhost:8787
 
+#### 桌面端（Electron：macOS / Windows）
+
+```bash
+# 1. 安装依赖（根目录 + desktop workspace）
+npm install
+
+# 2. 本地桌面调试（复用前端/后端开发服务）
+npm run desktop:dev
+
+# 3. 构建桌面目录包（不产出安装器）
+npm run desktop:build
+
+# 4. 构建桌面安装包（macOS: dmg/zip, Windows: nsis）
+npm run desktop:dist
+```
+
+说明：
+- 桌面模式会自动设置 `OPENPRISM_DESKTOP=1`，并禁用 tunnel。
+- 可通过 `GET /api/desktop/diagnostics` 查看运行环境诊断结果。
+- LaTeX/Python 不随安装包分发，需在宿主系统自行安装以启用编译/绘图能力。
+- 发布流程见：`docs/desktop-release.md`
+
 #### 生产环境部署
 
 ```bash
@@ -720,6 +742,9 @@ OpenPrism/
 npm run dev
 npm run dev:frontend
 npm run dev:backend
+npm run desktop:dev
+npm run desktop:build
+npm run desktop:dist
 npm run build
 ```
 

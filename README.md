@@ -325,6 +325,28 @@ Access:
 - **Frontend**: http://localhost:5173
 - **Backend**: http://localhost:8787
 
+#### Desktop App (Electron: macOS / Windows)
+
+```bash
+# 1. Install dependencies (root + desktop workspace)
+npm install
+
+# 2. Local desktop development (reuse frontend/backend dev servers)
+npm run desktop:dev
+
+# 3. Build desktop package directory (no installer)
+npm run desktop:build
+
+# 4. Build desktop installers (dmg/zip for macOS, nsis for Windows)
+npm run desktop:dist
+```
+
+Notes:
+- Desktop mode starts backend with `OPENPRISM_DESKTOP=1` and disables tunnel automatically.
+- Runtime diagnostics are available at `GET /api/desktop/diagnostics`.
+- LaTeX/Python are not bundled. Install them on host OS for compile/plot features.
+- Release guide: `docs/desktop-release.md`
+
 #### Production Deployment
 
 ```bash
@@ -653,6 +675,9 @@ Development commands:
 npm run dev
 npm run dev:frontend
 npm run dev:backend
+npm run desktop:dev
+npm run desktop:build
+npm run desktop:dist
 npm run build
 ```
 

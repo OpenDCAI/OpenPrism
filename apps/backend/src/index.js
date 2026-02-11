@@ -3,7 +3,7 @@ import cors from '@fastify/cors';
 import multipart from '@fastify/multipart';
 import websocket from '@fastify/websocket';
 import { ensureDir } from './utils/fsUtils.js';
-import { DATA_DIR, PORT, TUNNEL_MODE } from './config/constants.js';
+import { DATA_DIR, IS_DESKTOP_MODE, PORT, TUNNEL_MODE } from './config/constants.js';
 import { registerHealthRoutes } from './routes/health.js';
 import { registerArxivRoutes } from './routes/arxiv.js';
 import { registerProjectRoutes } from './routes/projects.js';
@@ -14,6 +14,7 @@ import { registerPlotRoutes } from './routes/plot.js';
 import { registerAgentRoutes } from './routes/agent.js';
 import { registerCollabRoutes } from './routes/collab.js';
 import { registerTransferRoutes } from './routes/transfer.js';
+import { registerDesktopRoutes } from './routes/desktop.js';
 import { tryStartTunnel } from './services/tunnel.js';
 import { requireAuthIfRemote } from './utils/authUtils.js';
 import { fileURLToPath } from 'node:url';
@@ -53,6 +54,7 @@ registerPlotRoutes(fastify);
 registerAgentRoutes(fastify);
 registerCollabRoutes(fastify);
 registerTransferRoutes(fastify);
+registerDesktopRoutes(fastify);
 
 // Serve frontend static files in tunnel/production mode
 const __filename = fileURLToPath(import.meta.url);
@@ -79,16 +81,28 @@ if (existsSync(frontendDist)) {
 
 await ensureDir(DATA_DIR);
 
-await fastify.listen({ port: PORT, host: '0.0.0.0' });
+const listenAddress = await fastify.listen({ port: PORT, host: '0.0.0.0' });
+let actualPort = PORT;
+if (typeof listenAddress === 'string') {
+  try {
+    actualPort = Number(new URL(listenAddress).port) || PORT;
+  } catch {
+    const match = listenAddress.match(/:(\d+)(?:\/)?$/);
+    if (match?.[1]) actualPort = Number(match[1]);
+  }
+}
 
 console.log('');
-console.log(`  OpenPrism started at http://localhost:${PORT}`);
+console.log(`  OpenPrism started at http://localhost:${actualPort}`);
 console.log('');
 
 const tunnelMode = TUNNEL_MODE.toLowerCase().trim();
-if (tunnelMode !== 'false' && tunnelMode !== '0' && tunnelMode !== 'no') {
+if (IS_DESKTOP_MODE) {
+  console.log('  Desktop mode detected: tunnel disabled.');
+  console.log('');
+} else if (tunnelMode !== 'false' && tunnelMode !== '0' && tunnelMode !== 'no') {
   console.log('  Tunnel starting...');
-  const result = await tryStartTunnel(PORT);
+  const result = await tryStartTunnel(actualPort);
   if (result) {
     console.log(`  Tunnel active (${result.provider}):`);
     console.log(`  Public URL: ${result.url}`);
@@ -100,8 +114,8 @@ if (tunnelMode !== 'false' && tunnelMode !== '0' && tunnelMode !== 'no') {
   }
 } else {
   console.log('  Want remote collaboration? Start with tunnel:');
-  console.log('    OPENPRISM_TUNNEL=localtunnel npm start');
-  console.log('    OPENPRISM_TUNNEL=cloudflared npm start');
-  console.log('    OPENPRISM_TUNNEL=ngrok npm start');
+  console.log('    OPENPRISM_TUNNEL=localtunnel npm run tunnel');
+  console.log('    OPENPRISM_TUNNEL=cloudflared npm run tunnel:cf');
+  console.log('    OPENPRISM_TUNNEL=ngrok npm run tunnel:ngrok');
   console.log('');
 }

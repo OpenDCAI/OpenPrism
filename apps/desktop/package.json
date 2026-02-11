@@ -1,0 +1,91 @@
+{
+  "name": "@openprism/desktop",
+  "private": true,
+  "main": "src/main.js",
+  "scripts": {
+    "dev": "wait-on tcp:5173 tcp:8787 && cross-env OPENPRISM_ELECTRON_DEV_URL=http://localhost:5173 OPENPRISM_ELECTRON_BACKEND_URL=http://127.0.0.1:8787 OPENPRISM_ELECTRON_EXTERNAL_BACKEND=1 electron src/main.js",
+    "build": "electron-builder --dir",
+    "dist": "electron-builder"
+  },
+  "devDependencies": {
+    "cross-env": "^7.0.3",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.opendcai.openprism",
+    "productName": "OpenPrism",
+    "directories": {
+      "output": "../../dist-desktop",
+      "buildResources": "resources"
+    },
+    "files": [
+      "src/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "../../apps/backend/src",
+        "to": "openprism-runtime/apps/backend/src"
+      },
+      {
+        "from": "../../apps/frontend/dist",
+        "to": "openprism-runtime/apps/frontend/dist"
+      },
+      {
+        "from": "../../templates",
+        "to": "openprism-runtime/templates"
+      },
+      {
+        "from": "../../static",
+        "to": "openprism-runtime/static"
+      },
+      {
+        "from": "../../node_modules",
+        "to": "openprism-runtime/node_modules",
+        "filter": [
+          "**/*",
+          "!**/.cache/**",
+          "!**/.bin/**"
+        ]
+      },
+      {
+        "from": "../../package.json",
+        "to": "openprism-runtime/package.json"
+      },
+      {
+        "from": "../../package-lock.json",
+        "to": "openprism-runtime/package-lock.json"
+      },
+      {
+        "from": "../../apps/backend/package.json",
+        "to": "openprism-runtime/apps/backend/package.json"
+      },
+      {
+        "from": "../../apps/frontend/package.json",
+        "to": "openprism-runtime/apps/frontend/package.json"
+      }
+    ],
+    "extraMetadata": {
+      "name": "openprism-desktop",
+      "main": "src/main.js"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}
