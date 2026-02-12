@@ -1,5 +1,8 @@
 {
   "name": "@openprism/desktop",
+  "version": "0.1.0",
+  "description": "OpenPrism Desktop Application",
+  "author": "OpenDCAI",
   "private": true,
   "main": "src/main.js",
   "scripts": {
@@ -16,6 +19,8 @@
   "build": {
     "appId": "com.opendcai.openprism",
     "productName": "OpenPrism",
+    "electronVersion": "31.7.7",
+    "npmRebuild": false,
     "directories": {
       "output": "../../dist-desktop",
       "buildResources": "resources"
