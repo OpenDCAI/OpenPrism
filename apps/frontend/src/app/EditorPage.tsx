@@ -10,7 +10,7 @@ import { Compartment, EditorState, StateEffect, StateField } from '@codemirror/s
 import { Decoration, EditorView, DecorationSet, WidgetType, keymap, gutter, GutterMarker } from '@codemirror/view';
 import { search, searchKeymap } from '@codemirror/search';
 import { autocompletion, CompletionContext } from '@codemirror/autocomplete';
-import { toggleComment } from '@codemirror/commands';
+import { toggleComment, undo, redo } from '@codemirror/commands';
 import { foldKeymap, foldService, indentOnInput } from '@codemirror/language';
 import { GlobalWorkerOptions, getDocument, renderTextLayer } from 'pdfjs-dist';
 import pdfWorker from 'pdfjs-dist/build/pdf.worker.min?url';
@@ -848,41 +848,216 @@ const editorTheme = EditorView.theme(
   { dark: false }
 );
 
-function buildSplitDiff(original: string, proposed: string) {
-  const parts = diffLines(original, proposed);
+type SplitDiffRow = {
+  id: string;
+  left?: string;
+  right?: string;
+  leftNo?: number;
+  rightNo?: number;
+  type: 'context' | 'added' | 'removed' | 'changed';
+  isChange: boolean;
+};
+
+type SplitDiffHunk = {
+  id: string;
+  rows: SplitDiffRow[];
+};
+
+type SplitDiffChangeBlock = {
+  id: string;
+  anchorRowId: string;
+  rowIds: string[];
+  oldStart: number;
+  oldEnd: number;
+  newStart: number;
+  newEnd: number;
+};
+
+type SplitDiffModel = {
+  hunks: SplitDiffHunk[];
+  changeBlocks: SplitDiffChangeBlock[];
+  rowToBlockId: Record<string, string>;
+};
+
+function buildSplitDiff(original: string, proposed: string): SplitDiffModel {
+  const normalizeLineEndings = (input: string) => input.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const parts = diffLines(normalizeLineEndings(original), normalizeLineEndings(proposed));
   let leftLine = 1;
   let rightLine = 1;
-  const rows: {
-    left?: string;
-    right?: string;
-    leftNo?: number;
-    rightNo?: number;
-    type: 'context' | 'added' | 'removed';
-  }[] = [];
+  let rowIdx = 0;
+  let oldCursor = 0;
+  let newCursor = 0;
+  const rows: SplitDiffRow[] = [];
+  const changeBlocks: SplitDiffChangeBlock[] = [];
+  const rowToBlockId: Record<string, string> = {};
 
-  parts.forEach((part) => {
-    const lines = part.value.split('\n');
-    if (lines[lines.length - 1] === '') {
-      lines.pop();
-    }
-    lines.forEach((line) => {
-      if (part.added) {
-        rows.push({ right: line, rightNo: rightLine++, type: 'added' });
-      } else if (part.removed) {
-        rows.push({ left: line, leftNo: leftLine++, type: 'removed' });
-      } else {
+  const toLines = (value: string) => {
+    const lines = value.split('\n');
+    if (lines[lines.length - 1] === '') lines.pop();
+    return lines;
+  };
+
+  for (let i = 0; i < parts.length; i += 1) {
+    const part = parts[i];
+    const nextPart = parts[i + 1];
+
+    // Pair removed + added segments so line-level edits align side by side.
+    if (part.removed && nextPart?.added) {
+      const removedLines = toLines(part.value);
+      const addedLines = toLines(nextPart.value);
+      const count = Math.max(removedLines.length, addedLines.length);
+      const rowIds: string[] = [];
+      for (let j = 0; j < count; j += 1) {
+        const left = removedLines[j];
+        const right = addedLines[j];
+        const type: SplitDiffRow['type'] = left && right ? 'changed' : left ? 'removed' : 'added';
+        const rowId = `r-${rowIdx++}`;
+        rowIds.push(rowId);
         rows.push({
-          left: line,
-          right: line,
-          leftNo: leftLine++,
-          rightNo: rightLine++,
-          type: 'context'
+          id: rowId,
+          left,
+          right,
+          leftNo: left !== undefined ? leftLine++ : undefined,
+          rightNo: right !== undefined ? rightLine++ : undefined,
+          type,
+          isChange: true
         });
       }
+      if (rowIds.length > 0) {
+        const blockId = `c-${changeBlocks.length}`;
+        rowIds.forEach((rowId) => {
+          rowToBlockId[rowId] = blockId;
+        });
+        changeBlocks.push({
+          id: blockId,
+          anchorRowId: rowIds[0],
+          rowIds,
+          oldStart: oldCursor,
+          oldEnd: oldCursor + removedLines.length,
+          newStart: newCursor,
+          newEnd: newCursor + addedLines.length
+        });
+      }
+      oldCursor += removedLines.length;
+      newCursor += addedLines.length;
+      i += 1;
+      continue;
+    }
+
+    const lines = toLines(part.value);
+    if (part.added) {
+      const rowIds: string[] = [];
+      lines.forEach((line) => {
+        const rowId = `r-${rowIdx++}`;
+        rowIds.push(rowId);
+        rows.push({
+          id: rowId,
+          right: line,
+          rightNo: rightLine++,
+          type: 'added',
+          isChange: true
+        });
+      });
+      if (rowIds.length > 0) {
+        const blockId = `c-${changeBlocks.length}`;
+        rowIds.forEach((rowId) => {
+          rowToBlockId[rowId] = blockId;
+        });
+        changeBlocks.push({
+          id: blockId,
+          anchorRowId: rowIds[0],
+          rowIds,
+          oldStart: oldCursor,
+          oldEnd: oldCursor,
+          newStart: newCursor,
+          newEnd: newCursor + lines.length
+        });
+      }
+      newCursor += lines.length;
+      continue;
+    }
+    if (part.removed) {
+      const rowIds: string[] = [];
+      lines.forEach((line) => {
+        const rowId = `r-${rowIdx++}`;
+        rowIds.push(rowId);
+        rows.push({
+          id: rowId,
+          left: line,
+          leftNo: leftLine++,
+          type: 'removed',
+          isChange: true
+        });
+      });
+      if (rowIds.length > 0) {
+        const blockId = `c-${changeBlocks.length}`;
+        rowIds.forEach((rowId) => {
+          rowToBlockId[rowId] = blockId;
+        });
+        changeBlocks.push({
+          id: blockId,
+          anchorRowId: rowIds[0],
+          rowIds,
+          oldStart: oldCursor,
+          oldEnd: oldCursor + lines.length,
+          newStart: newCursor,
+          newEnd: newCursor
+        });
+      }
+      oldCursor += lines.length;
+      continue;
+    }
+
+    lines.forEach((line) => {
+      rows.push({
+        id: `r-${rowIdx++}`,
+        left: line,
+        right: line,
+        leftNo: leftLine++,
+        rightNo: rightLine++,
+        type: 'context',
+        isChange: false
+      });
     });
+    oldCursor += lines.length;
+    newCursor += lines.length;
+  }
+
+  const contextRadius = 2;
+  const changeIndexes = rows
+    .map((row, index) => (row.isChange ? index : -1))
+    .filter((index) => index >= 0);
+
+  if (changeIndexes.length === 0) {
+    return {
+      hunks: [{ id: 'h-0', rows }],
+      changeBlocks: [],
+      rowToBlockId: {}
+    };
+  }
+
+  const ranges: Array<{ start: number; end: number }> = [];
+  changeIndexes.forEach((index) => {
+    const start = Math.max(0, index - contextRadius);
+    const end = Math.min(rows.length - 1, index + contextRadius);
+    const prev = ranges[ranges.length - 1];
+    if (!prev || start > prev.end + 1) {
+      ranges.push({ start, end });
+    } else {
+      prev.end = Math.max(prev.end, end);
+    }
   });
 
-  return rows;
+  const hunks = ranges.map((range, hunkIndex) => ({
+    id: `h-${hunkIndex}`,
+    rows: rows.slice(range.start, range.end + 1)
+  }));
+
+  return {
+    hunks,
+    changeBlocks,
+    rowToBlockId
+  };
 }
 
 type CompileError = {
@@ -950,10 +1125,27 @@ function replaceSelection(source: string, start: number, end: number, replacemen
   return source.slice(0, start) + replacement + source.slice(end);
 }
 
-function SplitDiffView({ rows }: { rows: ReturnType<typeof buildSplitDiff> }) {
+function SplitDiffView({
+  model,
+  onLeftRowClick,
+  onRightRowClick,
+  onAcceptBlock,
+  onRejectBlock,
+  actionBusy = false
+}: {
+  model: SplitDiffModel;
+  onLeftRowClick?: (line: number) => void;
+  onRightRowClick?: (line: number) => void;
+  onAcceptBlock?: (block: SplitDiffChangeBlock) => void;
+  onRejectBlock?: (block: SplitDiffChangeBlock) => void;
+  actionBusy?: boolean;
+}) {
   const { t } = useTranslation();
   const leftRef = useRef<HTMLDivElement | null>(null);
   const rightRef = useRef<HTMLDivElement | null>(null);
+  const leftChangeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const rightChangeRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const [activeBlock, setActiveBlock] = useState(0);
   const lockRef = useRef(false);
 
   const syncScroll = (source: HTMLDivElement | null, target: HTMLDivElement | null) => {
@@ -966,18 +1158,90 @@ function SplitDiffView({ rows }: { rows: ReturnType<typeof buildSplitDiff> }) {
     });
   };
 
+  useEffect(() => {
+    setActiveBlock(0);
+    leftChangeRefs.current = {};
+    rightChangeRefs.current = {};
+  }, [model]);
+
+  const jumpToChange = useCallback((nextIndex: number) => {
+    if (model.changeBlocks.length === 0) return;
+    const normalized = (nextIndex + model.changeBlocks.length) % model.changeBlocks.length;
+    setActiveBlock(normalized);
+    const rowId = model.changeBlocks[normalized].anchorRowId;
+    leftChangeRefs.current[rowId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    rightChangeRefs.current[rowId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  }, [model.changeBlocks]);
+
+  const activeBlockId = model.changeBlocks[activeBlock]?.id;
+  const activeBlockData = model.changeBlocks[activeBlock];
+  const leftTone = useCallback((row: SplitDiffRow) => {
+    if (row.type === 'added') return 'side-empty';
+    if (row.type === 'removed') return 'removed';
+    if (row.type === 'changed') return 'changed';
+    return 'context';
+  }, []);
+  const rightTone = useCallback((row: SplitDiffRow) => {
+    if (row.type === 'removed') return 'side-empty';
+    if (row.type === 'added') return 'added';
+    if (row.type === 'changed') return 'changed';
+    return 'context';
+  }, []);
+  const activateRow = useCallback((rowId: string) => {
+    const blockId = model.rowToBlockId[rowId];
+    if (!blockId) return;
+    const idx = model.changeBlocks.findIndex((block) => block.id === blockId);
+    if (idx >= 0) {
+      setActiveBlock(idx);
+    }
+  }, [model.changeBlocks, model.rowToBlockId]);
+
   return (
     <div className="split-diff">
+      {model.changeBlocks.length > 0 && (
+        <div className="split-nav">
+          <button className="icon-btn split-nav-btn" onClick={() => jumpToChange(activeBlock - 1)} aria-label={t('上一处改动')}>↑</button>
+          <div className="split-nav-status">{t('改动 {{current}} / {{total}}', { current: activeBlock + 1, total: model.changeBlocks.length })}</div>
+          {onAcceptBlock && activeBlockData && (
+            <button className="icon-btn split-nav-action accept" onClick={() => onAcceptBlock(activeBlockData)} aria-label={t('接受当前改动')} disabled={actionBusy}>
+              {t('接受')}
+            </button>
+          )}
+          {onRejectBlock && activeBlockData && (
+            <button className="icon-btn split-nav-action reject" onClick={() => onRejectBlock(activeBlockData)} aria-label={t('拒绝当前改动')} disabled={actionBusy}>
+              {t('拒绝')}
+            </button>
+          )}
+          <button className="icon-btn split-nav-btn" onClick={() => jumpToChange(activeBlock + 1)} aria-label={t('下一处改动')}>↓</button>
+        </div>
+      )}
       <div
         className="split-column"
         ref={leftRef}
         onScroll={() => syncScroll(leftRef.current, rightRef.current)}
       >
         <div className="split-header">{t('Before')}</div>
-        {rows.map((row, idx) => (
-          <div key={`l-${idx}`} className={`split-row ${row.type}`}>
-            <div className="line-no">{row.leftNo ?? ''}</div>
-            <div className="line-text">{row.left ?? ''}</div>
+        {model.hunks.map((hunk, hunkIndex) => (
+          <div key={`left-${hunk.id}`} className="split-hunk">
+            <div className="split-hunk-label">{t('改动块 {{index}}', { index: hunkIndex + 1 })}</div>
+            {hunk.rows.map((row) => (
+              <div
+                key={`l-${row.id}`}
+                className={`split-row ${leftTone(row)} ${row.isChange ? 'is-change' : ''} ${model.rowToBlockId[row.id] === activeBlockId ? 'is-active-change' : ''} ${onLeftRowClick && row.leftNo ? 'clickable' : ''}`}
+                ref={(node) => {
+                  if (row.isChange) leftChangeRefs.current[row.id] = node;
+                }}
+                onClick={() => {
+                  activateRow(row.id);
+                  if (onLeftRowClick && row.leftNo) {
+                    onLeftRowClick(row.leftNo);
+                  }
+                }}
+              >
+                <div className="line-no">{row.leftNo ?? ''}</div>
+                <div className="line-text">{row.left ?? ''}</div>
+              </div>
+            ))}
           </div>
         ))}
       </div>
@@ -987,10 +1251,27 @@ function SplitDiffView({ rows }: { rows: ReturnType<typeof buildSplitDiff> }) {
         onScroll={() => syncScroll(rightRef.current, leftRef.current)}
       >
         <div className="split-header">{t('After')}</div>
-        {rows.map((row, idx) => (
-          <div key={`r-${idx}`} className={`split-row ${row.type}`}>
-            <div className="line-no">{row.rightNo ?? ''}</div>
-            <div className="line-text">{row.right ?? ''}</div>
+        {model.hunks.map((hunk, hunkIndex) => (
+          <div key={`right-${hunk.id}`} className="split-hunk">
+            <div className="split-hunk-label">{t('改动块 {{index}}', { index: hunkIndex + 1 })}</div>
+            {hunk.rows.map((row) => (
+              <div
+                key={`r-${row.id}`}
+                className={`split-row ${rightTone(row)} ${row.isChange ? 'is-change' : ''} ${model.rowToBlockId[row.id] === activeBlockId ? 'is-active-change' : ''} ${onRightRowClick && row.rightNo ? 'clickable' : ''}`}
+                ref={(node) => {
+                  if (row.isChange) rightChangeRefs.current[row.id] = node;
+                }}
+                onClick={() => {
+                  activateRow(row.id);
+                  if (onRightRowClick && row.rightNo) {
+                    onRightRowClick(row.rightNo);
+                  }
+                }}
+              >
+                <div className="line-no">{row.rightNo ?? ''}</div>
+                <div className="line-text">{row.right ?? ''}</div>
+              </div>
+            ))}
           </div>
         ))}
       </div>
@@ -1251,7 +1532,9 @@ export default function EditorPage() {
   const [wsTexDropdownOpen, setWsTexDropdownOpen] = useState(false);
   const [plotTypeDropdownOpen, setPlotTypeDropdownOpen] = useState(false);
   const [figureDropdownOpen, setFigureDropdownOpen] = useState(false);
+  const [agentBusy, setAgentBusy] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  const [pendingChunkBusy, setPendingChunkBusy] = useState<Record<string, boolean>>({});
   const [compileLog, setCompileLog] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   const [pdfScale, setPdfScale] = useState(1);
@@ -1352,6 +1635,8 @@ export default function EditorPage() {
   const acceptChunkRef = useRef<() => void>(() => {});
   const clearSuggestionRef = useRef<() => void>(() => {});
   const saveActiveFileRef = useRef<() => void>(() => {});
+  const pendingChangesRef = useRef<PendingChange[]>([]);
+  const pendingChunkBusyRef = useRef<Record<string, boolean>>({});
   const gridRef = useRef<HTMLDivElement | null>(null);
   const editorSplitRef = useRef<HTMLDivElement | null>(null);
   const pdfContainerRef = useRef<HTMLDivElement | null>(null);
@@ -3065,6 +3350,176 @@ export default function EditorPage() {
     }
   };
 
+  const jumpToDiffLine = async (filePath: string, line: number) => {
+    const view = cmViewRef.current;
+    if (!view || !line || line < 1 || !isTextFile(filePath)) return;
+    let content = '';
+    try {
+      content = filePath === activePath ? editorValue : await openFile(filePath);
+    } catch {
+      return;
+    }
+    if (!content) return;
+    const offset = findLineOffset(content, line);
+    view.dispatch({
+      selection: { anchor: offset, head: offset },
+      scrollIntoView: true
+    });
+    view.focus();
+  };
+
+  const normalizeDiffLines = (input: string) => {
+    const normalized = input.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const hasTrailingNewline = normalized.endsWith('\n');
+    const lines = normalized.split('\n');
+    if (hasTrailingNewline) lines.pop();
+    return { lines, hasTrailingNewline };
+  };
+
+  const composeDiffLines = (lines: string[], hasTrailingNewline: boolean) => {
+    const body = lines.join('\n');
+    return hasTrailingNewline ? `${body}\n` : body;
+  };
+
+  useEffect(() => {
+    pendingChangesRef.current = pendingChanges;
+  }, [pendingChanges]);
+
+  const updatePendingByFile = useCallback((filePath: string, nextChange: PendingChange | null) => {
+    setPendingChanges((prev) => {
+      if (!nextChange) return prev.filter((item) => item.filePath !== filePath);
+      let replaced = false;
+      const next = prev.map((item) => {
+        if (item.filePath !== filePath) return item;
+        replaced = true;
+        return nextChange;
+      });
+      return replaced ? next : [...prev, nextChange];
+    });
+    setDiffFocus((prev) => {
+      if (!prev || prev.filePath !== filePath) return prev;
+      return nextChange;
+    });
+  }, []);
+
+  const setChunkBusyForFile = useCallback((filePath: string, busy: boolean) => {
+    if (busy) {
+      pendingChunkBusyRef.current[filePath] = true;
+      setPendingChunkBusy((prev) => ({ ...prev, [filePath]: true }));
+      return;
+    }
+    delete pendingChunkBusyRef.current[filePath];
+    setPendingChunkBusy((prev) => {
+      if (!prev[filePath]) return prev;
+      const next = { ...prev };
+      delete next[filePath];
+      return next;
+    });
+  }, []);
+
+  const runChunkAction = useCallback(async (filePath: string, action: () => Promise<void> | void) => {
+    if (!filePath) return;
+    if (pendingChunkBusyRef.current[filePath]) return;
+    setChunkBusyForFile(filePath, true);
+    try {
+      await action();
+    } finally {
+      setChunkBusyForFile(filePath, false);
+    }
+  }, [setChunkBusyForFile]);
+
+  const resolveLatestChunkContext = useCallback((filePath: string, blockId: string) => {
+    const latestChange = pendingChangesRef.current.find((item) => item.filePath === filePath);
+    if (!latestChange) return null;
+    const latestModel = buildSplitDiff(latestChange.original, latestChange.proposed);
+    const latestBlock = latestModel.changeBlocks.find((item) => item.id === blockId);
+    if (!latestBlock) return null;
+    return { change: latestChange, block: latestBlock };
+  }, []);
+
+  const acceptPendingBlock = useCallback(async (filePath: string, blockId: string) => {
+    await runChunkAction(filePath, async () => {
+      const resolved = resolveLatestChunkContext(filePath, blockId);
+      if (!resolved) return;
+      const { change, block } = resolved;
+
+      const originalState = normalizeDiffLines(change.original);
+      const proposedState = normalizeDiffLines(change.proposed);
+
+      const oldStart = Math.max(0, Math.min(block.oldStart, originalState.lines.length));
+      const oldEnd = Math.max(oldStart, Math.min(block.oldEnd, originalState.lines.length));
+      const newStart = Math.max(0, Math.min(block.newStart, proposedState.lines.length));
+      const newEnd = Math.max(newStart, Math.min(block.newEnd, proposedState.lines.length));
+
+      const replacement = proposedState.lines.slice(newStart, newEnd);
+      const nextOriginalLines = [...originalState.lines];
+      nextOriginalLines.splice(oldStart, oldEnd - oldStart, ...replacement);
+
+      let nextOriginalTrailing = originalState.hasTrailingNewline;
+      if (oldEnd === originalState.lines.length && newEnd === proposedState.lines.length) {
+        nextOriginalTrailing = proposedState.hasTrailingNewline;
+      }
+      const nextOriginal = composeDiffLines(nextOriginalLines, nextOriginalTrailing);
+
+      try {
+        await writeFileCompat(change.filePath, nextOriginal);
+        setFiles((prev) => ({ ...prev, [change.filePath]: nextOriginal }));
+        if (activePath === change.filePath && !collabActiveRef.current) {
+          setEditorDoc(nextOriginal);
+        }
+        const nextChange =
+          nextOriginal === change.proposed
+            ? null
+            : {
+                ...change,
+                original: nextOriginal,
+                diff: createTwoFilesPatch(change.filePath, change.filePath, nextOriginal, change.proposed, 'current', 'proposed')
+              };
+        updatePendingByFile(change.filePath, nextChange);
+        setStatus(t('已应用当前改动'));
+      } catch (err) {
+        setStatus(t('操作失败: {{error}}', { error: String(err) }));
+      }
+    });
+  }, [activePath, runChunkAction, resolveLatestChunkContext, setEditorDoc, t, updatePendingByFile, writeFileCompat]);
+
+  const rejectPendingBlock = useCallback(async (filePath: string, blockId: string) => {
+    await runChunkAction(filePath, async () => {
+      const resolved = resolveLatestChunkContext(filePath, blockId);
+      if (!resolved) return;
+      const { change, block } = resolved;
+
+      const originalState = normalizeDiffLines(change.original);
+      const proposedState = normalizeDiffLines(change.proposed);
+
+      const oldStart = Math.max(0, Math.min(block.oldStart, originalState.lines.length));
+      const oldEnd = Math.max(oldStart, Math.min(block.oldEnd, originalState.lines.length));
+      const newStart = Math.max(0, Math.min(block.newStart, proposedState.lines.length));
+      const newEnd = Math.max(newStart, Math.min(block.newEnd, proposedState.lines.length));
+
+      const replacement = originalState.lines.slice(oldStart, oldEnd);
+      const nextProposedLines = [...proposedState.lines];
+      nextProposedLines.splice(newStart, newEnd - newStart, ...replacement);
+
+      let nextProposedTrailing = proposedState.hasTrailingNewline;
+      if (newEnd === proposedState.lines.length && oldEnd === originalState.lines.length) {
+        nextProposedTrailing = originalState.hasTrailingNewline;
+      }
+      const nextProposed = composeDiffLines(nextProposedLines, nextProposedTrailing);
+
+      const nextChange =
+        nextProposed === change.original
+          ? null
+          : {
+              ...change,
+              proposed: nextProposed,
+              diff: createTwoFilesPatch(change.filePath, change.filePath, change.original, nextProposed, 'current', 'proposed')
+            };
+      updatePendingByFile(change.filePath, nextChange);
+      setStatus(t('已拒绝当前改动'));
+    });
+  }, [runChunkAction, resolveLatestChunkContext, t, updatePendingByFile]);
+
   const renderTree = (nodes: TreeNode[], depth = 0) =>
     nodes.map((node) => {
       const isDir = node.type === 'dir';
@@ -3431,6 +3886,7 @@ export default function EditorPage() {
   }, []);
 
   const sendPrompt = async () => {
+    if (agentBusy) return;
     const isChat = assistantMode === 'chat';
     if (!activePath && !isChat) return;
     if (isChat === false && task === 'translate') {
@@ -3444,7 +3900,24 @@ export default function EditorPage() {
     const history = isChat ? chatMessages : agentMessages;
     const nextHistory = [...history, userMsg];
     setHistory(nextHistory);
+    setAgentBusy(true);
     try {
+      const isLikelyFullDocumentSuggestion = (suggestion: string, fullText: string) => {
+        const sug = suggestion.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+        const src = fullText.replace(/\r\n/g, '\n').replace(/\r/g, '\n').trim();
+        if (!src) return true;
+        if (!sug) return false;
+        const lineCount = (text: string) => Math.max(1, text.split('\n').length);
+        const charRatio = sug.length / Math.max(1, src.length);
+        const lineRatio = lineCount(sug) / lineCount(src);
+        const hasDocEnvelope = /\\documentclass|\\begin\{document\}|\\end\{document\}/.test(sug);
+        const hasSectioning = /\\section\{|\\subsection\{|\\chapter\{/.test(sug);
+        if (hasDocEnvelope) return true;
+        if (charRatio >= 0.55 && lineRatio >= 0.45) return true;
+        if (charRatio >= 0.7 && hasSectioning) return true;
+        return false;
+      };
+
       let effectivePrompt = prompt;
       let effectiveSelection = selectionText;
       let effectiveContent = editorValue;
@@ -3512,6 +3985,10 @@ export default function EditorPage() {
         setPendingChanges(nextPending);
         setRightView('diff');
       } else if (!isChat && res.suggestion) {
+        if (!selectionText && !isLikelyFullDocumentSuggestion(res.suggestion, editorValue)) {
+          setStatus(t('检测到返回的是局部建议，已阻止整文替换。请先选中要修改的段落，或使用 Tools 模式生成补丁。'));
+          return;
+        }
         const proposed = selectionText
           ? replaceSelection(editorValue, selectionRange[0], selectionRange[1], res.suggestion)
           : res.suggestion;
@@ -3521,6 +3998,8 @@ export default function EditorPage() {
       }
     } catch (err) {
       setHistory((prev) => [...prev, { role: 'assistant', content: t('请求失败: {{error}}', { error: String(err) }) }]);
+    } finally {
+      setAgentBusy(false);
     }
   };
 
@@ -3692,6 +4171,8 @@ export default function EditorPage() {
               <svg width="12" height="12" viewBox="0 0 12 12" fill="none" className={engineDropdownOpen ? 'rotate' : ''}><path d="M3 5L6 8L9 5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/></svg>
             </button>
           </div>
+          <button onClick={() => { if (cmViewRef.current) undo(cmViewRef.current); }} className="btn ghost">{t('撤回')}</button>
+          <button onClick={() => { if (cmViewRef.current) redo(cmViewRef.current); }} className="btn ghost">{t('重做')}</button>
           <button onClick={saveActiveFile} className="btn ghost">{t('保存')}</button>
           <button onClick={compile} className="btn" disabled={isCompiling}>
             {isCompiling ? t('编译中...') : t('编译 PDF')}
@@ -4242,8 +4723,8 @@ export default function EditorPage() {
                     onChange={(e) => setPrompt(e.target.value)}
                     placeholder={assistantMode === 'chat' ? t('例如：帮我解释这一段的实验设计。') : t('例如：润色这个段落，使其更符合 ACL 风格。')}
                   />
-                  <button onClick={sendPrompt} className="btn full">
-                    {assistantMode === 'chat' ? t('发送') : t('生成建议')}
+                  <button onClick={sendPrompt} className="btn full" disabled={agentBusy}>
+                    {agentBusy ? t('生成中...') : (assistantMode === 'chat' ? t('发送') : t('生成建议'))}
                   </button>
                   {selectionText && assistantMode === 'agent' && (
                     <div className="muted">{t('已选择 {{count}} 字符，将用于任务输入', { count: selectionText.length })}</div>
@@ -5306,14 +5787,29 @@ Be thorough. Read ALL .tex files before reporting. Group findings by category. I
                   {pendingGrouped.length === 0 && <div className="muted">{t('暂无待确认修改。')}</div>}
                   {pendingGrouped.map((change) => (
                     (() => {
-                      const rows = buildSplitDiff(change.original, change.proposed);
+                      const model = buildSplitDiff(change.original, change.proposed);
                       return (
                         <div key={change.filePath} className="diff-item">
                           <div className="diff-header">
                             <div className="diff-path">{change.filePath}</div>
                             <button className="btn ghost" onClick={() => setDiffFocus(change)}>{t('放大')}</button>
                           </div>
-                          <SplitDiffView rows={rows} />
+                          <SplitDiffView
+                            model={model}
+                            onLeftRowClick={(line) => {
+                              void jumpToDiffLine(change.filePath, line);
+                            }}
+                            onRightRowClick={(line) => {
+                              void jumpToDiffLine(change.filePath, line);
+                            }}
+                            onAcceptBlock={(block) => {
+                              void acceptPendingBlock(change.filePath, block.id);
+                            }}
+                            onRejectBlock={(block) => {
+                              void rejectPendingBlock(change.filePath, block.id);
+                            }}
+                            actionBusy={Boolean(pendingChunkBusy[change.filePath])}
+                          />
                           <div className="row">
                             <button className="btn" onClick={() => applyPending(change)}>{t('应用此修改')}</button>
                             <button className="btn ghost" onClick={() => discardPending(change)}>{t('放弃')}</button>
@@ -5550,7 +6046,22 @@ Be thorough. Read ALL .tex files before reporting. Group findings by category. I
               <button className="icon-btn" onClick={() => setDiffFocus(null)}>✕</button>
             </div>
             <div className="modal-body diff-modal-body">
-              <SplitDiffView rows={buildSplitDiff(diffFocus.original, diffFocus.proposed)} />
+              <SplitDiffView
+                model={buildSplitDiff(diffFocus.original, diffFocus.proposed)}
+                onLeftRowClick={(line) => {
+                  void jumpToDiffLine(diffFocus.filePath, line);
+                }}
+                onRightRowClick={(line) => {
+                  void jumpToDiffLine(diffFocus.filePath, line);
+                }}
+                onAcceptBlock={(block) => {
+                  void acceptPendingBlock(diffFocus.filePath, block.id);
+                }}
+                onRejectBlock={(block) => {
+                  void rejectPendingBlock(diffFocus.filePath, block.id);
+                }}
+                actionBusy={Boolean(pendingChunkBusy[diffFocus.filePath])}
+              />
             </div>
           </div>
         </div>

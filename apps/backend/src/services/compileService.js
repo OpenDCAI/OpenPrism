@@ -130,6 +130,9 @@ export async function runCompile({ projectId, mainFile, engine = 'pdflatex' }) {
     pdfBase64 = '';
   }
   const log = logChunks.join('');
+  console.log('--- COMPILATION LOG START ---');
+  console.log(log);
+  console.log('--- COMPILATION LOG END ---');
   await fs.rm(outDir, { recursive: true, force: true });
   if (!pdfBase64) {
     return { ok: false, error: 'No PDF generated.', log, status: code ?? -1 };

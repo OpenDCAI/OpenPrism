@@ -382,6 +382,11 @@ body {
   background: rgba(180, 74, 47, 0.1);
 }
 
+.icon-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
 .panel-search {
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
@@ -2162,6 +2167,7 @@ body {
   background: #fffaf3;
   color: #2b2522;
   overflow: hidden;
+  position: relative;
 }
 
 .split-column {
@@ -2181,6 +2187,75 @@ body {
   border-bottom: 1px solid rgba(120, 98, 83, 0.2);
 }
 
+.split-nav {
+  position: absolute;
+  right: 10px;
+  top: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 6px;
+  border-radius: 999px;
+  background: rgba(255, 250, 243, 0.92);
+  border: 1px solid rgba(120, 98, 83, 0.22);
+}
+
+.split-nav-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 12px;
+  color: #4e453f;
+}
+
+.split-nav-status {
+  min-width: 92px;
+  text-align: center;
+  font-size: 11px;
+  font-weight: 600;
+  color: #6f5f54;
+}
+
+.split-nav-action {
+  min-width: 40px;
+  height: 24px;
+  border-radius: 999px;
+  padding: 0 8px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.split-nav-action.accept {
+  color: #0f766e;
+  background: rgba(16, 185, 129, 0.16);
+}
+
+.split-nav-action.reject {
+  color: #b91c1c;
+  background: rgba(239, 68, 68, 0.14);
+}
+
+.split-hunk {
+  border-bottom: 1px dashed rgba(120, 98, 83, 0.2);
+}
+
+.split-hunk-label {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 4px 10px;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #8a7565;
+  background: rgba(243, 232, 215, 0.9);
+  border-bottom: 1px solid rgba(120, 98, 83, 0.15);
+}
+
 .split-row {
   display: grid;
   grid-template-columns: 40px 1fr;
@@ -2191,12 +2266,34 @@ body {
   line-height: 1.4;
 }
 
+.split-row.clickable {
+  cursor: pointer;
+}
+
 .split-row.added {
   background: rgba(16, 185, 129, 0.12);
 }
 
 .split-row.removed {
   background: rgba(239, 68, 68, 0.12);
+}
+
+.split-row.changed {
+  background: rgba(245, 158, 11, 0.13);
+}
+
+.split-row.side-empty {
+  background: rgba(120, 98, 83, 0.05);
+}
+
+.split-row.side-empty .line-text {
+  opacity: 0.45;
+}
+
+.split-row.is-active-change {
+  outline: 1px solid rgba(180, 74, 47, 0.55);
+  outline-offset: -1px;
+  background: rgba(180, 74, 47, 0.14);
 }
 
 .line-no {
