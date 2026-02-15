@@ -94,6 +94,186 @@ function getAuthHeader(): Record<string, string> {
   return { Authorization: `Bearer ${token}` };
 }
 
+function stripCodeFence(text: string) {
+  const raw = String(text || '').trim();
+  if (!raw.startsWith('```')) return raw;
+  return raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim();
+}
+
+function decodeEscapedChar(ch: string) {
+  switch (ch) {
+    case 'n': return '\n';
+    case 'r': return '\r';
+    case 't': return '\t';
+    case 'b': return '\b';
+    case 'f': return '\f';
+    case '"': return '"';
+    case '\'': return '\'';
+    case '\\': return '\\';
+    case '/': return '/';
+    default: return ch;
+  }
+}
+
+function parseQuotedString(text: string, quote: string, startIndex: number) {
+  let i = startIndex;
+  let out = '';
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === '\\') {
+      const next = text[i + 1];
+      if (next === 'u' && /^[0-9a-fA-F]{4}$/.test(text.slice(i + 2, i + 6))) {
+        out += String.fromCharCode(Number.parseInt(text.slice(i + 2, i + 6), 16));
+        i += 6;
+        continue;
+      }
+      if (next) {
+        out += decodeEscapedChar(next);
+        i += 2;
+        continue;
+      }
+      i += 1;
+      continue;
+    }
+    if (ch === quote) {
+      return { value: out, end: i };
+    }
+    out += ch;
+    i += 1;
+  }
+  return { value: out, end: text.length - 1 };
+}
+
+function extractFieldFromJsonLike(text: string, field: string) {
+  const raw = stripCodeFence(text);
+  if (!raw) return '';
+  const matcher = new RegExp(`["']?${field}["']?\\s*:\\s*`, 'i');
+  const match = matcher.exec(raw);
+  if (!match) return '';
+  let i = match.index + match[0].length;
+  while (i < raw.length && /\s/.test(raw[i])) i += 1;
+  if (i >= raw.length) return '';
+  const lead = raw[i];
+  if (lead === '"' || lead === '\'') {
+    return parseQuotedString(raw, lead, i + 1).value.trim();
+  }
+  let j = i;
+  while (j < raw.length && ![',', '\n', '\r', '}'].includes(raw[j])) j += 1;
+  return raw.slice(i, j).trim();
+}
+
+function tryParseObjectText(text: string): Record<string, unknown> | null {
+  const raw = stripCodeFence(text);
+  if (!raw) return null;
+  const candidates = [raw];
+  const first = raw.indexOf('{');
+  const last = raw.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    candidates.push(raw.slice(first, last + 1));
+  }
+  for (const candidate of candidates) {
+    try {
+      const parsed = JSON.parse(candidate);
+      if (parsed && typeof parsed === 'object') return parsed as Record<string, unknown>;
+    } catch {
+      // ignore
+    }
+  }
+  return null;
+}
+
+function extractMessageContent(value: unknown) {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') return item;
+        if (item && typeof item === 'object' && typeof (item as { text?: unknown }).text === 'string') {
+          return String((item as { text?: unknown }).text);
+        }
+        return '';
+      })
+      .join('')
+      .trim();
+  }
+  return '';
+}
+
+function toTextCandidate(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (!value || typeof value !== 'object') return String(value || '');
+  const obj = value as Record<string, unknown>;
+
+  const directReply = typeof obj.reply === 'string' ? obj.reply : '';
+  if (directReply) return directReply;
+  const directMessage = typeof obj.message === 'string' ? obj.message : '';
+  if (directMessage) return directMessage;
+  const directOutput = typeof obj.output_text === 'string' ? obj.output_text : '';
+  if (directOutput) return directOutput;
+
+  const choices = Array.isArray(obj.choices) ? obj.choices : [];
+  const firstChoice = choices[0] as Record<string, unknown> | undefined;
+  if (firstChoice) {
+    const message = firstChoice.message as Record<string, unknown> | undefined;
+    const messageContent = extractMessageContent(message?.content);
+    if (messageContent) return messageContent;
+    if (typeof firstChoice.text === 'string') return firstChoice.text;
+  }
+
+  const candidates = Array.isArray(obj.candidates) ? obj.candidates : [];
+  const firstCandidate = candidates[0] as Record<string, unknown> | undefined;
+  const parts = firstCandidate?.content && typeof firstCandidate.content === 'object'
+    ? (firstCandidate.content as { parts?: unknown[] }).parts
+    : undefined;
+  if (Array.isArray(parts)) {
+    const text = parts.map((part) => String((part as { text?: unknown })?.text || '')).join('').trim();
+    if (text) return text;
+  }
+
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
+  }
+}
+
+function normalizeAgentText(
+  rawReply: unknown,
+  rawSuggestion: unknown
+): { reply: string; suggestion: string } {
+  let directReply = toTextCandidate(rawReply);
+  let directSuggestion = toTextCandidate(rawSuggestion);
+
+  for (let depth = 0; depth < 4; depth += 1) {
+    const parsed = tryParseObjectText(directReply);
+    if (!parsed) {
+      const fallbackReply = extractFieldFromJsonLike(directReply, 'reply')
+        || extractFieldFromJsonLike(directReply, 'message');
+      const fallbackSuggestion = extractFieldFromJsonLike(directReply, 'suggestion');
+      if (fallbackReply) directReply = fallbackReply;
+      if (fallbackSuggestion) directSuggestion = fallbackSuggestion;
+      break;
+    }
+
+    const completionText = toTextCandidate(parsed);
+    if (completionText && completionText !== directReply) {
+      directReply = completionText;
+      continue;
+    }
+
+    const nestedReply =
+      typeof parsed.reply === 'string'
+        ? parsed.reply
+        : (typeof parsed.message === 'string' ? parsed.message : '');
+    const nestedSuggestion = typeof parsed.suggestion === 'string' ? parsed.suggestion : '';
+    if (nestedReply) directReply = nestedReply;
+    if (nestedSuggestion) directSuggestion = nestedSuggestion;
+    if (!nestedReply) break;
+  }
+
+  return { reply: directReply, suggestion: directSuggestion };
+}
+
 async function request<T>(url: string, options?: RequestInit): Promise<T> {
   const lang = getLangHeader();
   const mergedHeaders: Record<string, string> = {
@@ -289,9 +469,12 @@ export function runAgent(payload: {
   interaction?: 'chat' | 'agent';
   history?: { role: 'user' | 'assistant'; content: string }[];
 }) {
-  return request<{ ok: boolean; reply: string; suggestion: string; patches?: { path: string; diff: string; content: string }[] }>(`/api/agent/run`, {
+  return request<{ ok: boolean; reply: unknown; suggestion: unknown; patches?: { path: string; diff: string; content: string }[] }>(`/api/agent/run`, {
     method: 'POST',
     body: JSON.stringify(payload)
+  }).then((res) => {
+    const normalized = normalizeAgentText(res.reply, res.suggestion);
+    return { ...res, reply: normalized.reply, suggestion: normalized.suggestion };
   });
 }
 
