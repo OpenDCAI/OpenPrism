@@ -1,4 +1,5 @@
 import { promises as fs } from 'fs';
+import crypto from 'crypto';
 import path from 'path';
 import { ensureDir } from '../../utils/fsUtils.js';
 import { safeJoin } from '../../utils/pathUtils.js';
@@ -181,4 +182,156 @@ export async function writeFileWithSnapshot(projectRoot, relPath, content, jobId
 
   await ensureDir(path.dirname(absPath));
   await fs.writeFile(absPath, content, 'utf8');
+}
+
+// ---------------------------------------------------------------------------
+// LLM debug logging
+// ---------------------------------------------------------------------------
+
+const DEBUG_LEVELS = new Set(['off', 'meta', 'preview', 'full']);
+
+function getTransferDebugConfig() {
+  const requested = String(process.env.OPENPRISM_TRANSFER_DEBUG_LEVEL || 'preview')
+    .trim()
+    .toLowerCase();
+  const level = DEBUG_LEVELS.has(requested) ? requested : 'preview';
+  const allowFull = String(process.env.OPENPRISM_TRANSFER_DEBUG_FULL || '')
+    .trim()
+    .toLowerCase() === 'true';
+  const rawPreviewChars = Number.parseInt(String(process.env.OPENPRISM_TRANSFER_DEBUG_PREVIEW_CHARS || '400'), 10);
+  const previewChars = Number.isFinite(rawPreviewChars)
+    ? Math.max(60, Math.min(rawPreviewChars, 4000))
+    : 400;
+  return { level, allowFull, previewChars };
+}
+
+function normalizeTextContent(content) {
+  if (content === undefined || content === null) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content
+      .map(part => {
+        if (typeof part === 'string') return part;
+        try {
+          return JSON.stringify(part);
+        } catch {
+          return String(part);
+        }
+      })
+      .join('\n');
+  }
+  if (typeof content === 'object') {
+    try {
+      return JSON.stringify(content);
+    } catch {
+      return String(content);
+    }
+  }
+  return String(content);
+}
+
+function flattenMessages(messages) {
+  if (!Array.isArray(messages)) return '';
+  return messages
+    .map((m) => {
+      if (!m || typeof m !== 'object') return String(m || '');
+      const role = m.role || m._getType?.() || m.type || 'message';
+      const content = normalizeTextContent(m.content);
+      return `[${role}]\n${content}`;
+    })
+    .join('\n\n');
+}
+
+function sha256(text) {
+  return crypto.createHash('sha256').update(text).digest('hex');
+}
+
+function toSingleLine(text) {
+  return String(text || '').replace(/\s+/g, ' ').trim();
+}
+
+function previewPair(text, previewChars) {
+  if (!text) return { head: '', tail: '' };
+  if (text.length <= previewChars * 2) {
+    return { head: text, tail: '' };
+  }
+  return {
+    head: text.slice(0, previewChars),
+    tail: text.slice(-previewChars),
+  };
+}
+
+async function appendLlmDebugRecord(state, record) {
+  if (!state?.targetProjectRoot || !state?.jobId) return;
+  const debugDir = path.join(state.targetProjectRoot, '.agent_runs', state.jobId);
+  await ensureDir(debugDir);
+  const file = path.join(debugDir, 'llm_debug.jsonl');
+  const line = `${JSON.stringify({ ts: new Date().toISOString(), ...record })}\n`;
+  await fs.appendFile(file, line, 'utf8');
+}
+
+export async function invokeLLMTextWithDebug({ llm, messages, state, nodeName }) {
+  const debug = getTransferDebugConfig();
+  const requestText = flattenMessages(messages);
+  const promptLength = requestText.length;
+  const promptHash = sha256(requestText);
+  const promptPreview = previewPair(requestText, debug.previewChars);
+
+  const progressLog = [];
+  if (debug.level !== 'off') {
+    progressLog.push(`[${nodeName}] LLM request: promptLen=${promptLength}, promptSha256=${promptHash}.`);
+    if (debug.level !== 'meta') {
+      progressLog.push(`[${nodeName}] prompt preview: ${toSingleLine(promptPreview.head).slice(0, 240)}`);
+      if (promptPreview.tail) {
+        progressLog.push(`[${nodeName}] prompt preview tail: ${toSingleLine(promptPreview.tail).slice(0, 240)}`);
+      }
+    }
+
+    const requestRecord = {
+      type: 'llm.request',
+      node: nodeName,
+      promptLength,
+      promptSha256: promptHash,
+      promptPreviewHead: promptPreview.head,
+      promptPreviewTail: promptPreview.tail,
+    };
+    if (debug.level === 'full' && debug.allowFull) {
+      requestRecord.promptFull = requestText;
+    }
+    await appendLlmDebugRecord(state, requestRecord);
+  }
+
+  const startedAt = Date.now();
+  const response = await llm.invoke(messages);
+  const responseText = normalizeTextContent(response.content);
+  const durationMs = Date.now() - startedAt;
+  const responseLength = responseText.length;
+  const responseHash = sha256(responseText);
+  const responsePreview = previewPair(responseText, debug.previewChars);
+
+  if (debug.level !== 'off') {
+    progressLog.push(`[${nodeName}] LLM response: durationMs=${durationMs}, responseLen=${responseLength}, responseSha256=${responseHash}.`);
+    if (debug.level !== 'meta') {
+      progressLog.push(`[${nodeName}] response preview: ${toSingleLine(responsePreview.head).slice(0, 240)}`);
+      if (responsePreview.tail) {
+        progressLog.push(`[${nodeName}] response preview tail: ${toSingleLine(responsePreview.tail).slice(0, 240)}`);
+      }
+    }
+
+    const responseRecord = {
+      type: 'llm.response',
+      node: nodeName,
+      durationMs,
+      responseLength,
+      responseSha256: responseHash,
+      responsePreviewHead: responsePreview.head,
+      responsePreviewTail: responsePreview.tail,
+    };
+    if (debug.level === 'full' && debug.allowFull) {
+      responseRecord.responseFull = responseText;
+    }
+    await appendLlmDebugRecord(state, responseRecord);
+  }
+
+  return { text: responseText, progressLog };
 }

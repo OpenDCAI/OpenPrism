@@ -4,7 +4,7 @@ import path from 'path';
 import unzipper from 'unzipper';
 import { readTemplateManifest, addTemplateToManifest } from '../services/templateService.js';
 import { TEMPLATE_DIR } from '../config/constants.js';
-import { ensureDir } from '../utils/fsUtils.js';
+import { ensureDir, listFilesRecursive } from '../utils/fsUtils.js';
 import { sanitizeUploadPath } from '../utils/pathUtils.js';
 import { safeJoin } from '../utils/pathUtils.js';
 
@@ -14,6 +14,29 @@ export function registerHealthRoutes(fastify) {
   fastify.get('/api/templates', async () => {
     const { templates, categories } = await readTemplateManifest();
     return { templates, categories };
+  });
+
+  fastify.get('/api/templates/:templateId/files', async (req, reply) => {
+    const { templateId } = req.params || {};
+    if (!templateId) {
+      return reply.code(400).send({ error: 'templateId is required.' });
+    }
+
+    let templateRoot;
+    try {
+      templateRoot = safeJoin(TEMPLATE_DIR, templateId);
+      await fs.access(templateRoot);
+    } catch {
+      return reply.code(404).send({ error: `Template not found: ${templateId}` });
+    }
+
+    const allFiles = await listFilesRecursive(templateRoot);
+    const texFiles = allFiles
+      .filter(f => f.type === 'file' && f.path.toLowerCase().endsWith('.tex'))
+      .map(f => f.path)
+      .sort((a, b) => a.localeCompare(b));
+
+    return { files: texFiles };
   });
 
   fastify.post('/api/templates/upload', async (req, reply) => {

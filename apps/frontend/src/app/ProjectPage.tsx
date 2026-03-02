@@ -14,13 +14,19 @@ import {
   trashProject,
   updateProjectTags,
   permanentDeleteProject,
-  uploadTemplate
+  uploadTemplate,
+  transferStatus,
+  transferSubmitImages,
 } from '../api/client';
 import type { ProjectMeta, TemplateMeta, TemplateCategory } from '../api/client';
 import TransferPanel from './TransferPanel';
 
 type ViewFilter = 'all' | 'mine' | 'archived' | 'trash';
 type SortBy = 'updatedAt' | 'name' | 'createdAt';
+const TERMINAL_TRANSFER_STATUS = new Set(['success', 'failed', 'error']);
+const TRANSFER_POLL_MS = 1000;
+const MAX_WIDGET_LOG_LINES = 80;
+const MAX_WIDGET_LOG_LINE_CHARS = 180;
 
 const SETTINGS_KEY = 'openprism-settings-v1';
 
@@ -117,19 +123,109 @@ export default function ProjectPage() {
 
   // Active transfer job (persists after modal close)
   const [activeJob, setActiveJob] = useState<{
-    jobId: string; status: string; progressLog: string[]; error?: string;
+    jobId: string;
+    status: string;
+    progressLog: string[];
+    error?: string | null;
+    currentNode?: string | null;
+    startedAt?: string | null;
+    updatedAt?: string | null;
+    finishedAt?: string | null;
     sourceName?: string;
+    sourceId?: string;
   } | null>(null);
   const [jobWidgetOpen, setJobWidgetOpen] = useState(true);
+  const jobPollTimerRef = useRef<number | null>(null);
+  const autoResumeRef = useRef<Set<string>>(new Set());
+  const monitoredJobIdRef = useRef<string | null>(null);
 
   // Template upload state
   const templateZipRef = useRef<HTMLInputElement | null>(null);
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
+  const formatWidgetLogLine = (line: string) => {
+    const text = String(line || '');
+    if (text.length <= MAX_WIDGET_LOG_LINE_CHARS) return text;
+    return `${text.slice(0, MAX_WIDGET_LOG_LINE_CHARS)}...`;
+  };
 
   const loadProjects = useCallback(async () => {
     const res = await listProjects();
     setProjects(res.projects || []);
   }, []);
+
+  const stopTransferMonitor = useCallback(() => {
+    monitoredJobIdRef.current = null;
+    if (jobPollTimerRef.current !== null) {
+      window.clearTimeout(jobPollTimerRef.current);
+      jobPollTimerRef.current = null;
+    }
+  }, []);
+
+  const pollTransferJob = useCallback(async (jobId: string) => {
+    if (monitoredJobIdRef.current !== jobId) return;
+    try {
+      const res = await transferStatus(jobId);
+      if (monitoredJobIdRef.current !== jobId) return;
+
+      setActiveJob((prev) => {
+        if (!prev || prev.jobId !== jobId) return prev;
+        return {
+          ...prev,
+          status: res.status,
+          progressLog: res.progressLog || [],
+          error: res.error || null,
+          currentNode: res.currentNode || null,
+          startedAt: res.startedAt || null,
+          updatedAt: res.updatedAt || null,
+          finishedAt: res.finishedAt || null,
+        };
+      });
+
+      if (res.status === 'waiting_images' && !autoResumeRef.current.has(jobId)) {
+        autoResumeRef.current.add(jobId);
+        await transferSubmitImages(jobId, []);
+      }
+
+      if (TERMINAL_TRANSFER_STATUS.has(res.status)) {
+        stopTransferMonitor();
+        if (res.status === 'success') {
+          loadProjects().catch(() => {});
+        }
+        return;
+      }
+
+      jobPollTimerRef.current = window.setTimeout(() => {
+        pollTransferJob(jobId).catch(() => {});
+      }, TRANSFER_POLL_MS);
+    } catch (err) {
+      setActiveJob((prev) => {
+        if (!prev || prev.jobId !== jobId) return prev;
+        return {
+          ...prev,
+          status: 'error',
+          error: String(err),
+        };
+      });
+      stopTransferMonitor();
+    }
+  }, [loadProjects, stopTransferMonitor]);
+
+  const startTransferMonitor = useCallback((job: {
+    jobId: string;
+    status: string;
+    progressLog: string[];
+    error?: string | null;
+    currentNode?: string | null;
+    sourceName?: string;
+    sourceId?: string;
+  }) => {
+    stopTransferMonitor();
+    monitoredJobIdRef.current = job.jobId;
+    autoResumeRef.current.delete(job.jobId);
+    setActiveJob(job);
+    setJobWidgetOpen(true);
+    pollTransferJob(job.jobId).catch(() => {});
+  }, [pollTransferJob, stopTransferMonitor]);
 
   useEffect(() => {
     loadProjects().catch((err) => setStatus(t('加载项目失败: {{error}}', { error: String(err) })));
@@ -146,6 +242,8 @@ export default function ProjectPage() {
       })
       .catch((err) => setStatus(t('模板加载失败: {{error}}', { error: String(err) })));
   }, [createTemplate, t]);
+
+  useEffect(() => () => stopTransferMonitor(), [stopTransferMonitor]);
 
   const allTags = useMemo(() => {
     const s = new Set<string>();
@@ -324,6 +422,13 @@ export default function ProjectPage() {
     } finally {
       setUploadingTemplate(false);
       if (templateZipRef.current) templateZipRef.current.value = '';
+    }
+  };
+
+  const minimizeTransferModal = () => {
+    setTransferOpen(false);
+    if (activeJob && !TERMINAL_TRANSFER_STATUS.has(activeJob.status)) {
+      setJobWidgetOpen(true);
     }
   };
 
@@ -891,19 +996,22 @@ export default function ProjectPage() {
 
       {/* Transfer Modal */}
       {transferOpen && transferSource && (
-        <div className="modal-backdrop" onClick={() => setTransferOpen(false)}>
+        <div className="modal-backdrop" onClick={minimizeTransferModal}>
           <div className="modal" onClick={(event) => event.stopPropagation()}>
             <div className="modal-header">
               <div>{t('模板转换')} — {transferSource.name}</div>
-              <button className="icon-btn" onClick={() => setTransferOpen(false)}>✕</button>
+              <button className="icon-btn" onClick={minimizeTransferModal}>✕</button>
             </div>
             <div className="modal-body">
               <TransferPanel
                 projectId={transferSource.id}
-                onJobUpdate={(job) => {
-                  setActiveJob({ ...job, sourceName: transferSource.name });
-                  setJobWidgetOpen(true);
-                  if (job.status === 'success') loadProjects();
+                jobState={activeJob && activeJob.sourceId === transferSource.id ? activeJob : null}
+                onJobStart={(job) => {
+                  startTransferMonitor({
+                    ...job,
+                    sourceName: transferSource.name,
+                    sourceId: transferSource.id,
+                  });
                 }}
               />
             </div>
@@ -918,22 +1026,31 @@ export default function ProjectPage() {
             <span>{t('模板转换')} — {activeJob.sourceName || ''}</span>
             <div style={{ display: 'flex', gap: 4 }}>
               <button className="icon-btn" onClick={() => {
+                if (activeJob.sourceId && activeJob.sourceName) {
+                  setTransferSource({ id: activeJob.sourceId, name: activeJob.sourceName });
+                }
                 setTransferOpen(true);
-                if (transferSource) setTransferSource(transferSource);
               }} title={t('展开')}>&#x2197;</button>
               <button className="icon-btn" onClick={() => setJobWidgetOpen(false)}>✕</button>
             </div>
           </div>
           <div className="transfer-widget-status">
             <strong>{t('状态')}:</strong> {activeJob.status}
+            {activeJob.currentNode && (
+              <span style={{ marginLeft: 8, color: 'var(--muted)' }}>
+                ({t('节点')}: {activeJob.currentNode})
+              </span>
+            )}
           </div>
           {activeJob.error && (
             <div className="transfer-widget-error">{activeJob.error}</div>
           )}
           {activeJob.progressLog.length > 0 && (
             <div className="transfer-widget-log">
-              {activeJob.progressLog.map((line, i) => (
-                <div key={i}>{line}</div>
+              {activeJob.progressLog.slice(-MAX_WIDGET_LOG_LINES).map((line, i) => (
+                <div key={i} className="transfer-log-line" title={line}>
+                  {formatWidgetLogLine(line)}
+                </div>
               ))}
             </div>
           )}

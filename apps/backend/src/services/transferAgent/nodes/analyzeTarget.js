@@ -7,7 +7,7 @@ import { listFilesRecursive } from '../../../utils/fsUtils.js';
 /**
  * Recursively resolve \input{} and \include references.
  */
-async function resolveInputs(projectRoot, relPath, visited = new Set()) {
+async function resolveInputs(projectRoot, relPath, visited = new Set(), strictRoot = false) {
   if (visited.has(relPath)) return '';
   visited.add(relPath);
 
@@ -15,7 +15,10 @@ async function resolveInputs(projectRoot, relPath, visited = new Set()) {
   let content;
   try {
     content = await fs.readFile(absPath, 'utf8');
-  } catch {
+  } catch (err) {
+    if (strictRoot) {
+      throw new Error(`[analyzeTarget] Failed to read target main file "${relPath}": ${err?.message || 'not found'}`);
+    }
     return '';
   }
 
@@ -66,7 +69,10 @@ function parseOutline(content) {
 export async function analyzeTarget(state) {
   const projectRoot = await getProjectRoot(state.targetProjectId);
 
-  const fullContent = await resolveInputs(projectRoot, state.targetMainFile);
+  const fullContent = await resolveInputs(projectRoot, state.targetMainFile, new Set(), true);
+  if (!fullContent.trim()) {
+    throw new Error(`[analyzeTarget] Target template content is empty: ${state.targetMainFile}`);
+  }
   const preamble = extractPreamble(fullContent);
   const outline = parseOutline(fullContent);
 

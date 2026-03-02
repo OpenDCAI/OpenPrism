@@ -224,7 +224,7 @@ async function downloadAndExtractZip(zipUrl, outputDir) {
  *     <name>_content_list.json (or similar)
  */
 async function parseExtractedOutput(outputDir) {
-  const markdownPath = await findFirstFileRecursive(outputDir, p => p.toLowerCase().endsWith('.md'));
+  const { markdownPath, selectionReason } = await selectMarkdownFile(outputDir);
   if (!markdownPath) {
     throw new Error('MinerU output missing markdown file');
   }
@@ -245,21 +245,62 @@ async function parseExtractedOutput(outputDir) {
     images.push(...fallback);
   }
 
-  return { markdownContent, images, searchDir };
+  return { markdownContent, images, searchDir, markdownPath, selectionReason };
 }
 
-async function findFirstFileRecursive(rootDir, predicate) {
+async function selectMarkdownFile(outputDir) {
+  const preferred = path.join(outputDir, 'full.md');
+  try {
+    const text = await fs.readFile(preferred, 'utf8');
+    if (text.trim()) {
+      return { markdownPath: preferred, selectionReason: 'preferred-full-md' };
+    }
+  } catch {
+    // Ignore missing preferred file.
+  }
+
+  const candidates = await findFilesRecursive(outputDir, p => p.toLowerCase().endsWith('.md'));
+  if (!candidates.length) {
+    return { markdownPath: '', selectionReason: 'none' };
+  }
+
+  const ranked = [];
+  for (const candidate of candidates) {
+    try {
+      const stat = await fs.stat(candidate);
+      ranked.push({ path: candidate, size: stat.size || 0 });
+    } catch {
+      // Ignore unreadable files.
+    }
+  }
+  ranked.sort((a, b) => b.size - a.size);
+
+  for (const item of ranked) {
+    try {
+      const text = await fs.readFile(item.path, 'utf8');
+      if (text.trim()) {
+        return { markdownPath: item.path, selectionReason: 'fallback-largest-md' };
+      }
+    } catch {
+      // Ignore unreadable files.
+    }
+  }
+
+  return { markdownPath: '', selectionReason: 'none' };
+}
+
+async function findFilesRecursive(rootDir, predicate) {
+  const out = [];
   const entries = await fs.readdir(rootDir, { withFileTypes: true });
   for (const entry of entries) {
     const abs = path.join(rootDir, entry.name);
-    if (entry.isFile() && predicate(abs)) return abs;
+    if (entry.isFile() && predicate(abs)) out.push(abs);
   }
   for (const entry of entries) {
     if (!entry.isDirectory()) continue;
-    const found = await findFirstFileRecursive(path.join(rootDir, entry.name), predicate);
-    if (found) return found;
+    out.push(...await findFilesRecursive(path.join(rootDir, entry.name), predicate));
   }
-  return '';
+  return out;
 }
 
 function isImageFilePath(filePath) {

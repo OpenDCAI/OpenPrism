@@ -3695,6 +3695,13 @@ textarea.input {
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  animation: transfer-widget-enter 180ms ease-out;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.transfer-widget:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 28px rgba(41, 27, 17, 0.16);
 }
 
 .transfer-widget-header {
@@ -3731,11 +3738,28 @@ textarea.input {
   font-size: 11px;
   font-family: 'JetBrains Mono', monospace;
   background: rgba(120, 98, 83, 0.06);
-  max-height: 220px;
+  max-height: 150px;
   overflow-y: auto;
   line-height: 1.5;
 }
 
 .transfer-widget-log > div {
   margin-bottom: 2px;
+}
+
+.transfer-log-line {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes transfer-widget-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }

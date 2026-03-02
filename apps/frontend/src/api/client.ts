@@ -313,6 +313,10 @@ export function listTemplates() {
   return request<{ templates: TemplateMeta[]; categories?: TemplateCategory[] }>('/api/templates');
 }
 
+export function listTemplateFiles(templateId: string) {
+  return request<{ files: string[] }>(`/api/templates/${encodeURIComponent(templateId)}/files`);
+}
+
 export async function uploadTemplate(templateId: string, templateLabel: string, file: File) {
   const form = new FormData();
   form.append('templateId', templateId);
@@ -480,6 +484,11 @@ export interface TransferStepResult {
   status: string;
   progressLog: string[];
   error?: string;
+  currentNode?: string | null;
+  startedAt?: string | null;
+  updatedAt?: string | null;
+  finishedAt?: string | null;
+  transferMode?: 'legacy' | 'mineru';
 }
 
 export interface PageImage {

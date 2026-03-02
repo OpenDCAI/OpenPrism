@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import { ChatOpenAI } from '@langchain/openai';
 import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
-import { writeFileWithSnapshot, stripCodeFences } from '../utils.js';
+import { writeFileWithSnapshot, stripCodeFences, invokeLLMTextWithDebug } from '../utils.js';
 
 /**
  * Build the LLM prompt for content migration.
@@ -86,8 +86,13 @@ async function applyTransferLegacy(state) {
   });
 
   const prompt = buildTransferPrompt(state);
-  const response = await llm.invoke([{ role: 'user', content: prompt }]);
-  const newContent = stripCodeFences(response.content);
+  const { text, progressLog } = await invokeLLMTextWithDebug({
+    llm,
+    messages: [{ role: 'user', content: prompt }],
+    state,
+    nodeName: 'applyTransfer',
+  });
+  const newContent = stripCodeFences(text);
 
   await writeFileWithSnapshot(
     state.targetProjectRoot,
@@ -97,7 +102,10 @@ async function applyTransferLegacy(state) {
   );
 
   return {
-    progressLog: `[applyTransfer] Wrote migrated content to ${state.targetMainFile} (${newContent.length} chars).`,
+    progressLog: [
+      ...progressLog,
+      `[applyTransfer] Wrote migrated content to ${state.targetMainFile} (${newContent.length} chars).`,
+    ],
   };
 }
 
@@ -115,8 +123,13 @@ async function applyTransferMineru(state) {
   });
 
   const prompt = buildMineruTransferPrompt(state);
-  const response = await llm.invoke([{ role: 'user', content: prompt }]);
-  const newContent = stripCodeFences(response.content);
+  const { text, progressLog } = await invokeLLMTextWithDebug({
+    llm,
+    messages: [{ role: 'user', content: prompt }],
+    state,
+    nodeName: 'applyTransfer:mineru',
+  });
+  const newContent = stripCodeFences(text);
 
   await writeFileWithSnapshot(
     state.targetProjectRoot,
@@ -126,7 +139,10 @@ async function applyTransferMineru(state) {
   );
 
   return {
-    progressLog: `[applyTransfer:mineru] Wrote content to ${state.targetMainFile} (${newContent.length} chars).`,
+    progressLog: [
+      ...progressLog,
+      `[applyTransfer:mineru] Wrote content to ${state.targetMainFile} (${newContent.length} chars).`,
+    ],
   };
 }
 
