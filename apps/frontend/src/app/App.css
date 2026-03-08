@@ -3739,3 +3739,232 @@ textarea.input {
 .transfer-widget-log > div {
   margin-bottom: 2px;
 }
+
+/* ── Conversation history ── */
+
+.conv-actions {
+  display: flex;
+  gap: 2px;
+  margin-left: 6px;
+}
+
+.conv-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 24px;
+  height: 24px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.conv-btn:hover,
+.conv-btn.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.conversation-title-bar {
+  padding: 2px 14px 4px;
+  font-size: 11px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-muted);
+}
+
+.history-dropdown {
+  max-height: 240px;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.history-empty {
+  padding: 16px 14px;
+  text-align: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.history-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: background 0.12s;
+  border-bottom: 1px solid rgba(120, 98, 83, 0.08);
+}
+
+.history-item:hover {
+  background: var(--accent-soft);
+}
+
+.history-item.active {
+  background: rgba(180, 74, 47, 0.10);
+}
+
+.history-item-info {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  overflow: hidden;
+  flex: 1;
+  min-width: 0;
+}
+
+.history-item-title {
+  font-size: 12px;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.history-item-time {
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.history-item-delete {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 6px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.history-item:hover .history-item-delete {
+  opacity: 1;
+}
+
+@media (pointer: coarse) {
+  .history-item-delete {
+    opacity: 1;
+  }
+}
+
+.history-item-delete:hover {
+  color: var(--accent);
+}
+
+.history-item-rename {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 13px;
+  cursor: pointer;
+  padding: 0 2px;
+  margin-left: 4px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.history-item:hover .history-item-rename {
+  opacity: 1;
+}
+
+.history-item-rename:hover {
+  color: var(--accent);
+}
+
+.conv-rename-input {
+  width: 100%;
+  border: 1px solid var(--accent);
+  border-radius: 3px;
+  background: var(--paper);
+  color: var(--text);
+  font-size: 12px;
+  padding: 1px 4px;
+  outline: none;
+  font-family: inherit;
+}
+
+.conversation-title-bar:hover {
+  background: rgba(120, 98, 83, 0.06);
+}
+
+.conversation-title-bar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  cursor: default;
+}
+
+.conversation-title-text {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.conv-title-edit-btn {
+  background: none;
+  border: none;
+  color: var(--muted);
+  font-size: 12px;
+  cursor: pointer;
+  padding: 0 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s, color 0.15s;
+}
+
+.conversation-title-bar:hover .conv-title-edit-btn {
+  opacity: 1;
+}
+
+.conv-title-edit-btn:hover {
+  color: var(--accent);
+}
+
+/* ── Message action buttons (copy / retry) ── */
+
+.msg-actions {
+  display: flex;
+  gap: 4px;
+  margin-top: 4px;
+  opacity: 0;
+  transition: opacity 0.15s;
+}
+
+.chat-msg:hover .msg-actions {
+  opacity: 1;
+}
+
+.msg-action-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  width: 26px;
+  height: 22px;
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s, color 0.15s;
+}
+
+.msg-action-btn:hover {
+  background: var(--accent-soft);
+  color: var(--accent);
+}

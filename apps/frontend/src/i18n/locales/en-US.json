@@ -497,5 +497,13 @@
   "LLM API Endpoint": "LLM API Endpoint",
   "LLM API Key": "LLM API Key",
   "LLM Model": "LLM Model",
-  "展开": "Expand"
+  "展开": "Expand",
+  "新建对话": "New Chat",
+  "历史记录": "History",
+  "清空对话": "Clear",
+  "确定清空当前对话？": "Clear current conversation?",
+  "无历史记录": "No history",
+  "新对话": "New conversation",
+  "重命名对话": "Rename conversation",
+  "重新生成": "Regenerate"
 }

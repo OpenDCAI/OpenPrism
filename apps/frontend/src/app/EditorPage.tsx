@@ -70,6 +70,17 @@ interface PendingChange {
   diff: string;
 }
 
+interface SendPromptOptions {
+  promptOverride?: string;
+  historyOverride?: Message[];
+  modeOverride?: 'chat' | 'agent';
+}
+
+interface ProjectScopedState {
+  projectId: string | null;
+  token: number;
+}
+
 type InlineEdit =
   | { kind: 'new-file' | 'new-folder'; parent: string; value: string }
   | { kind: 'rename'; path: string; value: string };
@@ -153,6 +164,67 @@ function persistSettings(settings: AppSettings) {
   } catch {
     // ignore
   }
+}
+
+/* ── Conversation history persistence ── */
+
+interface Conversation {
+  id: string;
+  title: string;
+  mode: 'chat' | 'agent';
+  messages: Message[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+const HISTORY_KEY_PREFIX = 'openprism-chat-history-';
+const MAX_CONVERSATIONS = 50;
+const MAX_MESSAGES = 100;
+
+function loadConversations(pid: string): Conversation[] {
+  if (typeof window === 'undefined' || !pid) return [];
+  try {
+    const raw = window.localStorage.getItem(HISTORY_KEY_PREFIX + pid);
+    if (!raw) return [];
+    return JSON.parse(raw) as Conversation[];
+  } catch {
+    return [];
+  }
+}
+
+function persistConversations(pid: string, convs: Conversation[]) {
+  if (typeof window === 'undefined' || !pid) return;
+  try {
+    const trimmed = convs.slice(0, MAX_CONVERSATIONS).map((c) => ({
+      ...c,
+      messages: c.messages.slice(-MAX_MESSAGES)
+    }));
+    window.localStorage.setItem(HISTORY_KEY_PREFIX + pid, JSON.stringify(trimmed));
+  } catch {
+    // ignore
+  }
+}
+
+function generateConversationTitle(messages: Message[], fallbackTitle: string): string {
+  const first = messages.find((m) => m.role === 'user');
+  if (!first) return fallbackTitle;
+  const text = first.content.replace(/\s+/g, ' ').trim();
+  return text.length > 30 ? text.slice(0, 30) + '\u2026' : text;
+}
+
+function relativeTime(iso: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
+  const diff = Date.now() - new Date(iso).getTime();
+  const minutes = Math.floor(diff / 60000);
+  if (minutes < 1) return t('\u521a\u521a');
+  if (minutes < 60) return t('{{n}} \u5206\u949f\u524d', { n: minutes });
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return t('{{n}} \u5c0f\u65f6\u524d', { n: hours });
+  const days = Math.floor(hours / 24);
+  return t('{{n}} \u5929\u524d', { n: days });
+}
+
+function createLocalId(): string {
+  return typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random()}`;
 }
 
 function loadCollabName() {
@@ -1230,6 +1302,9 @@ export default function EditorPage() {
   const [assistantMode, setAssistantMode] = useState<'chat' | 'agent'>('agent');
   const [chatMessages, setChatMessages] = useState<Message[]>([]);
   const [agentMessages, setAgentMessages] = useState<Message[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
+  const [historyOpen, setHistoryOpen] = useState(false);
   const [prompt, setPrompt] = useState('');
   const [task, setTask] = useState(DEFAULT_TASKS(t)[0].value);
   const [mode, setMode] = useState<'direct' | 'tools'>('direct');
@@ -1347,6 +1422,13 @@ export default function EditorPage() {
   const applyingSuggestionRef = useRef(false);
   const suppressDirtyRef = useRef(false);
   const typewriterTimerRef = useRef<number | null>(null);
+  const activeConvIdRef = useRef<string | null>(null);
+  const sendPromptRef = useRef<((options?: SendPromptOptions) => void) | null>(null);
+  const assistantModeRef = useRef<'chat' | 'agent'>(assistantMode);
+  const projectStateRef = useRef<ProjectScopedState>({ projectId, token: 0 });
+  const conversationsRef = useRef<Conversation[]>([]);
+  const pendingRequestRef = useRef<{ mode: 'chat' | 'agent'; conversationId: string } | null>(null);
+  const sendInFlightRef = useRef(false);
   const requestSuggestionRef = useRef<() => void>(() => {});
   const acceptSuggestionRef = useRef<() => void>(() => {});
   const acceptChunkRef = useRef<() => void>(() => {});
@@ -1381,6 +1463,216 @@ export default function EditorPage() {
   useEffect(() => {
     persistSettings(settings);
   }, [settings]);
+
+  useEffect(() => {
+    assistantModeRef.current = assistantMode;
+  }, [assistantMode]);
+
+  projectStateRef.current = {
+    projectId,
+    token: projectStateRef.current.projectId === projectId ? projectStateRef.current.token : projectStateRef.current.token + 1
+  };
+
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  /* ── Conversation history lifecycle ── */
+  useEffect(() => {
+    setChatMessages([]);
+    setAgentMessages([]);
+    setActiveConversationId(null);
+    activeConvIdRef.current = null;
+    pendingRequestRef.current = null;
+    if (!projectId) {
+      setConversations([]);
+      conversationsRef.current = [];
+      return;
+    }
+    const loaded = loadConversations(projectId);
+    setConversations(loaded);
+    conversationsRef.current = loaded;
+    const latest = loaded.find((c) => c.mode === assistantMode);
+    if (latest) {
+      setActiveConversationId(latest.id);
+      activeConvIdRef.current = latest.id;
+      if (latest.mode === 'chat') setChatMessages(latest.messages);
+      else setAgentMessages(latest.messages);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  const persistCurrentConversation = useCallback(
+    (
+      msgs: Message[],
+      mode: 'chat' | 'agent',
+      options?: { conversationId?: string | null; defaultTitle?: string; requestConversationId?: string }
+    ) => {
+      if (!projectId || msgs.length === 0) return;
+      const originConversationId = options?.conversationId ?? null;
+      const requestConversationId = options?.requestConversationId;
+      const defaultTitle = options?.defaultTitle ?? t('新对话');
+      const now = new Date().toISOString();
+      const baseConversations = conversationsRef.current;
+      const existing = originConversationId
+        ? baseConversations.find((c) => c.id === originConversationId && c.mode === mode)
+        : null;
+
+      let nextConversations: Conversation[];
+      let nextActiveConversationId: string | null = null;
+
+      if (existing) {
+        nextConversations = baseConversations.map((c) =>
+          c.id === existing.id
+            ? {
+                ...c,
+                messages: msgs.slice(-MAX_MESSAGES),
+                title: c.title,
+                updatedAt: now
+              }
+            : c
+        );
+      } else {
+        const id = requestConversationId ?? createLocalId();
+        const conv: Conversation = {
+          id,
+          title: generateConversationTitle(msgs, defaultTitle),
+          mode,
+          messages: msgs.slice(-MAX_MESSAGES),
+          createdAt: now,
+          updatedAt: now
+        };
+        const canActivate =
+          assistantModeRef.current === mode &&
+          (originConversationId ? activeConvIdRef.current === originConversationId : activeConvIdRef.current === null);
+        if (canActivate) {
+          nextActiveConversationId = id;
+        }
+        nextConversations = [conv, ...baseConversations];
+      }
+
+      const sorted = [...nextConversations]
+        .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+        .slice(0, MAX_CONVERSATIONS);
+      persistConversations(projectId, sorted);
+      setConversations(sorted);
+      conversationsRef.current = sorted;
+
+      if (nextActiveConversationId) {
+        setActiveConversationId(nextActiveConversationId);
+        activeConvIdRef.current = nextActiveConversationId;
+        if (pendingRequestRef.current?.mode === mode && pendingRequestRef.current?.conversationId === requestConversationId) {
+          pendingRequestRef.current = { ...pendingRequestRef.current, conversationId: nextActiveConversationId };
+        }
+      }
+    },
+    [projectId, t]
+  );
+
+  const handleNewConversation = useCallback(() => {
+    if (assistantMode === 'chat') setChatMessages([]);
+    else setAgentMessages([]);
+    setActiveConversationId(null);
+    activeConvIdRef.current = null;
+    pendingRequestRef.current = null;
+    setHistoryOpen(false);
+  }, [assistantMode]);
+
+  const handleLoadConversation = useCallback(
+    (conv: Conversation) => {
+      if (conv.mode === 'chat') {
+        setChatMessages(conv.messages);
+        setAssistantMode('chat');
+      } else {
+        setAgentMessages(conv.messages);
+        setAssistantMode('agent');
+      }
+      setActiveConversationId(conv.id);
+      activeConvIdRef.current = conv.id;
+      pendingRequestRef.current = null;
+      setHistoryOpen(false);
+    },
+    []
+  );
+
+  const handleDeleteConversation = useCallback(
+    (convId: string) => {
+      const next = conversationsRef.current.filter((c) => c.id !== convId);
+      persistConversations(projectId, next);
+      setConversations(next);
+      conversationsRef.current = next;
+      if (activeConvIdRef.current === convId) {
+        if (assistantMode === 'chat') setChatMessages([]);
+        else setAgentMessages([]);
+        setActiveConversationId(null);
+        activeConvIdRef.current = null;
+        pendingRequestRef.current = null;
+      }
+    },
+    [projectId, assistantMode]
+  );
+
+  const [renamingConvId, setRenamingConvId] = useState<string | null>(null);
+  const [renamingValue, setRenamingValue] = useState('');
+  const [copiedMsgIdx, setCopiedMsgIdx] = useState<number | null>(null);
+
+  const handleRenameConversation = useCallback(
+    (convId: string, newTitle: string) => {
+      const trimmed = newTitle.trim();
+      setRenamingConvId(null);
+      if (!trimmed) return;
+      const current = conversationsRef.current;
+      const target = current.find((c) => c.id === convId);
+      if (!target || target.title === trimmed) return;
+      const updated = current.map((c) =>
+        c.id === convId ? { ...c, title: trimmed } : c
+      );
+      persistConversations(projectId, updated);
+      setConversations(updated);
+      conversationsRef.current = updated;
+    },
+    [projectId]
+  );
+
+  const handleCopyMessage = useCallback((content: string, idx: number) => {
+    navigator.clipboard.writeText(content).then(() => {
+      setCopiedMsgIdx(idx);
+      setTimeout(() => setCopiedMsgIdx(null), 1500);
+    }).catch(() => { /* ignore */ });
+  }, []);
+
+  const handleRetryMessage = useCallback((idx: number) => {
+    const currentMode = assistantModeRef.current;
+    const msgs = currentMode === 'chat' ? chatMessages : agentMessages;
+    const setHistory = currentMode === 'chat' ? setChatMessages : setAgentMessages;
+    let userMsgIdx = idx - 1;
+    while (userMsgIdx >= 0 && msgs[userMsgIdx].role !== 'user') userMsgIdx--;
+    if (userMsgIdx < 0) return;
+    const userPrompt = msgs[userMsgIdx].content;
+    const trimmed = msgs.slice(0, userMsgIdx);
+    setHistory(trimmed);
+    setPrompt(userPrompt);
+    sendPromptRef.current?.({
+      modeOverride: currentMode,
+      promptOverride: userPrompt,
+      historyOverride: trimmed
+    });
+  }, [agentMessages, chatMessages]);
+
+  const handleClearConversation = useCallback(() => {
+    if (!window.confirm(t('确定清空当前对话？'))) return;
+    if (assistantMode === 'chat') setChatMessages([]);
+    else setAgentMessages([]);
+    if (activeConvIdRef.current) {
+      const next = conversationsRef.current.filter((c) => c.id !== activeConvIdRef.current);
+      persistConversations(projectId, next);
+      setConversations(next);
+      conversationsRef.current = next;
+    }
+    setActiveConversationId(null);
+    activeConvIdRef.current = null;
+    pendingRequestRef.current = null;
+  }, [assistantMode, projectId, t]);
 
   useEffect(() => {
     if (collabServer) {
@@ -3386,12 +3678,19 @@ export default function EditorPage() {
     setPdfFitScale((prev) => (prev && Math.abs(prev - value) < 0.005 ? prev : value));
   }, []);
 
-  const startTypewriter = useCallback((setHistory: Dispatch<SetStateAction<Message[]>>, text: string) => {
+  const startTypewriter = useCallback((
+    setHistory: Dispatch<SetStateAction<Message[]>>,
+    text: string,
+    guard: { mode: 'chat' | 'agent'; conversationId: string }
+  ) => {
     if (typewriterTimerRef.current) {
       window.clearTimeout(typewriterTimerRef.current);
       typewriterTimerRef.current = null;
     }
     if (!text) {
+      if (assistantModeRef.current !== guard.mode || activeConvIdRef.current !== guard.conversationId) {
+        return;
+      }
       setHistory((prev) => {
         if (prev.length === 0) return prev;
         const next = [...prev];
@@ -3405,6 +3704,10 @@ export default function EditorPage() {
     }
     let idx = 0;
     const step = () => {
+      if (assistantModeRef.current !== guard.mode || activeConvIdRef.current !== guard.conversationId) {
+        typewriterTimerRef.current = null;
+        return;
+      }
       idx = Math.min(text.length, idx + 2);
       const slice = text.slice(0, idx);
       setHistory((prev) => {
@@ -3430,29 +3733,44 @@ export default function EditorPage() {
     };
   }, []);
 
-  const sendPrompt = async () => {
-    const isChat = assistantMode === 'chat';
-    if (!activePath && !isChat) return;
+  const sendPrompt = useCallback(async (options?: SendPromptOptions) => {
+    if (sendInFlightRef.current) return;
+    sendInFlightRef.current = true;
+    const currentMode = options?.modeOverride ?? assistantModeRef.current;
+    const isChat = currentMode === 'chat';
+    const requestMode: 'chat' | 'agent' = isChat ? 'chat' : 'agent';
+    const requestConversationId = activeConvIdRef.current;
+    const requestTargetConversationId = requestConversationId ?? createLocalId();
+    pendingRequestRef.current = { mode: requestMode, conversationId: requestTargetConversationId };
+    const defaultConversationTitle = t('新对话');
+    if (!activePath && !isChat) {
+      sendInFlightRef.current = false;
+      return;
+    }
     if (isChat === false && task === 'translate') {
       if (translateScope === 'selection' && !selectionText) {
         setStatus(t('请选择要翻译的文本。'));
+        sendInFlightRef.current = false;
         return;
       }
     }
-    const userMsg: Message = { role: 'user', content: prompt || t('(empty)') };
+    const requestProjectState = projectStateRef.current;
+    const requestPrompt = options?.promptOverride ?? prompt;
+    const userMsg: Message = { role: 'user', content: requestPrompt || t('(empty)') };
     const setHistory = isChat ? setChatMessages : setAgentMessages;
-    const history = isChat ? chatMessages : agentMessages;
-    const nextHistory = [...history, userMsg];
+    const history = options?.historyOverride ?? (isChat ? chatMessages : agentMessages);
+    const nextHistory = [...history, userMsg].slice(-MAX_MESSAGES);
     setHistory(nextHistory);
+    setPrompt('');
     try {
-      let effectivePrompt = prompt;
+      let effectivePrompt = requestPrompt;
       let effectiveSelection = selectionText;
       let effectiveContent = editorValue;
       let effectiveMode = mode;
       let effectiveTask = task;
 
       if (!isChat && task === 'translate') {
-        const note = prompt ? `\n${t('User note')}: ${prompt}` : '';
+        const note = requestPrompt ? `\n${t('User note')}: ${requestPrompt}` : '';
         if (translateScope === 'project') {
           effectiveMode = 'tools';
           effectiveSelection = '';
@@ -3471,8 +3789,8 @@ export default function EditorPage() {
         effectiveMode = 'tools';
         effectiveSelection = '';
         effectiveContent = '';
-        effectivePrompt = prompt
-          ? t('Search arXiv and return 3-5 relevant papers with BibTeX entries. User query: {{query}}', { query: prompt })
+        effectivePrompt = requestPrompt
+          ? t('Search arXiv and return 3-5 relevant papers with BibTeX entries. User query: {{query}}', { query: requestPrompt })
           : t('Search arXiv and return 3-5 relevant papers with BibTeX entries.');
         effectiveTask = 'websearch';
       }
@@ -3499,8 +3817,33 @@ export default function EditorPage() {
         history: nextHistory.slice(-8)
       });
       const replyText = res.reply || t('已生成建议。');
-      setHistory((prev) => [...prev, { role: 'assistant', content: '' }]);
-      window.setTimeout(() => startTypewriter(setHistory, replyText), 0);
+      const persistedHistory = [...nextHistory, { role: 'assistant' as const, content: replyText }];
+      if (
+        projectStateRef.current.projectId !== requestProjectState.projectId ||
+        projectStateRef.current.token !== requestProjectState.token
+      ) {
+        return;
+      }
+      persistCurrentConversation(persistedHistory, isChat ? 'chat' : 'agent', {
+        conversationId: requestConversationId,
+        requestConversationId: requestTargetConversationId,
+        defaultTitle: defaultConversationTitle
+      });
+      if (
+        pendingRequestRef.current?.mode === requestMode &&
+        pendingRequestRef.current?.conversationId === requestTargetConversationId &&
+        assistantModeRef.current === requestMode &&
+        activeConvIdRef.current === requestTargetConversationId
+      ) {
+        setHistory((prev) => [...prev, { role: 'assistant' as const, content: '' }].slice(-MAX_MESSAGES));
+        window.setTimeout(() => startTypewriter(setHistory, replyText, { mode: requestMode, conversationId: requestTargetConversationId }), 0);
+      }
+      if (
+        pendingRequestRef.current?.mode === requestMode &&
+        pendingRequestRef.current?.conversationId === requestTargetConversationId
+      ) {
+        pendingRequestRef.current = null;
+      }
 
       if (!isChat && res.patches && res.patches.length > 0) {
         const nextPending = res.patches.map((patch) => ({
@@ -3520,9 +3863,61 @@ export default function EditorPage() {
         setRightView('diff');
       }
     } catch (err) {
-      setHistory((prev) => [...prev, { role: 'assistant', content: t('请求失败: {{error}}', { error: String(err) }) }]);
+      const errorMessage = t('请求失败: {{error}}', { error: String(err) });
+      const persistedHistory = [...nextHistory, { role: 'assistant' as const, content: errorMessage }];
+      if (
+        projectStateRef.current.projectId !== requestProjectState.projectId ||
+        projectStateRef.current.token !== requestProjectState.token
+      ) {
+        return;
+      }
+      persistCurrentConversation(persistedHistory, isChat ? 'chat' : 'agent', {
+        conversationId: requestConversationId,
+        requestConversationId: requestTargetConversationId,
+        defaultTitle: defaultConversationTitle
+      });
+      if (
+        pendingRequestRef.current?.mode === requestMode &&
+        pendingRequestRef.current?.conversationId === requestTargetConversationId &&
+        assistantModeRef.current === requestMode &&
+        activeConvIdRef.current === requestTargetConversationId
+      ) {
+        setHistory((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }].slice(-MAX_MESSAGES));
+      }
+      if (
+        pendingRequestRef.current?.mode === requestMode &&
+        pendingRequestRef.current?.conversationId === requestTargetConversationId
+      ) {
+        pendingRequestRef.current = null;
+      }
+    } finally {
+      sendInFlightRef.current = false;
     }
-  };
+  }, [
+    activePath,
+    agentMessages,
+    assistantMode,
+    buildProjectContext,
+    chatMessages,
+    compileLog,
+    editorValue,
+    files,
+    llmConfig,
+    mode,
+    persistCurrentConversation,
+    projectId,
+    prompt,
+    searchLlmConfig,
+    selectionRange,
+    selectionText,
+    startTypewriter,
+    t,
+    task,
+    translateScope,
+    translateTarget
+  ]);
+
+  sendPromptRef.current = sendPrompt;
 
   const diagnoseCompile = async () => {
     if (!compileLog) {
@@ -3531,8 +3926,12 @@ export default function EditorPage() {
     }
     if (!activePath) return;
     setDiagnoseBusy(true);
+    const requestProjectState = projectStateRef.current;
+    const requestConversationId = activeConvIdRef.current;
+    const requestTargetConversationId = requestConversationId ?? createLocalId();
+    const defaultConversationTitle = t('新对话');
     const userMsg: Message = { role: 'user', content: t('诊断并修复编译错误') };
-    const nextHistory = [...agentMessages, userMsg];
+    const nextHistory = [...agentMessages, userMsg].slice(-MAX_MESSAGES);
     setAgentMessages(nextHistory);
     try {
       const res = await runAgent({
@@ -3552,7 +3951,21 @@ export default function EditorPage() {
         role: 'assistant',
         content: res.reply || t('已生成编译修复建议。')
       };
-      setAgentMessages((prev) => [...prev, assistant]);
+      const persistedHistory = [...nextHistory, assistant];
+      if (
+        projectStateRef.current.projectId !== requestProjectState.projectId ||
+        projectStateRef.current.token !== requestProjectState.token
+      ) {
+        return;
+      }
+      persistCurrentConversation(persistedHistory, 'agent', {
+        conversationId: requestConversationId,
+        requestConversationId: requestTargetConversationId,
+        defaultTitle: defaultConversationTitle
+      });
+      if (assistantModeRef.current === 'agent' && activeConvIdRef.current === requestTargetConversationId) {
+        setAgentMessages((prev) => [...prev, assistant].slice(-MAX_MESSAGES));
+      }
       if (res.patches && res.patches.length > 0) {
         const nextPending = res.patches.map((patch) => ({
           filePath: patch.path,
@@ -3564,7 +3977,22 @@ export default function EditorPage() {
         setRightView('diff');
       }
     } catch (err) {
-      setAgentMessages((prev) => [...prev, { role: 'assistant', content: t('请求失败: {{error}}', { error: String(err) }) }]);
+      const errorMessage = t('请求失败: {{error}}', { error: String(err) });
+      const persistedHistory = [...nextHistory, { role: 'assistant' as const, content: errorMessage }];
+      if (
+        projectStateRef.current.projectId !== requestProjectState.projectId ||
+        projectStateRef.current.token !== requestProjectState.token
+      ) {
+        return;
+      }
+      persistCurrentConversation(persistedHistory, 'agent', {
+        conversationId: requestConversationId,
+        requestConversationId: requestTargetConversationId,
+        defaultTitle: defaultConversationTitle
+      });
+      if (assistantModeRef.current === 'agent' && activeConvIdRef.current === requestTargetConversationId) {
+        setAgentMessages((prev) => [...prev, { role: 'assistant' as const, content: errorMessage }].slice(-MAX_MESSAGES));
+      }
     } finally {
       setDiagnoseBusy(false);
     }
@@ -4016,19 +4444,117 @@ export default function EditorPage() {
                     <div className="mode-toggle">
                       <button
                         className={`mode-btn ${assistantMode === 'chat' ? 'active' : ''}`}
-                        onClick={() => setAssistantMode('chat')}
+                        onClick={() => {
+                          setAssistantMode('chat');
+                          const conv = conversations.find((c) => c.mode === 'chat');
+                          if (conv) { setChatMessages(conv.messages); setActiveConversationId(conv.id); activeConvIdRef.current = conv.id; }
+                          else { setChatMessages([]); setActiveConversationId(null); activeConvIdRef.current = null; }
+                          pendingRequestRef.current = null;
+                        }}
                       >
                         {t('Chat')}
                       </button>
                       <button
                         className={`mode-btn ${assistantMode === 'agent' ? 'active' : ''}`}
-                        onClick={() => setAssistantMode('agent')}
+                        onClick={() => {
+                          setAssistantMode('agent');
+                          const conv = conversations.find((c) => c.mode === 'agent');
+                          if (conv) { setAgentMessages(conv.messages); setActiveConversationId(conv.id); activeConvIdRef.current = conv.id; }
+                          else { setAgentMessages([]); setActiveConversationId(null); activeConvIdRef.current = null; }
+                          pendingRequestRef.current = null;
+                        }}
                       >
                         {t('Agent')}
                       </button>
                     </div>
+                    <div className="conv-actions">
+                      <button className="conv-btn" onClick={handleNewConversation} title={t('新建对话')}>+</button>
+                      <button className={`conv-btn ${historyOpen ? 'active' : ''}`} onClick={() => setHistoryOpen(!historyOpen)} title={t('历史记录')}>&#x23F3;</button>
+                      <button className="conv-btn" onClick={handleClearConversation} title={t('清空对话')}>&#x2715;</button>
+                    </div>
                   </div>
                 </div>
+                {(() => {
+                  const activeConv = conversations.find((c) => c.id === activeConversationId);
+                  return activeConv ? (
+                    <div
+                      className="conversation-title-bar"
+                      onDoubleClick={() => { setRenamingConvId(activeConv.id); setRenamingValue(activeConv.title); }}
+                    >
+                      {renamingConvId === activeConv.id && !historyOpen ? (
+                        <input
+                          className="conv-rename-input"
+                          value={renamingValue}
+                          autoFocus
+                          onChange={(e) => setRenamingValue(e.target.value)}
+                          onBlur={() => handleRenameConversation(activeConv.id, renamingValue)}
+                          onKeyDown={(e) => {
+                            if (e.nativeEvent.isComposing) return;
+                            if (e.key === 'Enter') { e.currentTarget.blur(); }
+                            if (e.key === 'Escape') setRenamingConvId(null);
+                          }}
+                        />
+                      ) : (
+                        <>
+                          <span className="conversation-title-text">{activeConv.title}</span>
+                          <button
+                            className="conv-title-edit-btn"
+                            onClick={(e) => { e.stopPropagation(); setRenamingConvId(activeConv.id); setRenamingValue(activeConv.title); }}
+                            title={t('重命名对话')}
+                          >&#x270E;</button>
+                        </>
+                      )}
+                    </div>
+                  ) : null;
+                })()}
+                {historyOpen && (
+                  <div className="history-dropdown">
+                    {conversations.filter((c) => c.mode === assistantMode).length === 0 ? (
+                      <div className="history-empty">{t('无历史记录')}</div>
+                    ) : (
+                      conversations.filter((c) => c.mode === assistantMode).map((conv) => (
+                        <div
+                          key={conv.id}
+                          className={`history-item ${conv.id === activeConversationId ? 'active' : ''}`}
+                          onClick={() => { if (renamingConvId) return; handleLoadConversation(conv); }}
+                        >
+                          <div className="history-item-info">
+                            {renamingConvId === conv.id ? (
+                              <input
+                                className="conv-rename-input"
+                                value={renamingValue}
+                                autoFocus
+                                onClick={(e) => e.stopPropagation()}
+                                onChange={(e) => setRenamingValue(e.target.value)}
+                                onBlur={() => handleRenameConversation(conv.id, renamingValue)}
+                                onKeyDown={(e) => {
+                                  if (e.nativeEvent.isComposing) return;
+                                  if (e.key === 'Enter') { e.currentTarget.blur(); }
+                                  if (e.key === 'Escape') { e.stopPropagation(); setRenamingConvId(null); }
+                                }}
+                              />
+                            ) : (
+                              <span
+                                className="history-item-title"
+                                onDoubleClick={(e) => { e.stopPropagation(); setRenamingConvId(conv.id); setRenamingValue(conv.title); }}
+                              >{conv.title}</span>
+                            )}
+                            <span className="history-item-time">{relativeTime(conv.updatedAt, t)}</span>
+                          </div>
+                          <button
+                            className="history-item-rename"
+                            onClick={(e) => { e.stopPropagation(); setRenamingConvId(conv.id); setRenamingValue(conv.title); }}
+                            title={t('重命名对话')}
+                          >&#x270E;</button>
+                          <button
+                            className="history-item-delete"
+                            onClick={(e) => { e.stopPropagation(); handleDeleteConversation(conv.id); }}
+                          >&times;</button>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                )}
                 {assistantMode === 'chat' && (
                   <div className="context-tags">
                     <span className="context-tag">{t('只读当前文件')}</span>
@@ -4043,7 +4569,10 @@ export default function EditorPage() {
                   {assistantMode === 'agent' && agentMessages.length === 0 && (
                     <div className="muted">{t('输入任务描述，生成修改建议。')}</div>
                   )}
-                  {(assistantMode === 'chat' ? chatMessages : agentMessages).map((msg, idx) => (
+                  {(() => {
+                    const msgs = assistantMode === 'chat' ? chatMessages : agentMessages;
+                    const lastAssistantIdx = (() => { for (let i = msgs.length - 1; i >= 0; i--) { if (msgs[i].role === 'assistant') return i; } return -1; })();
+                    return msgs.map((msg, idx) => (
                     <div key={idx} className={`chat-msg ${msg.role}`}>
                       <div className="role">{msg.role}</div>
                       <div className={`content ${msg.role === 'assistant' ? 'markdown-body' : ''}`}>
@@ -4053,8 +4582,25 @@ export default function EditorPage() {
                           msg.content
                         )}
                       </div>
+                      {msg.role === 'assistant' && msg.content && (
+                        <div className="msg-actions">
+                          <button
+                            className="msg-action-btn"
+                            onClick={() => handleCopyMessage(msg.content, idx)}
+                            title={t('复制')}
+                          >{copiedMsgIdx === idx ? '\u2713' : '\u2398'}</button>
+                          {idx === lastAssistantIdx && (
+                            <button
+                              className="msg-action-btn"
+                              onClick={() => handleRetryMessage(idx)}
+                              title={t('重新生成')}
+                            >&#x21BB;</button>
+                          )}
+                        </div>
+                      )}
                     </div>
-                  ))}
+                    ));
+                  })()}
                 </div>
                 <div className="chat-controls">
                   <div className="row chat-control-row">
@@ -4240,9 +4786,16 @@ export default function EditorPage() {
                     className="chat-input"
                     value={prompt}
                     onChange={(e) => setPrompt(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.nativeEvent.isComposing) return;
+                      if (e.key === 'Enter' && !e.shiftKey) {
+                        e.preventDefault();
+                        sendPrompt();
+                      }
+                    }}
                     placeholder={assistantMode === 'chat' ? t('例如：帮我解释这一段的实验设计。') : t('例如：润色这个段落，使其更符合 ACL 风格。')}
                   />
-                  <button onClick={sendPrompt} className="btn full">
+                  <button onClick={sendPrompt} className="btn full" disabled={sendInFlightRef.current}>
                     {assistantMode === 'chat' ? t('发送') : t('生成建议')}
                   </button>
                   {selectionText && assistantMode === 'agent' && (

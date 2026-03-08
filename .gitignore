@@ -8,3 +8,6 @@ apps/backend/.cache/
 data/
 
 AGENTS.md
+
+.playwright-mcp/
+.claude/settings.local.json
