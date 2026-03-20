@@ -1,40 +1,5 @@
-import { promises as fs } from 'fs';
-import path from 'path';
 import { getProjectRoot } from '../../projectService.js';
-import { safeJoin } from '../../../utils/pathUtils.js';
-import { listFilesRecursive } from '../../../utils/fsUtils.js';
-
-/**
- * Recursively resolve \input{} and \include references.
- */
-async function resolveInputs(projectRoot, relPath, visited = new Set()) {
-  if (visited.has(relPath)) return '';
-  visited.add(relPath);
-
-  const absPath = safeJoin(projectRoot, relPath);
-  let content;
-  try {
-    content = await fs.readFile(absPath, 'utf8');
-  } catch {
-    return '';
-  }
-
-  const pattern = /\\(?:input|include)\{([^}]+)\}/g;
-  let result = '';
-  let lastIndex = 0;
-  let match;
-
-  while ((match = pattern.exec(content)) !== null) {
-    result += content.slice(lastIndex, match.index);
-    let ref = match[1].trim();
-    if (!path.extname(ref)) ref += '.tex';
-    const childContent = await resolveInputs(projectRoot, ref, visited);
-    result += childContent;
-    lastIndex = pattern.lastIndex;
-  }
-  result += content.slice(lastIndex);
-  return result;
-}
+import { resolveTexInputs } from '../utils.js';
 
 /**
  * Extract preamble (everything before \begin{document}).
@@ -66,7 +31,10 @@ function parseOutline(content) {
 export async function analyzeTarget(state) {
   const projectRoot = await getProjectRoot(state.targetProjectId);
 
-  const fullContent = await resolveInputs(projectRoot, state.targetMainFile);
+  const fullContent = await resolveTexInputs(projectRoot, state.targetMainFile, { strictRoot: true });
+  if (!fullContent.trim()) {
+    throw new Error(`[analyzeTarget] Target template content is empty: ${state.targetMainFile}`);
+  }
   const preamble = extractPreamble(fullContent);
   const outline = parseOutline(fullContent);
 

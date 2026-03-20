@@ -1,44 +1,8 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { getProjectRoot } from '../../projectService.js';
-import { safeJoin } from '../../../utils/pathUtils.js';
 import { listFilesRecursive } from '../../../utils/fsUtils.js';
-import { isTextFile } from '../../../utils/texUtils.js';
-
-/**
- * Recursively resolve \input{} and \include{} references,
- * returning the concatenated full content.
- */
-async function resolveInputs(projectRoot, relPath, visited = new Set()) {
-  if (visited.has(relPath)) return '';
-  visited.add(relPath);
-
-  const absPath = safeJoin(projectRoot, relPath);
-  let content;
-  try {
-    content = await fs.readFile(absPath, 'utf8');
-  } catch {
-    return '';
-  }
-
-  // Match \input{...} and \include{...}
-  const pattern = /\\(?:input|include)\{([^}]+)\}/g;
-  let result = '';
-  let lastIndex = 0;
-  let match;
-
-  while ((match = pattern.exec(content)) !== null) {
-    result += content.slice(lastIndex, match.index);
-    let ref = match[1].trim();
-    // Add .tex extension if missing
-    if (!path.extname(ref)) ref += '.tex';
-    const childContent = await resolveInputs(projectRoot, ref, visited);
-    result += childContent;
-    lastIndex = pattern.lastIndex;
-  }
-  result += content.slice(lastIndex);
-  return result;
-}
+import { resolveTexInputs } from '../utils.js';
 
 /**
  * Parse section/subsection outline from LaTeX content.
@@ -96,7 +60,7 @@ export async function analyzeSource(state) {
   const allFiles = await listFilesRecursive(projectRoot);
 
   // Resolve all \input/\include and get full content
-  const fullContent = await resolveInputs(projectRoot, state.sourceMainFile);
+  const fullContent = await resolveTexInputs(projectRoot, state.sourceMainFile);
   const outline = parseOutline(fullContent);
   const assets = collectAssets(fullContent, allFiles);
 

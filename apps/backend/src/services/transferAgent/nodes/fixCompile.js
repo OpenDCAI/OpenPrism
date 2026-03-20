@@ -2,7 +2,7 @@ import { promises as fs } from 'fs';
 import { ChatOpenAI } from '@langchain/openai';
 import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
-import { writeFileWithSnapshot, stripCodeFences } from '../utils.js';
+import { writeFileWithSnapshot, stripCodeFences, invokeLLMTextWithDebug } from '../utils.js';
 
 const MAX_LOG_TAIL = 8000;
 
@@ -43,8 +43,13 @@ Common fixes:
 
 Output ONLY the complete corrected LaTeX file. No explanations, no markdown fences.`;
 
-  const response = await llm.invoke([{ role: 'user', content: prompt }]);
-  const fixed = stripCodeFences(response.content);
+  const { text, progressLog } = await invokeLLMTextWithDebug({
+    llm,
+    messages: [{ role: 'user', content: prompt }],
+    state,
+    nodeName: 'fixCompile',
+  });
+  const fixed = stripCodeFences(text);
 
   await writeFileWithSnapshot(
     state.targetProjectRoot,
@@ -54,6 +59,9 @@ Output ONLY the complete corrected LaTeX file. No explanations, no markdown fenc
   );
 
   return {
-    progressLog: `[fixCompile] Applied LLM fix for compile attempt ${state.compileAttempt}.`,
+    progressLog: [
+      ...progressLog,
+      `[fixCompile] Applied LLM fix for compile attempt ${state.compileAttempt}.`,
+    ],
   };
 }

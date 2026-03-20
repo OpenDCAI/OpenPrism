@@ -3,7 +3,7 @@
     {
       "id": "acl",
       "label": "ACL",
-      "mainFile": "main.tex",
+      "mainFile": "acl_latex.tex",
       "category": "academic",
       "description": "ACL 会议论文模板，适用于自然语言处理领域",
       "descriptionEn": "ACL conference paper template for NLP research",
