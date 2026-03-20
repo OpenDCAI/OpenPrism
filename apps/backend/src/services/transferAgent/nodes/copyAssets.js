@@ -37,6 +37,41 @@ async function copySingleAsset(srcRoot, destRoot, relPath) {
   return { path: relPath, destRel, status: destRel !== relPath ? 'conflict' : 'copied' };
 }
 
+function escapeRegExp(text) {
+  return String(text || '').replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function rewriteMineruMarkdownImageRefs(markdown, manifest) {
+  if (!markdown || !manifest.length) return markdown;
+
+  const rewriteUrl = (rawUrl) => {
+    const normalizedUrl = String(rawUrl || '').replace(/\\/g, '/');
+    for (const item of manifest) {
+      const sourceName = String(item.sourceName || '').replace(/\\/g, '/');
+      if (!sourceName) continue;
+      if (
+        normalizedUrl === sourceName
+        || normalizedUrl === `./${sourceName}`
+        || normalizedUrl.endsWith(`/${sourceName}`)
+        || path.posix.basename(normalizedUrl) === path.posix.basename(sourceName)
+      ) {
+        return item.targetPath;
+      }
+    }
+    return rawUrl;
+  };
+
+  let next = markdown.replace(/(!\[[^\]]*\]\()([^) \t]+)([^)]*\))/g, (match, prefix, url, suffix) => {
+    return `${prefix}${rewriteUrl(url)}${suffix}`;
+  });
+
+  next = next.replace(/(<img\b[^>]*\bsrc=["'])([^"']+)(["'][^>]*>)/gi, (match, prefix, url, suffix) => {
+    return `${prefix}${rewriteUrl(url)}${suffix}`;
+  });
+
+  return next;
+}
+
 /**
  * Legacy mode: copy bib files, images, and style files from source project.
  */
@@ -79,6 +114,7 @@ async function copyAssetsMineru(state) {
   const images = state.sourceImages || [];
   let copiedCount = 0;
   let renamedCount = 0;
+  const copiedImages = [];
 
   // Copy MinerU-extracted images to target project images/
   const imagesDir = path.join(state.targetProjectRoot, 'images');
@@ -86,7 +122,8 @@ async function copyAssetsMineru(state) {
   const usedNames = new Set();
 
   for (const img of images) {
-    const originalName = path.basename(img.name || img.localPath || 'image');
+    const sourceName = String(img.name || path.basename(img.localPath || 'image')).replace(/\\/g, '/');
+    const originalName = path.basename(sourceName);
     const ext = path.extname(originalName);
     const stem = ext ? originalName.slice(0, -ext.length) : originalName;
     let finalName = originalName;
@@ -102,6 +139,12 @@ async function copyAssetsMineru(state) {
     if (await fileExists(img.localPath)) {
       await fs.copyFile(img.localPath, destPath);
       copiedCount++;
+      copiedImages.push({
+        ...img,
+        sourceName,
+        name: finalName,
+        targetPath: `images/${finalName}`,
+      });
     }
   }
 
@@ -124,7 +167,11 @@ async function copyAssetsMineru(state) {
     }
   }
 
+  const rewrittenMarkdown = rewriteMineruMarkdownImageRefs(state.sourceMarkdown || '', copiedImages);
+
   return {
+    sourceImages: copiedImages,
+    sourceMarkdown: rewrittenMarkdown,
     progressLog: `[copyAssets:mineru] Copied ${copiedCount} images (${renamedCount} renamed to avoid conflicts), ${bibCount} bib files.`,
   };
 }

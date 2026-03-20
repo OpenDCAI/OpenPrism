@@ -45,8 +45,8 @@ function afterLayoutCheck(state) {
  * Build the MinerU-based transfer workflow.
  *
  * Flow:
- *   compileSource → parsePdfWithMineru → analyzeTarget → applyTransfer
- *     → copyAssets → compile → [fixCompile loop]
+ *   compileSource → parsePdfWithMineru → analyzeTarget → copyAssets
+ *     → applyTransfer → compile → [fixCompile loop]
  *     → [requestPageImages → checkLayout → fixLayout loop] → finalize
  */
 export function buildMineruTransferGraph() {
@@ -71,9 +71,9 @@ export function buildMineruTransferGraph() {
   // Linear edges
   graph.addEdge('compileSource', 'parsePdfWithMineru');
   graph.addEdge('parsePdfWithMineru', 'analyzeTarget');
-  graph.addEdge('analyzeTarget', 'applyTransfer');
-  graph.addEdge('applyTransfer', 'copyAssets');
-  graph.addEdge('copyAssets', 'compile');
+  graph.addEdge('analyzeTarget', 'copyAssets');
+  graph.addEdge('copyAssets', 'applyTransfer');
+  graph.addEdge('applyTransfer', 'compile');
 
   // Conditional: after compile
   graph.addConditionalEdges('compile', afterCompile, {

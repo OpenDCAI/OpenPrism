@@ -53,7 +53,6 @@ export default function TransferPanel({ projectId, jobState, onJobStart }: Trans
   const [targetMainFile, setTargetMainFile] = useState('');
   const [targetMainFiles, setTargetMainFiles] = useState<string[]>([]);
   const [engine, setEngine] = useState('pdflatex');
-  const [layoutCheck, setLayoutCheck] = useState(false);
 
   // LLM config — read from shared localStorage (set via ProjectPage / EditorPage settings)
   const SETTINGS_KEY = 'openprism-settings-v1';
@@ -258,7 +257,6 @@ export default function TransferPanel({ projectId, jobState, onJobStart }: Trans
           targetTemplateId,
           targetMainFile: selectedTargetMainFile,
           engine,
-          layoutCheck,
           llmConfig: buildLlmConfig(),
           mineruConfig,
         });
@@ -286,7 +284,6 @@ export default function TransferPanel({ projectId, jobState, onJobStart }: Trans
           targetTemplateId,
           targetMainFile: selectedTargetMainFile,
           engine,
-          layoutCheck,
           llmConfig: buildLlmConfig(),
         });
 
@@ -314,7 +311,6 @@ export default function TransferPanel({ projectId, jobState, onJobStart }: Trans
     sourceMainFile,
     projectId,
     engine,
-    layoutCheck,
     selectedTargetMainFile,
     mineruApiBase,
     mineruToken,
@@ -549,11 +545,9 @@ export default function TransferPanel({ projectId, jobState, onJobStart }: Trans
         </div>
       </div>
 
-      {/* Layout check toggle */}
-      <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
-        <input type="checkbox" checked={layoutCheck} onChange={e => setLayoutCheck(e.target.checked)} />
-        {t('启用排版检查 (VLM)')}
-      </label>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 12 }}>
+        {t('排版检查 (VLM) 暂未开放；当前转换仅执行内容迁移、资源复制和编译修复。')}
+      </div>
 
       {/* MinerU API config — shown only in MinerU mode */}
       {transferMode === 'mineru' && (

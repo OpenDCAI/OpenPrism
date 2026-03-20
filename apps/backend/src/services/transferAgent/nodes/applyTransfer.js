@@ -1,7 +1,5 @@
-import { promises as fs } from 'fs';
 import { ChatOpenAI } from '@langchain/openai';
 import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
-import { safeJoin } from '../../../utils/pathUtils.js';
 import { writeFileWithSnapshot, stripCodeFences, invokeLLMTextWithDebug } from '../utils.js';
 
 /**
@@ -42,7 +40,7 @@ Output ONLY the complete LaTeX file content. No explanations, no markdown fences
  */
 function buildMineruTransferPrompt(state) {
   const imageList = (state.sourceImages || [])
-    .map(img => img.name)
+    .map(img => img.targetPath || `images/${img.name}`)
     .join(', ');
 
   return `You are a LaTeX template filling expert.
@@ -58,13 +56,15 @@ ${state.targetTemplateContent}
 ## IMAGE FILES AVAILABLE:
 ${imageList || '(none)'}
 
+The Markdown image references have already been normalized to the target project's image paths.
+
 ## RULES:
 1. Keep the target preamble (everything before \\begin{document}) EXACTLY as-is
 2. Only modify content between \\begin{document} and \\end{document}
 3. Map Markdown headings to the corresponding \\section{}, \\subsection{} etc. in the template
 4. Formulas in the Markdown are already in LaTeX format ($...$ or $$...$$) — preserve them as-is
 5. Convert HTML tables in the Markdown to LaTeX \\begin{tabular} environments
-6. For images referenced in the Markdown, use \\includegraphics{images/<filename>} wrapped in \\begin{figure}...\\end{figure}
+6. For images referenced in the Markdown, preserve the normalized image path exactly in \\includegraphics{...} and wrap figures in \\begin{figure}...\\end{figure}
 7. Preserve ALL text content — do not omit any paragraphs or sections
 8. Do NOT add content that doesn't exist in the Markdown
 9. Output the COMPLETE .tex file content, not just the body

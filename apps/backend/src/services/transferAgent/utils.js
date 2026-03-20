@@ -100,6 +100,59 @@ export function validateSchema(obj, schema) {
 }
 
 // ---------------------------------------------------------------------------
+// LaTeX file resolution
+// ---------------------------------------------------------------------------
+
+function normalizeTexRelPath(relPath) {
+  return path.posix
+    .normalize(String(relPath || '').replace(/\\/g, '/'))
+    .replace(/^(\.\/)+/, '')
+    .replace(/^\/+/, '');
+}
+
+async function resolveTexInputsInner(projectRoot, relPath, visited, strictCurrent) {
+  const normalizedRelPath = normalizeTexRelPath(relPath);
+  if (!normalizedRelPath) return '';
+  if (visited.has(normalizedRelPath)) return '';
+  visited.add(normalizedRelPath);
+
+  const absPath = safeJoin(projectRoot, normalizedRelPath);
+  let content;
+  try {
+    content = await fs.readFile(absPath, 'utf8');
+  } catch (err) {
+    if (strictCurrent) {
+      throw new Error(`Failed to read TeX file "${normalizedRelPath}": ${err?.message || 'not found'}`);
+    }
+    return '';
+  }
+
+  const baseDir = path.posix.dirname(normalizedRelPath);
+  const pattern = /\\(?:input|include)\{([^}]+)\}/g;
+  let result = '';
+  let lastIndex = 0;
+  let match;
+
+  while ((match = pattern.exec(content)) !== null) {
+    result += content.slice(lastIndex, match.index);
+    let ref = match[1].trim();
+    if (!path.posix.extname(ref)) ref += '.tex';
+    const childRelPath = normalizeTexRelPath(path.posix.join(baseDir, ref));
+    const childContent = await resolveTexInputsInner(projectRoot, childRelPath, visited, false);
+    result += childContent;
+    lastIndex = pattern.lastIndex;
+  }
+
+  result += content.slice(lastIndex);
+  return result;
+}
+
+export async function resolveTexInputs(projectRoot, relPath, opts = {}) {
+  const visited = opts.visited instanceof Set ? opts.visited : new Set();
+  return resolveTexInputsInner(projectRoot, relPath, visited, Boolean(opts.strictRoot));
+}
+
+// ---------------------------------------------------------------------------
 // Retryable LLM JSON call
 // ---------------------------------------------------------------------------
 

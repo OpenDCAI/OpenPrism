@@ -16,7 +16,6 @@ import {
   permanentDeleteProject,
   uploadTemplate,
   transferStatus,
-  transferSubmitImages,
 } from '../api/client';
 import type { ProjectMeta, TemplateMeta, TemplateCategory } from '../api/client';
 import TransferPanel from './TransferPanel';
@@ -136,7 +135,6 @@ export default function ProjectPage() {
   } | null>(null);
   const [jobWidgetOpen, setJobWidgetOpen] = useState(true);
   const jobPollTimerRef = useRef<number | null>(null);
-  const autoResumeRef = useRef<Set<string>>(new Set());
   const monitoredJobIdRef = useRef<string | null>(null);
 
   // Template upload state
@@ -181,11 +179,6 @@ export default function ProjectPage() {
         };
       });
 
-      if (res.status === 'waiting_images' && !autoResumeRef.current.has(jobId)) {
-        autoResumeRef.current.add(jobId);
-        await transferSubmitImages(jobId, []);
-      }
-
       if (TERMINAL_TRANSFER_STATUS.has(res.status)) {
         stopTransferMonitor();
         if (res.status === 'success') {
@@ -221,7 +214,6 @@ export default function ProjectPage() {
   }) => {
     stopTransferMonitor();
     monitoredJobIdRef.current = job.jobId;
-    autoResumeRef.current.delete(job.jobId);
     setActiveJob(job);
     setJobWidgetOpen(true);
     pollTransferJob(job.jobId).catch(() => {});

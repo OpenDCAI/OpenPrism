@@ -4,7 +4,7 @@ import { MINERU_API_BASE, MINERU_POLL_INTERVAL_MS, MINERU_MAX_POLL_ATTEMPTS } fr
 import { ensureDir } from '../utils/fsUtils.js';
 import { safeJoin } from '../utils/pathUtils.js';
 
-const MINERU_MAX_FILE_BYTES = 200 * 1024 * 1024;
+export const MINERU_MAX_FILE_BYTES = 200 * 1024 * 1024;
 
 /**
  * Resolve MinerU configuration from request config or environment variables.
@@ -307,19 +307,19 @@ function isImageFilePath(filePath) {
   return /\.(png|jpe?g|gif|webp|bmp|svg)$/i.test(filePath);
 }
 
-async function listImageFilesRecursive(imagesDir) {
+async function listImageFilesRecursive(imagesDir, baseDir = imagesDir) {
   const out = [];
   try {
     const entries = await fs.readdir(imagesDir, { withFileTypes: true });
     for (const entry of entries) {
       const abs = path.join(imagesDir, entry.name);
       if (entry.isDirectory()) {
-        out.push(...await listImageFilesRecursive(abs));
+        out.push(...await listImageFilesRecursive(abs, baseDir));
         continue;
       }
       if (entry.isFile() && isImageFilePath(abs)) {
         out.push({
-          name: path.basename(abs),
+          name: path.relative(baseDir, abs).replace(/\\/g, '/'),
           localPath: abs,
         });
       }

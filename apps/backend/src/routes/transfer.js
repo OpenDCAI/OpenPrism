@@ -4,7 +4,7 @@ import { promises as fs } from 'fs';
 import { buildTransferGraph } from '../services/transferAgent/graph.js';
 import { buildMineruTransferGraph } from '../services/transferAgent/graphMineru.js';
 import { resolveLLMConfig } from '../services/llmService.js';
-import { resolveMineruConfig } from '../services/mineruService.js';
+import { resolveMineruConfig, MINERU_MAX_FILE_BYTES } from '../services/mineruService.js';
 import { registerJobProgressSink, unregisterJobProgressSink } from '../services/transferAgent/runtimeProgress.js';
 import { readTemplateManifest } from '../services/templateService.js';
 import { DATA_DIR, TEMPLATE_DIR } from '../config/constants.js';
@@ -13,6 +13,7 @@ import { ensureDir, readJson, writeJson, copyDir } from '../utils/fsUtils.js';
 const JOB_TTL_MS = 30 * 60 * 1000;
 const MAX_PROGRESS_LOG_LINES = 2000;
 const TERMINAL_STATUSES = new Set(['success', 'failed', 'error']);
+const LAYOUT_CHECK_ENABLED = false;
 
 // In-memory job store: jobId → job record
 const jobs = new Map();
@@ -42,6 +43,12 @@ function appendProgressLog(job, progressLog) {
 
 function nowIso() {
   return new Date().toISOString();
+}
+
+function isLikelyPdfUpload(fileName, mimeType) {
+  const normalizedName = String(fileName || '').trim().toLowerCase();
+  const normalizedMime = String(mimeType || '').trim().toLowerCase();
+  return normalizedName.endsWith('.pdf') || normalizedMime === 'application/pdf';
 }
 
 function scheduleCleanup(jobId) {
@@ -183,6 +190,7 @@ export function registerTransferRoutes(fastify) {
       layoutCheck = false,
       llmConfig,
     } = request.body || {};
+    const effectiveLayoutCheck = LAYOUT_CHECK_ENABLED && Boolean(layoutCheck);
 
     if (!sourceProjectId || !sourceMainFile || !targetTemplateId || !targetMainFile) {
       return reply.code(400).send({ error: 'Missing required fields.' });
@@ -230,6 +238,10 @@ export function registerTransferRoutes(fastify) {
     // Build transfer graph
     const jobId = crypto.randomUUID();
     const graph = buildTransferGraph();
+    const initialProgressLog = [];
+    if (layoutCheck && !effectiveLayoutCheck) {
+      initialProgressLog.push('[start] Layout check is temporarily disabled. Proceeding without VLM review.');
+    }
 
     const initialState = {
       sourceProjectId,
@@ -237,7 +249,7 @@ export function registerTransferRoutes(fastify) {
       targetProjectId: newProjectId,
       targetMainFile,
       engine,
-      layoutCheck,
+      layoutCheck: effectiveLayoutCheck,
       llmConfig: resolveLLMConfig(llmConfig),
       transferMode: 'legacy',
       jobId,
@@ -247,7 +259,7 @@ export function registerTransferRoutes(fastify) {
       graph,
       state: initialState,
       status: 'pending',
-      progressLog: [],
+      progressLog: initialProgressLog,
       hasStarted: false,
       running: false,
       error: null,
@@ -353,6 +365,7 @@ export function registerTransferRoutes(fastify) {
       llmConfig,
       mineruConfig,
     } = request.body || {};
+    const effectiveLayoutCheck = LAYOUT_CHECK_ENABLED && Boolean(layoutCheck);
 
     if (!targetTemplateId || !targetMainFile) {
       return reply.code(400).send({ error: 'Missing targetTemplateId or targetMainFile.' });
@@ -405,6 +418,17 @@ export function registerTransferRoutes(fastify) {
     // Build MinerU transfer graph
     const jobId = crypto.randomUUID();
     const graph = buildMineruTransferGraph();
+    const resolvedMineruConfig = resolveMineruConfig(mineruConfig);
+    if (!resolvedMineruConfig.token) {
+      return reply.code(400).send({ error: 'MinerU token not configured.' });
+    }
+    const initialProgressLog = [];
+    if (layoutCheck && !effectiveLayoutCheck) {
+      initialProgressLog.push('[start-mineru] Layout check is temporarily disabled. Proceeding without VLM review.');
+    }
+    if (!sourceProjectId) {
+      initialProgressLog.push('[start-mineru] Waiting for PDF upload before execution.');
+    }
 
     const initialState = {
       sourceProjectId: sourceProjectId || '',
@@ -412,9 +436,9 @@ export function registerTransferRoutes(fastify) {
       targetProjectId: newProjectId,
       targetMainFile,
       engine,
-      layoutCheck,
+      layoutCheck: effectiveLayoutCheck,
       llmConfig: resolveLLMConfig(llmConfig),
-      mineruConfig: resolveMineruConfig(mineruConfig),
+      mineruConfig: resolvedMineruConfig,
       transferMode: 'mineru',
       jobId,
     };
@@ -423,7 +447,7 @@ export function registerTransferRoutes(fastify) {
       graph,
       state: initialState,
       status: sourceProjectId ? 'pending' : 'waiting_upload',
-      progressLog: sourceProjectId ? [] : ['[start-mineru] Waiting for PDF upload before execution.'],
+      progressLog: initialProgressLog,
       hasStarted: false,
       running: false,
       error: null,
@@ -450,13 +474,24 @@ export function registerTransferRoutes(fastify) {
     const parts = request.parts();
     let jobId = '';
     let pdfBuffer = null;
+    let pdfFileName = '';
+    let pdfMimeType = '';
 
     for await (const part of parts) {
       if (part.fieldname === 'jobId' && part.type === 'field') {
         jobId = part.value;
       } else if (part.fieldname === 'pdf' && part.type === 'file') {
+        pdfFileName = part.filename || '';
+        pdfMimeType = part.mimetype || '';
         const chunks = [];
+        let totalBytes = 0;
         for await (const chunk of part.file) {
+          totalBytes += chunk.length;
+          if (totalBytes > MINERU_MAX_FILE_BYTES) {
+            return reply.code(400).send({
+              error: `PDF exceeds MinerU upload limit (${MINERU_MAX_FILE_BYTES} bytes).`,
+            });
+          }
           chunks.push(chunk);
         }
         pdfBuffer = Buffer.concat(chunks);
@@ -477,6 +512,12 @@ export function registerTransferRoutes(fastify) {
 
     if (!pdfBuffer) {
       return reply.code(400).send({ error: 'No PDF file uploaded.' });
+    }
+    if (!isLikelyPdfUpload(pdfFileName, pdfMimeType)) {
+      return reply.code(400).send({ error: 'Uploaded file must be a PDF.' });
+    }
+    if (!pdfBuffer.length) {
+      return reply.code(400).send({ error: 'Uploaded PDF is empty.' });
     }
 
     // Save PDF to target project directory
