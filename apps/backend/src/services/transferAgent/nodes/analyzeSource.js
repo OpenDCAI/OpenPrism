@@ -3,7 +3,7 @@ import path from 'path';
 import { getProjectRoot } from '../../projectService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { listFilesRecursive } from '../../../utils/fsUtils.js';
-import { isTextFile } from '../../../utils/texUtils.js';
+import { progressUpdate } from '../progressMeta.js';
 
 /**
  * Recursively resolve \input{} and \include{} references,
@@ -88,6 +88,52 @@ function collectAssets(content, allFiles) {
 }
 
 /**
+ * Heuristic profile of LaTeX source (no LLM).
+ */
+export function buildSourceProfile(content) {
+  const docMatch = content.match(/\\documentclass(?:\[[^\]]*\])?\{([^}]+)\}/);
+  const documentclass = docMatch ? docMatch[1].trim() : '';
+
+  const pkgRe = /\\usepackage(?:\[[^\]]*\])?\{([^}]+)\}/g;
+  const packages = new Set();
+  let m;
+  while ((m = pkgRe.exec(content)) !== null) {
+    m[1].split(',').forEach((p) => packages.add(p.trim()));
+  }
+
+  const twocolumn = /\\documentclass(?:\[[^\]]*twocolumn[^\]]*\])?\{[^}]+\}/.test(content)
+    || /\\usepackage(?:\[[^\]]*\])?\{twocolumn\}/.test(content);
+
+  const hasBiblatex = packages.has('biblatex');
+  const hasNatbib = packages.has('natbib');
+  const hasInputBbl = /\\input\s*\{[^}]*\.bbl\}/i.test(content)
+    || /\\include\s*\{[^}]*\.bbl\}/i.test(content);
+  const hasBibtexCmd = /\\bibliography\s*\{/.test(content);
+
+  let bibMechanism = 'none';
+  if (hasBiblatex) bibMechanism = 'biblatex';
+  else if (hasInputBbl) bibMechanism = 'input_bbl';
+  else if (hasBibtexCmd || hasNatbib) bibMechanism = 'bibtex_natbib';
+
+  const figureStar = /\\begin\s*\{\s*figure\*\s*\}/i.test(content);
+  const tableStar = /\\begin\s*\{\s*table\*\s*\}/i.test(content);
+
+  const revtex = /revtex|revtex4/i.test(documentclass);
+
+  return {
+    documentclass,
+    packages: [...packages].sort(),
+    twocolumn,
+    figureStar,
+    tableStar,
+    revtex,
+    bibMechanism,
+    hasNatbib,
+    hasBiblatex,
+  };
+}
+
+/**
  * analyzeSource node — reads source project, resolves inputs,
  * parses outline, collects assets.
  */
@@ -99,12 +145,19 @@ export async function analyzeSource(state) {
   const fullContent = await resolveInputs(projectRoot, state.sourceMainFile);
   const outline = parseOutline(fullContent);
   const assets = collectAssets(fullContent, allFiles);
+  const sourceProfile = buildSourceProfile(fullContent);
 
   return {
     sourceProjectRoot: projectRoot,
+    sourceReadRoot: projectRoot,
     sourceOutline: outline,
     sourceFullContent: fullContent,
     sourceAssets: assets,
-    progressLog: `[analyzeSource] Parsed ${outline.length} sections, found ${assets.bib.length} bib files, ${assets.images.length} images, ${assets.styles.length} style files.`,
+    sourceProfile,
+    ...progressUpdate(
+      'analyzeSource',
+      'source_analysis',
+      `Parsed ${outline.length} sections; bibMechanism=${sourceProfile.bibMechanism}; class=${sourceProfile.documentclass || '?'}`,
+    ),
   };
 }

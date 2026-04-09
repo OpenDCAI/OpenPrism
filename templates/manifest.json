@@ -24,11 +24,11 @@
     },
     {
       "id": "neurips",
-      "label": "NeurIPS (skeleton)",
+      "label": "NeurIPS 2026",
       "mainFile": "main.tex",
       "category": "academic",
-      "description": "NeurIPS 会议论文骨架模板，适用于机器学习领域",
-      "descriptionEn": "NeurIPS conference paper skeleton template for machine learning",
+      "description": "NeurIPS 2026 官方样式（neurips_2026.sty）与投稿壳，含 checklist",
+      "descriptionEn": "NeurIPS 2026 official style and submission shell with checklist",
       "tags": ["NeurIPS", "Machine Learning"],
       "author": "OpenPrism",
       "featured": true

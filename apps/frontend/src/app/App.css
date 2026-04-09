@@ -3680,62 +3680,252 @@ textarea.input {
   border-radius: 999px;
 }
 
-/* ── Transfer Progress Widget ── */
-.transfer-widget {
+/* ── Transfer progress: FAB + right drawer ── */
+.transfer-progress-fab {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
-  width: 360px;
-  max-height: 400px;
-  background: var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 12px;
-  box-shadow: var(--shadow);
-  z-index: 1000;
+  bottom: 22px;
+  right: 22px;
+  z-index: 10050;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 56px;
+  min-height: 56px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow);
+  color: var(--text);
+  cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.transfer-progress-fab:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12);
+}
+
+.transfer-progress-fab--pulse {
+  animation: transfer-fab-pulse 2s ease-in-out infinite;
+}
+
+@keyframes transfer-fab-pulse {
+  0%, 100% { box-shadow: var(--shadow), 0 0 0 0 rgba(21, 101, 192, 0.35); }
+  50% { box-shadow: var(--shadow), 0 0 0 8px rgba(21, 101, 192, 0); }
+}
+
+.transfer-progress-fab-icon {
+  display: flex;
+  line-height: 0;
+  opacity: 0.9;
+}
+
+.transfer-progress-fab-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.transfer-progress-drawer-root {
+  position: fixed;
+  inset: 0;
+  z-index: 10040;
+  pointer-events: none;
+}
+
+.transfer-progress-drawer-root.is-open {
+  pointer-events: auto;
+}
+
+.transfer-progress-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.35);
+  opacity: 0;
+  transition: opacity 0.25s ease;
+}
+
+.transfer-progress-drawer-root.is-open .transfer-progress-drawer-backdrop {
+  opacity: 1;
+}
+
+.transfer-progress-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: min(440px, 92vw);
+  max-width: 100%;
+  background: var(--panel);
+  border-left: 1px solid var(--border);
+  box-shadow: -12px 0 40px rgba(0, 0, 0, 0.12);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform 0.28s cubic-bezier(0.22, 1, 0.36, 1);
   overflow: hidden;
 }
 
-.transfer-widget-header {
+.transfer-progress-drawer-root.is-open .transfer-progress-drawer {
+  transform: translateX(0);
+}
+
+.transfer-progress-drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 16px 16px 12px;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel-muted);
+  flex-shrink: 0;
+}
+
+.transfer-progress-drawer-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.transfer-progress-drawer-actions {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  padding: 10px 14px;
-  border-bottom: 1px solid var(--border);
-  font-size: 13px;
-  font-weight: 500;
-  background: var(--panel-muted);
+  gap: 6px;
+  flex-shrink: 0;
 }
 
-.transfer-widget-header .icon-btn {
-  width: 22px;
-  height: 22px;
-  font-size: 13px;
-}
-
-.transfer-widget-status {
-  padding: 8px 14px;
+.transfer-progress-drawer-meta {
+  padding: 12px 16px;
   font-size: 12px;
+  line-height: 1.55;
   color: var(--text);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
 }
 
-.transfer-widget-error {
-  padding: 4px 14px 8px;
-  font-size: 12px;
-  color: #d32f2f;
+.transfer-progress-drawer-meta strong {
+  margin-right: 6px;
+  color: var(--muted);
+  font-weight: 500;
 }
 
-.transfer-widget-log {
-  padding: 8px 14px 12px;
+.transfer-progress-drawer-node {
+  font-weight: 400;
+  opacity: 0.88;
+}
+
+.transfer-progress-drawer-badge {
+  display: inline-block;
+  margin-left: 8px;
+  padding: 2px 8px;
+  border-radius: 6px;
   font-size: 11px;
-  font-family: 'JetBrains Mono', monospace;
-  background: rgba(120, 98, 83, 0.06);
-  max-height: 220px;
-  overflow-y: auto;
-  line-height: 1.5;
+  font-weight: 500;
 }
 
-.transfer-widget-log > div {
-  margin-bottom: 2px;
+.transfer-progress-drawer-badge--images {
+  background: rgba(184, 134, 11, 0.15);
+  color: #b8860b;
+}
+
+.transfer-progress-drawer-badge--qa {
+  background: rgba(21, 101, 192, 0.12);
+  color: #1565c0;
+}
+
+.transfer-progress-drawer-nodes {
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.transfer-progress-drawer-nodes-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.transfer-progress-drawer-nodes-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.transfer-progress-drawer-node-chip {
+  font-size: 10px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(120, 98, 83, 0.1);
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+}
+
+.transfer-progress-drawer-error {
+  margin: 0 16px 8px;
+  padding: 10px 12px;
+  font-size: 12px;
+  color: #c62828;
+  background: rgba(198, 40, 40, 0.08);
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+
+.transfer-progress-drawer-log-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  padding: 12px 16px 20px;
+}
+
+.transfer-progress-drawer-log-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+  margin-bottom: 8px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.transfer-progress-drawer-log {
+  flex: 1;
+  min-height: 120px;
+  overflow-y: auto;
+  font-size: 11px;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  line-height: 1.55;
+  padding: 12px;
+  border-radius: 10px;
+  background: rgba(120, 98, 83, 0.06);
+  border: 1px solid var(--border);
+}
+
+.transfer-progress-drawer-log-empty {
+  color: var(--muted);
+  font-style: italic;
+}
+
+.transfer-progress-drawer-log-line {
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.transfer-progress-drawer-log-line--warn {
+  color: #b8860b;
+}
+
+.transfer-progress-drawer-log-line--error {
+  color: #c62828;
+}
+
+.transfer-progress-drawer-log-node {
+  margin-right: 6px;
+  opacity: 0.75;
+  font-weight: 500;
 }

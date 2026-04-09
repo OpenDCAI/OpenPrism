@@ -3,6 +3,7 @@ import path from 'path';
 import { getProjectRoot } from '../../projectService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { listFilesRecursive } from '../../../utils/fsUtils.js';
+import { progressUpdate } from '../progressMeta.js';
 
 /**
  * Recursively resolve \input{} and \include references.
@@ -72,9 +73,14 @@ export async function analyzeTarget(state) {
 
   return {
     targetProjectRoot: projectRoot,
+    workspaceRoot: projectRoot,
     targetOutline: outline,
     targetPreamble: preamble,
     targetTemplateContent: fullContent,
-    progressLog: `[analyzeTarget] Template has ${outline.length} sections. Preamble length: ${preamble.length} chars.`,
+    ...progressUpdate(
+      'analyzeTarget',
+      'source_analysis',
+      `Template ${outline.length} sections; preamble ${preamble.length} chars.`,
+    ),
   };
 }

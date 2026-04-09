@@ -23,7 +23,7 @@ SOURCE CONTENT (full):
 ${state.sourceFullContent}
 
 RULES:
-1. Keep the target preamble (everything before \\begin{document}) EXACTLY as-is
+1. Keep the target preamble (everything before \\begin{document}) EXACTLY as-is — do NOT change \\documentclass, \\usepackage for the venue style, or any template-specific commands
 2. Only modify content between \\begin{document} and \\end{document}
 3. Follow the section mapping in the migration plan
 4. Preserve ALL \\cite{}, \\ref{}, \\label{} commands from the source
@@ -59,7 +59,7 @@ ${state.targetTemplateContent}
 ${imageList || '(none)'}
 
 ## RULES:
-1. Keep the target preamble (everything before \\begin{document}) EXACTLY as-is
+1. Keep the target preamble (everything before \\begin{document}) EXACTLY as-is — do NOT change \\documentclass, \\usepackage for the venue style, or any template-specific commands
 2. Only modify content between \\begin{document} and \\end{document}
 3. Map Markdown headings to the corresponding \\section{}, \\subsection{} etc. in the template
 4. Formulas in the Markdown are already in LaTeX format ($...$ or $$...$$) — preserve them as-is

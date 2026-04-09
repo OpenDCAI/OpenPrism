@@ -38,7 +38,7 @@ async function copySingleAsset(srcRoot, destRoot, relPath) {
 }
 
 /**
- * Legacy mode: copy bib files, images, and style files from source project.
+ * Legacy mode: copy bib/bbl files, images, and style files from source project.
  */
 async function copyAssetsLegacy(state) {
   const assets = state.sourceAssets || {};
@@ -47,6 +47,19 @@ async function copyAssetsLegacy(state) {
   for (const bib of (assets.bib || [])) {
     const r = await copySingleAsset(state.sourceProjectRoot, state.targetProjectRoot, bib);
     results.push(r);
+  }
+
+  // Copy .bbl files
+  if (state.sourceProjectRoot) {
+    const allFiles = await listFilesRecursive(state.sourceProjectRoot);
+    const bblFiles = allFiles
+      .filter(f => f.type === 'file' && path.extname(f.path).toLowerCase() === '.bbl')
+      .map(f => f.path);
+
+    for (const bbl of bblFiles) {
+      const r = await copySingleAsset(state.sourceProjectRoot, state.targetProjectRoot, bbl);
+      results.push(r);
+    }
   }
 
   for (const img of (assets.images || [])) {
@@ -73,7 +86,7 @@ async function copyAssetsLegacy(state) {
 
 /**
  * MinerU mode: copy MinerU-extracted images to target project images/ dir,
- * and optionally copy bib files from source project if available.
+ * and optionally copy bib/bbl files from source project if available.
  */
 async function copyAssetsMineru(state) {
   const images = state.sourceImages || [];
@@ -110,8 +123,24 @@ async function copyAssetsMineru(state) {
     }
   }
 
+  // Copy .bbl files from source project if available
+  let bblCount = 0;
+  if (state.sourceProjectRoot) {
+    const allFiles = await listFilesRecursive(state.sourceProjectRoot);
+    const bblFiles = allFiles
+      .filter(f => f.type === 'file' && path.extname(f.path).toLowerCase() === '.bbl')
+      .map(f => f.path);
+
+    for (const bbl of bblFiles) {
+      const r = await copySingleAsset(
+        state.sourceProjectRoot, state.targetProjectRoot, bbl
+      );
+      if (r.status === 'copied') bblCount++;
+    }
+  }
+
   return {
-    progressLog: `[copyAssets:mineru] Copied ${copiedCount} images, ${bibCount} bib files.`,
+    progressLog: `[copyAssets:mineru] Copied ${copiedCount} images, ${bibCount} bib files, ${bblCount} bbl files.`,
   };
 }
 

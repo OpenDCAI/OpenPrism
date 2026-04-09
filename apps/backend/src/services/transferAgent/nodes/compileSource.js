@@ -10,7 +10,15 @@ import { ensureDir } from '../../../utils/fsUtils.js';
  * (e.g. user uploaded a PDF directly).
  */
 export async function compileSource(state) {
-  const sourceProjectRoot = state.sourceProjectId ? await getProjectRoot(state.sourceProjectId) : undefined;
+  let sourceProjectRoot;
+  if (state.sourceProjectId) {
+    try {
+      sourceProjectRoot = await getProjectRoot(state.sourceProjectId);
+    } catch {
+      // Source project not found — not fatal if we have a PDF
+      sourceProjectRoot = undefined;
+    }
+  }
 
   // If user uploaded a PDF directly, skip compilation
   if (state.sourcePdfPath) {

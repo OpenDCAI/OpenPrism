@@ -1,35 +1,86 @@
-\documentclass[11pt]{article}
+% NeurIPS 2026 — minimal paper shell. Full guide: neurips.md
+%
+% Modes (see neurips.md §2, §20):
+%   Conference anonymous (default below): line numbers, hidden ack in PDF, footer "Do not distribute."
+%   Preprint / arXiv:  \usepackage[preprint]{neurips_2026}
+%   Camera-ready:       \usepackage[main,final]{neurips_2026}  (after acceptance)
+%
+% natbib: numeric compressed citations [1,2,3] (must come before \documentclass)
+\PassOptionsToPackage{numbers,compress,sort}{natbib}
+% Structure / checklist mapping: neurips.md §4.5, §19.2
+%
+\documentclass{article}
+
+\usepackage[main]{neurips_2026}
+
 \usepackage[utf8]{inputenc}
-\usepackage{times}
-\usepackage{graphicx}
+\usepackage[T1]{fontenc}
+\usepackage{url}
+\usepackage{booktabs}
+\usepackage{amsfonts}
 \usepackage{amsmath}
 \usepackage{amssymb}
+\usepackage{nicefrac}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{graphicx}
 
-% NOTE: This is a lightweight skeleton. Replace with official NeurIPS template files for final submission.
+\usepackage[hidelinks]{hyperref}
+\hypersetup{pdfauthor={}}
 
-\title{Your NeurIPS Paper Title}
-\author{Author Name \\ Institution}
+\title{Paper Title}
+
+% \And = line break at LaTeX's discretion; \AND = forced line break between author blocks.
+% With [main]: PDF shows anonymous placeholder; keep real \author here for camera-ready / preprint.
+\author{%
+  Author One \\
+  Affiliation \\
+  Address \\
+  \texttt{email@domain} \\
+  \And
+  Author Two \\
+  Affiliation \\
+  Address \\
+  \texttt{email@domain} \\
+}
 
 \begin{document}
+
 \maketitle
 
 \begin{abstract}
-Briefly summarize the paper.
+  One paragraph only; indentation, font sizes, and spacing per neurips.md \S7.
 \end{abstract}
 
+% Main text: max 9 pages including figures (ack, references, checklist, appendix excluded); neurips.md \S4.
 \section{Introduction}
-Introduce the problem and contributions.
+% Add \section / \subsection / \subsubsection as needed.
+% Optional: \input{sections/introduction.tex}
 
-\section{Method}
-Describe the approach.
+% Optional appendix (uncomment if needed; after main text, often before references—see neurips.md \S18):
+% \appendix
+% \section{Appendix}
 
-\section{Experiments}
-Present results and analysis.
+\clearpage
 
-\section{Conclusion}
-Summarize and discuss future work.
+\begin{ack}
+% Hidden in PDF under anonymous [main]; visible with [preprint] or [main,final].
+We thank \ldots
+\end{ack}
 
-\bibliographystyle{plain}
-\bibliography{references}
+\section*{References}
+{
+\small
+\begin{thebibliography}{9}
+  \bibitem[Author(2024)]{example}
+  Author.
+  \newblock Title.
+  \newblock In \emph{Venue}, 2024.
+\end{thebibliography}
+}
+% BibTeX alternative: \bibliographystyle{unsrtnat} \bibliography{yourfile}
+
+\newpage
+\input{checklist.tex}
 
 \end{document}
