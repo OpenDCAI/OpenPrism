@@ -20,6 +20,7 @@ import type {
   TransferProgressEntry,
   TransferStepResult,
   LiveProgress,
+  ToolTraceEntry,
 } from '../api/client';
 
 interface TransferPanelProps {
@@ -117,24 +118,27 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
     } catch { return { llmEndpoint: '', llmApiKey: '', llmModel: '' }; }
   };
 
-  const readMineruConfigFromStorage = (): { mineruApiBase: string; mineruToken: string } => {
+  const readMineruConfigFromStorage = (): { mineruApiBase: string; mineruToken: string; mineruRasterToPdf: boolean } => {
     try {
       const raw = window.localStorage.getItem(SETTINGS_KEY);
-      if (!raw) return { mineruApiBase: '', mineruToken: '' };
+      if (!raw) return { mineruApiBase: '', mineruToken: '', mineruRasterToPdf: true };
       const p = JSON.parse(raw);
       return {
         mineruApiBase: p.mineruApiBase || '',
         mineruToken: p.mineruToken || '',
+        // 默认开启：与 LaTeX 中优先使用 PDF 矢量/嵌入图一致；可在界面关闭
+        mineruRasterToPdf: p.mineruRasterToPdf !== false,
       };
-    } catch { return { mineruApiBase: '', mineruToken: '' }; }
+    } catch { return { mineruApiBase: '', mineruToken: '', mineruRasterToPdf: true }; }
   };
 
-  const saveMineruConfigToStorage = (apiBase: string, token: string) => {
+  const saveMineruConfigToStorage = (apiBase: string, token: string, rasterToPdf?: boolean) => {
     try {
       const raw = window.localStorage.getItem(SETTINGS_KEY);
       const p = raw ? JSON.parse(raw) : {};
       p.mineruApiBase = apiBase;
       p.mineruToken = token;
+      if (typeof rasterToPdf === 'boolean') p.mineruRasterToPdf = rasterToPdf;
       window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(p));
     } catch { /* ignore */ }
   };
@@ -142,6 +146,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
   // MinerU API config — initialized from localStorage
   const [mineruApiBase, setMineruApiBase] = useState(() => readMineruConfigFromStorage().mineruApiBase);
   const [mineruToken, setMineruToken] = useState(() => readMineruConfigFromStorage().mineruToken);
+  const [mineruRasterToPdf, setMineruRasterToPdf] = useState(() => readMineruConfigFromStorage().mineruRasterToPdf);
 
   // Dropdown open states
   const [templateDropdownOpen, setTemplateDropdownOpen] = useState(false);
@@ -166,6 +171,8 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
   const [running, setRunning] = useState(false);
   const [transferGraphKind, setTransferGraphKind] = useState<string>('');
   const [liveProgress, setLiveProgress] = useState<LiveProgress | null>(null);
+  const [toolTraceRecent, setToolTraceRecent] = useState<ToolTraceEntry[]>([]);
+  const [toolTraceOpen, setToolTraceOpen] = useState(false);
 
   // SSE stream ref
   const sseRef = useRef<EventSource | null>(null);
@@ -246,19 +253,21 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
     setCompletedNodes([]);
     setPendingQA(null);
     setQaAnswers({});
+    setToolTraceRecent([]);
+    setToolTraceOpen(false);
+    setLiveProgress(null);
     setRunning(true);
     setStatus('starting');
 
     try {
       if (transferMode === 'mineru') {
         // MinerU mode — persist config to localStorage
-        saveMineruConfigToStorage(mineruApiBase, mineruToken);
-        const mineruConfig = (mineruApiBase || mineruToken)
-          ? {
-            ...(mineruApiBase ? { apiBase: mineruApiBase } : {}),
-            ...(mineruToken ? { token: mineruToken } : {}),
-          }
-          : undefined;
+        saveMineruConfigToStorage(mineruApiBase, mineruToken, mineruRasterToPdf);
+        const mineruConfig = {
+          ...(mineruApiBase ? { apiBase: mineruApiBase } : {}),
+          ...(mineruToken ? { token: mineruToken } : {}),
+          rasterToPdf: mineruRasterToPdf,
+        };
 
         const res = await mineruTransferStart({
           sourceProjectId: mineruSource === 'project' ? projectId : undefined,
@@ -331,7 +340,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
       setRunning(false);
       setStatus('error');
     }
-  }, [transferMode, mineruSource, uploadedPdf, targetTemplateId, sourceMainFile, projectId, engine, layoutCheck, selectedTemplate, mineruApiBase, mineruToken, neuripsDoubleBlind, neuripsPreprint, neuripsOutputNotes, onJobUpdate]);
+  }, [transferMode, mineruSource, uploadedPdf, targetTemplateId, sourceMainFile, projectId, engine, layoutCheck, selectedTemplate, mineruApiBase, mineruToken, mineruRasterToPdf, neuripsDoubleBlind, neuripsPreprint, neuripsOutputNotes, onJobUpdate]);
 
   const pushJobUpdate = useCallback((jid: string, res: TransferStepResult) => {
     setProgressLog(res.progressLog || []);
@@ -345,6 +354,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
     setStatus(res.status);
     if (res.transferGraphKind) setTransferGraphKind(res.transferGraphKind);
     setLiveProgress(res.liveProgress ?? null);
+    setToolTraceRecent(res.toolTraceRecent || []);
     onJobUpdate?.({
       jobId: jid,
       status: res.status,
@@ -745,6 +755,23 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
               />
             </div>
           </div>
+          <label style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 13 }}>
+            <input
+              type="checkbox"
+              checked={mineruRasterToPdf}
+              onChange={e => {
+                const v = e.target.checked;
+                setMineruRasterToPdf(v);
+                try {
+                  const raw = window.localStorage.getItem(SETTINGS_KEY);
+                  const p = raw ? JSON.parse(raw) : {};
+                  p.mineruRasterToPdf = v;
+                  window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(p));
+                } catch { /* ignore */ }
+              }}
+            />
+            将 MinerU 栅格图转为单页 PDF（重写 Markdown 引用；推荐开启，否则 LaTeX 多为 .jpg/.png）
+          </label>
         </div>
       )}
 
@@ -785,7 +812,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
         <div style={{
           fontSize: 11, marginBottom: 8, padding: '6px 10px', borderRadius: 6,
           background: 'rgba(21, 101, 192, 0.06)', border: '1px solid rgba(21, 101, 192, 0.15)',
-          fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 8,
+          fontFamily: 'monospace', display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap',
         }}>
           <span style={{ fontWeight: 600, textTransform: 'capitalize' }}>
             {liveProgress.activeRole === 'planner' ? '🧠 Planner'
@@ -797,14 +824,77 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
             {liveProgress.toolName === 'llm' ? '思考中...' : liveProgress.toolName}
           </span>
           {liveProgress.toolName !== 'llm' && liveProgress.toolArgs && (
-            <span style={{ color: 'var(--muted)', maxWidth: 200, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            <span style={{
+              color: 'var(--muted)',
+              flex: '1 1 160px',
+              minWidth: 0,
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+            }}
+            title={liveProgress.toolArgs}
+            >
               {liveProgress.toolArgs}
             </span>
           )}
+          {typeof liveProgress.seq === 'number' && (
+            <span style={{ color: 'var(--muted)', fontSize: 10, opacity: 0.85 }}>#{liveProgress.seq}</span>
+          )}
           {liveProgress.maxToolRounds > 0 && (
             <span style={{ marginLeft: 'auto', color: 'var(--muted)', flexShrink: 0 }}>
-              {liveProgress.toolRound + 1}/{liveProgress.maxToolRounds}
+              round {liveProgress.toolRound + 1}/{liveProgress.maxToolRounds}
             </span>
+          )}
+        </div>
+      )}
+
+      {/* Agent tool trace (ring buffer from backend) */}
+      {toolTraceRecent.length > 0 && (
+        <div style={{ fontSize: 11, marginBottom: 10 }}>
+          <button
+            type="button"
+            className="btn"
+            style={{ padding: '4px 10px', fontSize: 11, marginBottom: toolTraceOpen ? 6 : 0 }}
+            onClick={() => setToolTraceOpen(o => !o)}
+          >
+            {chevronSvg(toolTraceOpen)}
+            <span style={{ marginLeft: 4 }}>工具调用记录</span>
+            <span style={{ color: 'var(--muted)', marginLeft: 6 }}>({toolTraceRecent.length})</span>
+          </button>
+          {toolTraceOpen && (
+            <div style={{
+              maxHeight: 220,
+              overflow: 'auto',
+              border: '1px solid rgba(0,0,0,0.08)',
+              borderRadius: 6,
+              fontFamily: 'ui-monospace, monospace',
+            }}
+            >
+              <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 10 }}>
+                <thead>
+                  <tr style={{ background: 'rgba(0,0,0,0.04)', textAlign: 'left' }}>
+                    <th style={{ padding: 4 }}>时间</th>
+                    <th style={{ padding: 4 }}>角色</th>
+                    <th style={{ padding: 4 }}>tool</th>
+                    <th style={{ padding: 4 }}>参数</th>
+                    <th style={{ padding: 4 }}>ms</th>
+                    <th style={{ padding: 4 }}>结果</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {[...toolTraceRecent].slice(-30).reverse().map((e, i) => (
+                    <tr key={`${e.ts}-${e.tool}-${i}`} style={{ borderTop: '1px solid rgba(0,0,0,0.06)' }}>
+                      <td style={{ padding: 4, whiteSpace: 'nowrap' }}>{new Date(e.ts).toLocaleTimeString()}</td>
+                      <td style={{ padding: 4 }}>{e.agent}</td>
+                      <td style={{ padding: 4 }}>{e.tool}</td>
+                      <td style={{ padding: 4, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis' }} title={e.argsBrief}>{e.argsBrief}</td>
+                      <td style={{ padding: 4 }}>{e.durationMs != null ? e.durationMs : '—'}</td>
+                      <td style={{ padding: 4, color: e.ok ? '#2e7d32' : '#c62828' }}>{e.ok ? 'ok' : (e.error || 'fail')}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </div>
       )}

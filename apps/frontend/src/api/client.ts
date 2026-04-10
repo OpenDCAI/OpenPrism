@@ -508,7 +508,24 @@ export interface LiveProgress {
   toolArgs: string;
   toolRound: number;
   maxToolRounds: number;
+  /** Monotonic; SSE uses this to detect back-to-back same toolName updates */
+  seq?: number;
   lastUpdate: number;
+}
+
+/** One completed agent tool invocation (from job.toolTraceRecent / SSE). */
+export interface ToolTraceEntry {
+  ts: number;
+  agent: string;
+  iteration: number;
+  round: number;
+  tool: string;
+  argsBrief: string;
+  toolCallId?: string;
+  phase?: string;
+  durationMs?: number;
+  ok: boolean;
+  error?: string;
 }
 
 export interface TransferStepResult {
@@ -526,6 +543,7 @@ export interface TransferStepResult {
   bundleNotes?: string | null;
   transferGraphKind?: string;
   liveProgress?: LiveProgress | null;
+  toolTraceRecent?: ToolTraceEntry[];
   /** Present on 500 from /transfer/step when a graph node fails (e.g. diff retries exhausted) */
   failedNode?: string;
   failedPhase?: string;
@@ -654,6 +672,16 @@ export interface MineruConfig {
   apiBase?: string;
   token?: string;
   modelVersion?: string;
+  /** Wrap PNG/JPEG/WebP as single-page PDF and rewrite Markdown (or set env OPENPRISM_MINERU_RASTER_TO_PDF=1). */
+  rasterToPdf?: boolean;
+  deleteRasterAfterPdf?: boolean;
+  /** Upscale factor before PDF embed when rasterToPdf is true (or env OPENPRISM_MINERU_IMAGE_SCALE). */
+  imageScale?: number;
+  /** Replace images from source PDF using *content_list*.json (needs pdftoppm; or env OPENPRISM_MINERU_BBOX_CROP=1). */
+  bboxCrop?: boolean;
+  cropDpi?: number;
+  /** MinerU bbox coords: default PDF bottom-left; use top_left if crops misaligned. */
+  bboxCoords?: 'pdf' | 'top_left';
 }
 
 export interface MineruTransferStartPayload {

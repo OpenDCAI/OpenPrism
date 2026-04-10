@@ -14,7 +14,7 @@ import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { buildVenueSkillFromState } from '../skills/index.js';
 import { createGeneratorTools } from '../tools/index.js';
 import { NeuripsPhase, progressUpdate } from '../progressMeta.js';
-import { briefToolArgs } from '../utils.js';
+import { bumpLiveProgress, runAgentToolCall, recordUnknownToolTrace } from '../toolTrace.js';
 
 const MAX_TOOL_ROUNDS = 40;
 
@@ -110,9 +110,18 @@ When you are done with all modifications, output:
 
   let summary = '';
   let toolCallCount = 0;
+  const projectRoot = state.workspaceRoot || state.targetProjectRoot;
+  const jobId = state.jobId;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    if (lp) { lp.activeRole = 'generator'; lp.toolName = 'llm'; lp.toolArgs = ''; lp.toolRound = round; lp.maxToolRounds = MAX_TOOL_ROUNDS; lp.lastUpdate = Date.now(); }
+    if (lp) {
+      lp.activeRole = 'generator';
+      lp.toolName = 'llm';
+      lp.toolArgs = '';
+      lp.toolRound = round;
+      lp.maxToolRounds = MAX_TOOL_ROUNDS;
+      bumpLiveProgress(lp);
+    }
     const response = await llmWithTools.invoke(messages);
     messages.push(response);
 
@@ -121,6 +130,16 @@ When you are done with all modifications, output:
       for (const toolCall of response.tool_calls) {
         const tool = tools.find((t) => t.name === toolCall.name);
         if (!tool) {
+          await recordUnknownToolTrace({
+            config,
+            lp,
+            projectRoot,
+            jobId,
+            agent: 'generator',
+            iteration,
+            round,
+            toolName: toolCall.name,
+          });
           messages.push({
             role: 'tool',
             content: `[ERROR] Unknown tool: ${toolCall.name}`,
@@ -128,8 +147,18 @@ When you are done with all modifications, output:
           });
           continue;
         }
-        if (lp) { lp.toolName = toolCall.name; lp.toolArgs = briefToolArgs(toolCall.name, toolCall.args); lp.lastUpdate = Date.now(); }
-        const result = await tool.invoke(toolCall.args);
+        if (lp) lp.maxToolRounds = MAX_TOOL_ROUNDS;
+        const result = await runAgentToolCall({
+          config,
+          lp,
+          projectRoot,
+          jobId,
+          agent: 'generator',
+          iteration,
+          round,
+          toolCall,
+          invokeFn: () => tool.invoke(toolCall.args),
+        });
         toolCallCount++;
         messages.push({
           role: 'tool',

@@ -64,7 +64,7 @@ ${imageList || '(none)'}
 3. Map Markdown headings to the corresponding \\section{}, \\subsection{} etc. in the template
 4. Formulas in the Markdown are already in LaTeX format ($...$ or $$...$$) — preserve them as-is
 5. Convert HTML tables in the Markdown to LaTeX \\begin{tabular} environments
-6. For images referenced in the Markdown, use \\includegraphics{images/<filename>} wrapped in \\begin{figure}...\\end{figure}
+6. For images referenced in the Markdown, use \\includegraphics[width=\\linewidth,keepaspectratio]{images/<filename>} wrapped in \\begin{figure}...\\end{figure}
 7. Preserve ALL text content — do not omit any paragraphs or sections
 8. Do NOT add content that doesn't exist in the Markdown
 9. Output the COMPLETE .tex file content, not just the body

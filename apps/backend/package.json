@@ -20,6 +20,8 @@
     "langchain": "~0.3.37",
     "lib0": "^0.2.95",
     "localtunnel": "^2.0.2",
+    "pdf-lib": "^1.17.1",
+    "sharp": "^0.34.5",
     "tar": "^6.2.1",
     "unzipper": "^0.10.14",
     "y-protocols": "^1.0.6",

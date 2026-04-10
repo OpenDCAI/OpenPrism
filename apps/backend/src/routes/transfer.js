@@ -17,6 +17,7 @@ import {
   transferDebugEntriesDelta,
   announceTransferDebugOnce,
 } from '../services/transferAgent/transferDebugLog.js';
+import { pushToolTraceRecent } from '../services/transferAgent/toolTrace.js';
 import { TransferNodeError } from '../services/transferAgent/transferNodeError.js';
 
 // In-memory job store: jobId → { graph, state, status, progressLog }
@@ -85,6 +86,7 @@ function buildTransferApiPayload(job, state) {
     bundleNotes: st.bundleNotes || null,
     transferGraphKind: st.transferGraphKind || job.state?.transferGraphKind || 'legacy',
     liveProgress: job.liveProgress || null,
+    toolTraceRecent: job.toolTraceRecent || [],
   };
 }
 
@@ -181,6 +183,7 @@ export function registerTransferRoutes(fastify) {
       hasStarted: false,
       iterator: null,
       liveProgress: null,
+      toolTraceRecent: [],
       _transferDebugLogLen: 0,
       _transferDebugEntriesLen: 0,
     });
@@ -224,8 +227,26 @@ export function registerTransferRoutes(fastify) {
     try {
       job.status = 'running';
       // Initialize live progress for tool-level granularity
-      job.liveProgress = { activeRole: '', toolName: '', toolArgs: '', toolRound: 0, maxToolRounds: 0, lastUpdate: Date.now() };
-      const runConfig = { configurable: { thread_id: jobId, _liveProgress: job.liveProgress }, ...INVOKE_OPTS };
+      job.liveProgress = {
+        activeRole: '',
+        toolName: '',
+        toolArgs: '',
+        toolRound: 0,
+        maxToolRounds: 0,
+        seq: 0,
+        lastUpdate: Date.now(),
+      };
+      const runConfig = {
+        configurable: {
+          thread_id: jobId,
+          _liveProgress: job.liveProgress,
+          _recordToolTrace: (entry) => {
+            if (!job.toolTraceRecent) job.toolTraceRecent = [];
+            pushToolTraceRecent(job, entry);
+          },
+        },
+        ...INVOKE_OPTS,
+      };
       const input = job.hasStarted ? null : job.state;
       let result;
       try {
@@ -436,8 +457,11 @@ export function registerTransferRoutes(fastify) {
     let lastPhase = '';
     let lastNode = '';
     let lastLpToolName = '';
+    let lastLpToolArgs = '';
     let lastLpToolRound = -1;
     let lastLpActiveRole = '';
+    let lastLpSeq = -1;
+    let lastToolTraceLen = -1;
     let closed = false;
 
     request.raw.on('close', () => { closed = true; });
@@ -460,6 +484,14 @@ export function registerTransferRoutes(fastify) {
     lastStatus = initialPayload.status;
     lastPhase = initialPayload.phase;
     lastNode = initialPayload.currentNode;
+    if (initialPayload.liveProgress) {
+      lastLpToolName = initialPayload.liveProgress.toolName || '';
+      lastLpToolArgs = initialPayload.liveProgress.toolArgs || '';
+      lastLpToolRound = initialPayload.liveProgress.toolRound ?? -1;
+      lastLpActiveRole = initialPayload.liveProgress.activeRole || '';
+      lastLpSeq = initialPayload.liveProgress.seq ?? -1;
+    }
+    lastToolTraceLen = (initialPayload.toolTraceRecent || []).length;
 
     // Poll loop
     const interval = setInterval(() => {
@@ -477,13 +509,22 @@ export function registerTransferRoutes(fastify) {
       const entriesLen = (payload.progressLogEntries || []).length;
       const lp = payload.liveProgress;
 
+      const lpSeq = lp?.seq ?? -1;
+      const traceLen = (payload.toolTraceRecent || []).length;
       const changed =
         payload.status !== lastStatus ||
         payload.phase !== lastPhase ||
         payload.currentNode !== lastNode ||
         completedLen !== lastCompletedLen ||
         entriesLen !== lastEntriesLen ||
-        (lp && (lp.toolName !== lastLpToolName || lp.toolRound !== lastLpToolRound || lp.activeRole !== lastLpActiveRole));
+        traceLen !== lastToolTraceLen ||
+        (lp && (
+          lpSeq !== lastLpSeq ||
+          lp.toolName !== lastLpToolName ||
+          lp.toolArgs !== lastLpToolArgs ||
+          lp.toolRound !== lastLpToolRound ||
+          lp.activeRole !== lastLpActiveRole
+        ));
 
       if (changed) {
         sendEvent('progress', payload);
@@ -492,10 +533,13 @@ export function registerTransferRoutes(fastify) {
         lastStatus = payload.status;
         lastPhase = payload.phase;
         lastNode = payload.currentNode;
+        lastToolTraceLen = traceLen;
         if (lp) {
           lastLpToolName = lp.toolName;
+          lastLpToolArgs = lp.toolArgs || '';
           lastLpToolRound = lp.toolRound;
           lastLpActiveRole = lp.activeRole;
+          lastLpSeq = lpSeq;
         }
       }
 
@@ -613,6 +657,7 @@ export function registerTransferRoutes(fastify) {
       hasStarted: false,
       iterator: null,
       liveProgress: null,
+      toolTraceRecent: [],
       _transferDebugLogLen: 0,
       _transferDebugEntriesLen: 0,
     });

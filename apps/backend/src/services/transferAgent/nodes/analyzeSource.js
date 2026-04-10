@@ -53,6 +53,25 @@ function parseOutline(content) {
   return outline;
 }
 
+/** Map ATX headings to the same { level, title } shape as parseOutline. */
+const MD_HEADING_LEVEL = { 1: 'section', 2: 'subsection', 3: 'subsubsection' };
+
+function parseMarkdownOutline(md) {
+  const outline = [];
+  if (!md) return outline;
+  const lines = md.split(/\r?\n/);
+  for (const line of lines) {
+    const m = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (!m) continue;
+    const depth = m[1].length;
+    const title = m[2].replace(/\s*#+\s*$/, '').trim();
+    if (!title) continue;
+    const level = MD_HEADING_LEVEL[Math.min(depth, 3)] || 'subsubsection';
+    outline.push({ level, title });
+  }
+  return outline;
+}
+
 /**
  * Collect asset references from LaTeX content.
  */
@@ -138,6 +157,36 @@ export function buildSourceProfile(content) {
  * parses outline, collects assets.
  */
 export async function analyzeSource(state) {
+  // MinerU + PDF upload: no LaTeX source project; content is Markdown under _mineru_output/.
+  if (!state.sourceProjectId && state.transferMode === 'mineru') {
+    const readRoot = state.mineruOutputDir
+      || (state.targetProjectRoot ? path.join(state.targetProjectRoot, '_mineru_output') : '');
+    if (!readRoot) {
+      throw new Error(
+        'MinerU PDF path: missing mineruOutputDir and targetProjectRoot; run parsePdfWithMineru before analyzeSource.',
+      );
+    }
+    const md = state.sourceMarkdown || '';
+    const outline = parseMarkdownOutline(md);
+    const imagePaths = (state.sourceImages || [])
+      .map((img) => (img?.name ? path.join('images', img.name) : ''))
+      .filter(Boolean);
+    const assets = { bib: [], images: imagePaths, styles: [], other: [] };
+    const sourceProfile = buildSourceProfile('');
+    return {
+      sourceReadRoot: readRoot,
+      sourceOutline: outline,
+      sourceFullContent: md,
+      sourceAssets: assets,
+      sourceProfile,
+      ...progressUpdate(
+        'analyzeSource',
+        'source_analysis',
+        `MinerU Markdown: ${outline.length} headings; ${imagePaths.length} images; readRoot=${readRoot}`,
+      ),
+    };
+  }
+
   const projectRoot = await getProjectRoot(state.sourceProjectId);
   const allFiles = await listFilesRecursive(projectRoot);
 

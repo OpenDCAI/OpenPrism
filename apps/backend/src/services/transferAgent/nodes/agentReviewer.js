@@ -17,7 +17,8 @@ import { buildVenueSkillFromState } from '../skills/index.js';
 import { buildReviewChecklist } from '../skills/reviewerChecklist.js';
 import { createReviewerTools } from '../tools/index.js';
 import { NeuripsPhase, progressUpdate } from '../progressMeta.js';
-import { extractJSON, briefToolArgs } from '../utils.js';
+import { extractJSON } from '../utils.js';
+import { bumpLiveProgress, runAgentToolCall, recordUnknownToolTrace } from '../toolTrace.js';
 
 const MAX_TOOL_ROUNDS = 20;
 
@@ -127,9 +128,18 @@ Rules for verdict:
   ];
 
   let reviewResult = null;
+  const projectRoot = state.workspaceRoot || state.targetProjectRoot;
+  const jobId = state.jobId;
 
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    if (lp) { lp.activeRole = 'reviewer'; lp.toolName = 'llm'; lp.toolArgs = ''; lp.toolRound = round; lp.maxToolRounds = MAX_TOOL_ROUNDS; lp.lastUpdate = Date.now(); }
+    if (lp) {
+      lp.activeRole = 'reviewer';
+      lp.toolName = 'llm';
+      lp.toolArgs = '';
+      lp.toolRound = round;
+      lp.maxToolRounds = MAX_TOOL_ROUNDS;
+      bumpLiveProgress(lp);
+    }
     const response = await llmWithTools.invoke(messages);
     messages.push(response);
 
@@ -138,6 +148,16 @@ Rules for verdict:
       for (const toolCall of response.tool_calls) {
         const tool = tools.find((t) => t.name === toolCall.name);
         if (!tool) {
+          await recordUnknownToolTrace({
+            config,
+            lp,
+            projectRoot,
+            jobId,
+            agent: 'reviewer',
+            iteration,
+            round,
+            toolName: toolCall.name,
+          });
           messages.push({
             role: 'tool',
             content: `[ERROR] Unknown tool: ${toolCall.name}`,
@@ -145,8 +165,18 @@ Rules for verdict:
           });
           continue;
         }
-        if (lp) { lp.toolName = toolCall.name; lp.toolArgs = briefToolArgs(toolCall.name, toolCall.args); lp.lastUpdate = Date.now(); }
-        const result = await tool.invoke(toolCall.args);
+        if (lp) lp.maxToolRounds = MAX_TOOL_ROUNDS;
+        const result = await runAgentToolCall({
+          config,
+          lp,
+          projectRoot,
+          jobId,
+          agent: 'reviewer',
+          iteration,
+          round,
+          toolCall,
+          invokeFn: () => tool.invoke(toolCall.args),
+        });
         messages.push({
           role: 'tool',
           content: typeof result === 'string' ? result : JSON.stringify(result),

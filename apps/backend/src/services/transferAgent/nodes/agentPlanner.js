@@ -13,7 +13,7 @@ import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { buildVenueSkillFromState } from '../skills/index.js';
 import { createReadOnlyTools } from '../tools/index.js';
 import { NeuripsPhase, progressUpdate } from '../progressMeta.js';
-import { briefToolArgs } from '../utils.js';
+import { bumpLiveProgress, runAgentToolCall, recordUnknownToolTrace } from '../toolTrace.js';
 import { analyzeSource, buildSourceProfile } from './analyzeSource.js';
 import { analyzeTarget } from './analyzeTarget.js';
 
@@ -137,9 +137,19 @@ Output the revised plan in <MIGRATION_PLAN> tags (same JSON format as before).`;
     { role: 'user', content: userMessage },
   ];
 
+  const projectRoot = mergedState.workspaceRoot || mergedState.targetProjectRoot;
+  const jobId = mergedState.jobId;
+
   let plan = null;
   for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    if (lp) { lp.activeRole = 'planner'; lp.toolName = 'llm'; lp.toolArgs = ''; lp.toolRound = round; lp.maxToolRounds = MAX_TOOL_ROUNDS; lp.lastUpdate = Date.now(); }
+    if (lp) {
+      lp.activeRole = 'planner';
+      lp.toolName = 'llm';
+      lp.toolArgs = '';
+      lp.toolRound = round;
+      lp.maxToolRounds = MAX_TOOL_ROUNDS;
+      bumpLiveProgress(lp);
+    }
     const response = await llmWithTools.invoke(messages);
     messages.push(response);
 
@@ -148,6 +158,16 @@ Output the revised plan in <MIGRATION_PLAN> tags (same JSON format as before).`;
       for (const toolCall of response.tool_calls) {
         const tool = tools.find((t) => t.name === toolCall.name);
         if (!tool) {
+          await recordUnknownToolTrace({
+            config,
+            lp,
+            projectRoot,
+            jobId,
+            agent: 'planner',
+            iteration,
+            round,
+            toolName: toolCall.name,
+          });
           messages.push({
             role: 'tool',
             content: `[ERROR] Unknown tool: ${toolCall.name}`,
@@ -155,8 +175,18 @@ Output the revised plan in <MIGRATION_PLAN> tags (same JSON format as before).`;
           });
           continue;
         }
-        if (lp) { lp.toolName = toolCall.name; lp.toolArgs = briefToolArgs(toolCall.name, toolCall.args); lp.lastUpdate = Date.now(); }
-        const result = await tool.invoke(toolCall.args);
+        if (lp) lp.maxToolRounds = MAX_TOOL_ROUNDS;
+        const result = await runAgentToolCall({
+          config,
+          lp,
+          projectRoot,
+          jobId,
+          agent: 'planner',
+          iteration,
+          round,
+          toolCall,
+          invokeFn: () => tool.invoke(toolCall.args),
+        });
         messages.push({
           role: 'tool',
           content: typeof result === 'string' ? result : JSON.stringify(result),
