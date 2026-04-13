@@ -2,6 +2,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { HumanMessage } from '@langchain/core/messages';
 import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { extractJSON, validateSchema } from '../utils.js';
+import { traceLlmInvoke, chatOpenAiTraceRawFields } from '../llmCallTrace.js';
 
 /**
  * checkLayout node — sends page screenshots to VLM
@@ -24,6 +25,7 @@ export async function checkLayout(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   const contentParts = [
@@ -51,8 +53,14 @@ export async function checkLayout(state) {
   let retries = 0;
   let messages = [message];
 
+  const projectRoot = state.workspaceRoot || state.targetProjectRoot;
+  const traceBase = projectRoot && state.jobId
+    ? { projectRoot, jobId: state.jobId, node: 'checkLayout' }
+    : null;
+
   for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
-    const response = await llm.invoke(messages);
+    const traceCtx = traceBase ? { ...traceBase, attempt } : null;
+    const response = await traceLlmInvoke(traceCtx, messages, () => llm.invoke(messages));
     const raw = typeof response.content === 'string' ? response.content : '';
 
     const parsed = extractJSON(raw);

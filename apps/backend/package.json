@@ -3,7 +3,8 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "node src/index.js"
+    "dev": "node src/index.js",
+    "test": "node --test \"src/**/*.test.js\""
   },
   "dependencies": {
     "@fastify/cors": "^8.5.0",

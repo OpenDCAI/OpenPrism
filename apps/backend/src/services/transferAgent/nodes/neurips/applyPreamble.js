@@ -8,6 +8,7 @@ import {
   splitTexDocument,
   mergeTexDocument,
 } from '../../utils.js';
+import { traceLlmInvoke, chatOpenAiTraceRawFields } from '../../llmCallTrace.js';
 import { loadNeuripsRulesFull, formatNeuripsHandbookBlock } from '../../neuripsRules.js';
 import { NeuripsPhase, progressUpdate } from '../../progressMeta.js';
 
@@ -31,6 +32,7 @@ export async function applyPreamble(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   const handbook = formatNeuripsHandbookBlock(await loadNeuripsRulesFull());
@@ -65,7 +67,11 @@ ${handbook}
 
 Output ONLY the new preamble: from \\documentclass through the line immediately before \\begin{document}. Do NOT output \\begin{document} or anything after it. No markdown fences.`;
 
-  const response = await llm.invoke([{ role: 'user', content: prompt }]);
+  const messages = [{ role: 'user', content: prompt }];
+  const traceCtx = root && state.jobId
+    ? { projectRoot: root, jobId: state.jobId, node: 'applyPreamble' }
+    : null;
+  const response = await traceLlmInvoke(traceCtx, messages, () => llm.invoke(messages));
   let newPreamble = stripCodeFences(
     typeof response.content === 'string' ? response.content : '',
   ).trim();

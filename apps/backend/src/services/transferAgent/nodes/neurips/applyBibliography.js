@@ -9,6 +9,7 @@ import {
   mainTexDiffInstructions,
   runLlmUnifiedDiffWithRetries,
 } from '../../llmUnifiedDiff.js';
+import { chatOpenAiTraceRawFields } from '../../llmCallTrace.js';
 
 export async function applyBibliography(state) {
   const root = state.workspaceRoot || state.targetProjectRoot;
@@ -23,6 +24,7 @@ export async function applyBibliography(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   const handbook = formatNeuripsHandbookBlock(await loadNeuripsRulesFull());

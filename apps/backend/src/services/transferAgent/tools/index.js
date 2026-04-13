@@ -13,12 +13,15 @@ import { createListProjectTreeTool } from './listProjectTree.js';
 import { createCopyAssetTool } from './copyAsset.js';
 import { createRaiseQuestionTool } from './raiseQuestion.js';
 import { createMeasureFiguresTool } from './measureFigures.js';
+import { createCompileLatexTool } from './compileLatex.js';
 
 /**
  * @param {object} ctx
  * @param {string} ctx.sourceReadRoot  — absolute path to source project
  * @param {string} ctx.workspaceRoot   — absolute path to target workspace
  * @param {string} ctx.jobId           — transfer job ID (for snapshots)
+ * @param {boolean} [ctx.mockEnabled]  — whether mock pre/post is enabled
+ * @param {string} [ctx.mockMapPath]   — absolute path to mock kvjson
  * @returns {import('@langchain/core/tools').DynamicStructuredTool[]}
  */
 export function createAllTools(ctx) {
@@ -60,6 +63,7 @@ export function createGeneratorTools(ctx) {
     createListProjectTreeTool(ctx),
     createCopyAssetTool(ctx),
     createMeasureFiguresTool(ctx),
+    createCompileLatexTool(ctx),
   ];
 }
 

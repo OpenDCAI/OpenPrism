@@ -1,7 +1,14 @@
 import { promises as fs } from 'fs';
 import path from 'path';
 import { ensureDir } from '../../utils/fsUtils.js';
+import { safeJoin } from '../../utils/pathUtils.js';
 import { briefToolArgs } from './utils.js';
+import { readWorkspaceFile } from './fsTools.js';
+import {
+  remockBeforeWrite,
+  assertOnlyRegisteredMockTokensForMap,
+  shouldMaskPath,
+} from './mock/mockService.js';
 
 export const MAX_TOOL_TRACE_RECENT = 200;
 
@@ -51,6 +58,8 @@ async function appendToolTraceJsonl(projectRoot, jobId, record) {
  * @param {number} opts.iteration
  * @param {number} opts.round
  * @param {{ id: string, name: string, args: object }} opts.toolCall
+ * @param {string} [opts.mockMapPath]
+ * @param {boolean} [opts.remockOnWrite] - whether to remock/unmask immediately after write tools
  * @param {() => Promise<unknown>} opts.invokeFn
  */
 export async function runAgentToolCall(opts) {
@@ -63,6 +72,8 @@ export async function runAgentToolCall(opts) {
     iteration,
     round,
     toolCall,
+    mockMapPath,
+    remockOnWrite = true,
     invokeFn,
   } = opts;
 
@@ -72,6 +83,44 @@ export async function runAgentToolCall(opts) {
 
   const toolName = toolCall.name;
   const argsBrief = briefToolArgs(toolName, toolCall.args);
+  let invoke = invokeFn;
+  if (mockMapPath && (toolName === 'writeFile' || toolName === 'applyDiff')) {
+    const inner = invokeFn;
+    invoke = async () => {
+      const relPath = toolCall?.args?.path;
+      if (!relPath || !projectRoot) return inner();
+      const beforeContent = await readWorkspaceFile(projectRoot, relPath).catch(() => '');
+      const checkMockTokens = shouldMaskPath(relPath);
+
+      if (checkMockTokens && toolName === 'writeFile' && typeof toolCall?.args?.content === 'string') {
+        await assertOnlyRegisteredMockTokensForMap(toolCall.args.content, mockMapPath);
+      }
+
+      const result = await inner();
+      const afterContent = await readWorkspaceFile(projectRoot, relPath).catch(() => '');
+      try {
+        if (checkMockTokens) {
+          await assertOnlyRegisteredMockTokensForMap(afterContent, mockMapPath);
+        }
+        if (remockOnWrite) {
+          const remocked = await remockBeforeWrite({
+            relPath,
+            beforeContent,
+            candidateContent: afterContent,
+            mockMapPath,
+          });
+          if (remocked.content !== afterContent) {
+            await fs.writeFile(safeJoin(projectRoot, relPath), remocked.content, 'utf8');
+          }
+        }
+      } catch (err) {
+        await fs.writeFile(safeJoin(projectRoot, relPath), beforeContent, 'utf8');
+        throw err;
+      }
+      return result;
+    };
+  }
+
   const t0 = Date.now();
   const activeRole = agent === 'planner' ? 'planner' : agent === 'generator' ? 'generator' : 'reviewer';
 
@@ -96,7 +145,7 @@ export async function runAgentToolCall(opts) {
   await appendToolTraceJsonl(projectRoot, jobId, { ...base, phase: 'start' });
 
   try {
-    const result = await invokeFn();
+    const result = await invoke();
     const durationMs = Date.now() - t0;
     const endEntry = {
       ...base,

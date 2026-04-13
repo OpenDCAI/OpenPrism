@@ -14,8 +14,18 @@ import { buildVenueSkillFromState } from '../skills/index.js';
 import { createReadOnlyTools } from '../tools/index.js';
 import { NeuripsPhase, progressUpdate } from '../progressMeta.js';
 import { bumpLiveProgress, runAgentToolCall, recordUnknownToolTrace } from '../toolTrace.js';
+import { traceLlmInvoke, chatOpenAiTraceRawFields } from '../llmCallTrace.js';
 import { analyzeSource, buildSourceProfile } from './analyzeSource.js';
 import { analyzeTarget } from './analyzeTarget.js';
+import {
+  MOCK_VERSION,
+  defaultMockMapPath,
+  applyMockForRead,
+  loadMockKV,
+  premockAllSourceMaskableFiles,
+  premaskWorkspaceWithKV,
+  unmaskWorkspaceWithKV,
+} from '../mock/mockService.js';
 
 const MAX_TOOL_ROUNDS = 20;
 
@@ -38,6 +48,33 @@ export async function agentPlanner(state, config) {
     const sourceResult = await analyzeSource(state);
     const targetResult = await analyzeTarget({ ...state, ...sourceResult });
     analysisState = { ...sourceResult, ...targetResult };
+
+    // Pre-mock source analysis fields so planner system context does not expose frozen content.
+    const sourceRoot = sourceResult.sourceReadRoot || sourceResult.sourceProjectRoot;
+    const workspaceRoot = targetResult.workspaceRoot || targetResult.targetProjectRoot || state.workspaceRoot;
+    const mockMapPath = defaultMockMapPath(workspaceRoot, state.jobId);
+    const isMineruMode = state.transferMode === 'mineru';
+    const sourceMainPath = isMineruMode ? 'content.md' : (state.sourceMainFile || '');
+    // Fill KV for every source .tex/.md so grepFile and split-main projects stay masked.
+    await premockAllSourceMaskableFiles({ sourceReadRoot: sourceRoot, mockMapPath });
+    const premock = await applyMockForRead({
+      content: sourceResult.sourceFullContent || '',
+      relPath: sourceMainPath,
+      mockMapPath,
+    });
+    const kv = await loadMockKV(mockMapPath);
+    const sourceProfile = buildSourceProfile(premock.content || '');
+    analysisState = {
+      ...analysisState,
+      sourceFullContent: premock.content,
+      sourceProfile,
+      mockEnabled: true,
+      mockVersion: MOCK_VERSION,
+      mockMapPath,
+      mockSegmentsMeta: kv.metadata?.files || {},
+      sourceReadRoot: sourceRoot,
+      workspaceRoot,
+    };
   }
 
   const mergedState = { ...state, ...analysisState };
@@ -47,6 +84,8 @@ export async function agentPlanner(state, config) {
     sourceReadRoot: mergedState.sourceReadRoot || mergedState.sourceProjectRoot,
     workspaceRoot: mergedState.workspaceRoot || mergedState.targetProjectRoot,
     jobId: mergedState.jobId,
+    mockEnabled: mergedState.mockEnabled,
+    mockMapPath: mergedState.mockMapPath,
   };
   const tools = createReadOnlyTools(ctx);
 
@@ -57,6 +96,7 @@ export async function agentPlanner(state, config) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
   const llmWithTools = llm.bindTools(tools);
 
@@ -139,19 +179,26 @@ Output the revised plan in <MIGRATION_PLAN> tags (same JSON format as before).`;
 
   const projectRoot = mergedState.workspaceRoot || mergedState.targetProjectRoot;
   const jobId = mergedState.jobId;
+  if (mergedState.mockEnabled && mergedState.mockMapPath && projectRoot) {
+    await premaskWorkspaceWithKV({ workspaceRoot: projectRoot, mockMapPath: mergedState.mockMapPath });
+  }
 
-  let plan = null;
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    if (lp) {
-      lp.activeRole = 'planner';
-      lp.toolName = 'llm';
-      lp.toolArgs = '';
-      lp.toolRound = round;
-      lp.maxToolRounds = MAX_TOOL_ROUNDS;
-      bumpLiveProgress(lp);
-    }
-    const response = await llmWithTools.invoke(messages);
-    messages.push(response);
+  try {
+    let plan = null;
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      if (lp) {
+        lp.activeRole = 'planner';
+        lp.toolName = 'llm';
+        lp.toolArgs = '';
+        lp.toolRound = round;
+        lp.maxToolRounds = MAX_TOOL_ROUNDS;
+        bumpLiveProgress(lp);
+      }
+      const traceCtx = projectRoot && jobId
+        ? { projectRoot, jobId, agent: 'planner', iteration, round }
+        : null;
+      const response = await traceLlmInvoke(traceCtx, messages, () => llmWithTools.invoke(messages));
+      messages.push(response);
 
     // Check for tool calls
     if (response.tool_calls && response.tool_calls.length > 0) {
@@ -176,17 +223,24 @@ Output the revised plan in <MIGRATION_PLAN> tags (same JSON format as before).`;
           continue;
         }
         if (lp) lp.maxToolRounds = MAX_TOOL_ROUNDS;
-        const result = await runAgentToolCall({
-          config,
-          lp,
-          projectRoot,
-          jobId,
-          agent: 'planner',
-          iteration,
-          round,
-          toolCall,
-          invokeFn: () => tool.invoke(toolCall.args),
-        });
+          let result;
+          try {
+            result = await runAgentToolCall({
+              config,
+              lp,
+              projectRoot,
+              jobId,
+              agent: 'planner',
+              iteration,
+              round,
+              toolCall,
+              mockMapPath: mergedState.mockMapPath,
+              remockOnWrite: false,
+              invokeFn: () => tool.invoke(toolCall.args),
+            });
+          } catch (err) {
+            result = `[ERROR] Tool ${toolCall.name} failed: ${err?.message || String(err)}`;
+          }
         messages.push({
           role: 'tool',
           content: typeof result === 'string' ? result : JSON.stringify(result),
@@ -217,38 +271,43 @@ Output the revised plan in <MIGRATION_PLAN> tags (same JSON format as before).`;
       }
     }
 
-    if (!plan) {
-      // Ask the LLM to output the plan properly
-      messages.push({
-        role: 'user',
-        content:
-          'Please output your migration plan as a JSON object inside <MIGRATION_PLAN> tags.',
-      });
-      continue;
+      if (!plan) {
+        // Ask the LLM to output the plan properly
+        messages.push({
+          role: 'user',
+          content:
+            'Please output your migration plan as a JSON object inside <MIGRATION_PLAN> tags.',
+        });
+        continue;
+      }
+
+      break;
     }
 
-    break;
-  }
+    // Fallback plan if LLM didn't produce one
+    if (!plan) {
+      plan = {
+        sectionMapping: [],
+        assetStrategy: {},
+        notes: 'Planner failed to produce a structured plan after max rounds.',
+        _plannerError: true,
+      };
+    }
 
-  // Fallback plan if LLM didn't produce one
-  if (!plan) {
-    plan = {
-      sectionMapping: [],
-      assetStrategy: {},
-      notes: 'Planner failed to produce a structured plan after max rounds.',
-      _plannerError: true,
+    return {
+      ...analysisState,
+      migrationPlan: plan,
+      transferPlan: plan, // backward compat
+      agentPhase: 'generating',
+      ...progressUpdate(
+        'agentPlanner',
+        NeuripsPhase.agent_planning,
+        `Iteration ${iteration}: migration plan ${plan._plannerError ? 'FAILED' : 'ready'} (${(plan.sectionMapping || []).length} section mappings).`,
+      ),
     };
+  } finally {
+    if (mergedState.mockEnabled && mergedState.mockMapPath && projectRoot) {
+      await unmaskWorkspaceWithKV({ workspaceRoot: projectRoot, mockMapPath: mergedState.mockMapPath });
+    }
   }
-
-  return {
-    ...analysisState,
-    migrationPlan: plan,
-    transferPlan: plan, // backward compat
-    agentPhase: 'generating',
-    ...progressUpdate(
-      'agentPlanner',
-      NeuripsPhase.agent_planning,
-      `Iteration ${iteration}: migration plan ${plan._plannerError ? 'FAILED' : 'ready'} (${(plan.sectionMapping || []).length} section mappings).`,
-    ),
-  };
 }

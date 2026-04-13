@@ -10,6 +10,7 @@ import {
   mainTexDiffInstructions,
   runLlmUnifiedDiffWithRetries,
 } from '../../llmUnifiedDiff.js';
+import { chatOpenAiTraceRawFields } from '../../llmCallTrace.js';
 
 /* ------------------------------------------------------------------ */
 /*  Lightweight figure / layout measurement (no external binaries)    */
@@ -179,6 +180,7 @@ export async function normalizeFigures(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   const handbook = formatNeuripsHandbookBlock(await loadNeuripsRulesFull());

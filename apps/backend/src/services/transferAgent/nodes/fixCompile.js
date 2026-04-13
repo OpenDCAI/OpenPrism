@@ -3,6 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { writeFileWithSnapshot, stripCodeFences } from '../utils.js';
+import { traceLlmInvoke, chatOpenAiTraceRawFields } from '../llmCallTrace.js';
 import { loadNeuripsRulesFull, formatNeuripsHandbookBlock } from '../neuripsRules.js';
 import { progressUpdate } from '../progressMeta.js';
 
@@ -24,6 +25,7 @@ export async function fixCompile(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   // Determine venue context so the LLM doesn't switch templates
@@ -60,7 +62,12 @@ Common fixes:
 
 Output ONLY the complete corrected LaTeX file. No explanations, no markdown fences.`;
 
-  const response = await llm.invoke([{ role: 'user', content: prompt }]);
+  const projectRoot = state.workspaceRoot || state.targetProjectRoot;
+  const messages = [{ role: 'user', content: prompt }];
+  const traceCtx = projectRoot && state.jobId
+    ? { projectRoot, jobId: state.jobId, node: 'fixCompile' }
+    : null;
+  const response = await traceLlmInvoke(traceCtx, messages, () => llm.invoke(messages));
   const fixed = stripCodeFences(response.content);
 
   await writeFileWithSnapshot(

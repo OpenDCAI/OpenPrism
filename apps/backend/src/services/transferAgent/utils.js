@@ -2,6 +2,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { ensureDir } from '../../utils/fsUtils.js';
 import { safeJoin } from '../../utils/pathUtils.js';
+import { traceLlmInvoke } from './llmCallTrace.js';
 
 // ---------------------------------------------------------------------------
 // Shared text helpers
@@ -29,6 +30,8 @@ export function briefToolArgs(toolName, args) {
         return `${args.from || ''} → ${args.to || ''}`.slice(0, 100);
       case 'raiseQuestion':
         return `${(args.questions || []).length} question(s)`;
+      case 'compileLatex':
+        return `${args.mainFile || 'main.tex'} [${args.engine || 'pdflatex'}]`.slice(0, 100);
       default:
         return JSON.stringify(args).slice(0, 100);
     }
@@ -183,14 +186,21 @@ export function validateSchema(obj, schema) {
  * @param {object}   [opts.schema]     - Schema to validate against (optional)
  * @param {number}   [opts.maxRetries] - Max retry attempts (default 2)
  * @param {string}   [opts.nodeName]   - Node name for logging
+ * @param {{ projectRoot: string, jobId: string, node?: string }} [opts.traceCtx] — append to llm_calls.jsonl
  * @returns {{ parsed: object|null, raw: string, retries: number }}
  */
 export async function invokeLLMForJSON(llm, messages, opts = {}) {
-  const { schema, maxRetries = 2, nodeName = 'unknown' } = opts;
+  const { schema, maxRetries = 2, nodeName = 'unknown', traceCtx } = opts;
   let lastRaw = '';
 
   for (let attempt = 0; attempt <= maxRetries; attempt++) {
-    const response = await llm.invoke(messages);
+    const response = await traceLlmInvoke(
+      traceCtx?.projectRoot && traceCtx?.jobId
+        ? { ...traceCtx, node: traceCtx.node || nodeName, attempt }
+        : null,
+      messages,
+      () => llm.invoke(messages),
+    );
     lastRaw = typeof response.content === 'string' ? response.content : '';
 
     const parsed = extractJSON(lastRaw);

@@ -1,6 +1,8 @@
 import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { readSourceFile, readWorkspaceFile } from '../fsTools.js';
+import { applyMockForRead } from '../mock/mockService.js';
+import { isProtectedInternalPath } from './pathGuards.js';
 
 /**
  * Creates the readFile tool bound to a specific job's workspace roots.
@@ -27,18 +29,31 @@ export function createReadFileTool(ctx) {
     }),
     func: async ({ project, path }) => {
       try {
+        if (isProtectedInternalPath(path)) {
+          return `[ERROR] Access denied for protected internal path: ${project}:${path}`;
+        }
         const root =
           project === 'source' ? ctx.sourceReadRoot : ctx.workspaceRoot;
         const reader =
           project === 'source' ? readSourceFile : readWorkspaceFile;
         const content = await reader(root, path);
-        if (content.length > 60_000) {
+        let visibleContent = content;
+        // Mocking is only for protected source content. Target/template reads should stay raw.
+        if (project === 'source' && ctx.mockEnabled && ctx.mockMapPath) {
+          const mocked = await applyMockForRead({
+            content,
+            relPath: path,
+            mockMapPath: ctx.mockMapPath,
+          });
+          visibleContent = mocked.content;
+        }
+        if (visibleContent.length > 60_000) {
           return (
-            content.slice(0, 60_000) +
-            `\n\n[TRUNCATED — file is ${content.length} chars total]`
+            visibleContent.slice(0, 60_000) +
+            `\n\n[TRUNCATED — file is ${visibleContent.length} chars total]`
           );
         }
-        return content;
+        return visibleContent;
       } catch (err) {
         return `[ERROR] Could not read ${project}:${path} — ${err.message}`;
       }

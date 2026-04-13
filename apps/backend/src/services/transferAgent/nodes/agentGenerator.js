@@ -15,6 +15,8 @@ import { buildVenueSkillFromState } from '../skills/index.js';
 import { createGeneratorTools } from '../tools/index.js';
 import { NeuripsPhase, progressUpdate } from '../progressMeta.js';
 import { bumpLiveProgress, runAgentToolCall, recordUnknownToolTrace } from '../toolTrace.js';
+import { traceLlmInvoke, chatOpenAiTraceRawFields } from '../llmCallTrace.js';
+import { premaskWorkspaceWithKV, unmaskWorkspaceWithKV } from '../mock/mockService.js';
 
 const MAX_TOOL_ROUNDS = 40;
 
@@ -33,6 +35,10 @@ export async function agentGenerator(state, config) {
     sourceReadRoot: state.sourceReadRoot || state.sourceProjectRoot,
     workspaceRoot: state.workspaceRoot || state.targetProjectRoot,
     jobId: state.jobId,
+    mockEnabled: state.mockEnabled,
+    mockMapPath: state.mockMapPath,
+    targetProjectId: state.targetProjectId,
+    llmConfig: state.llmConfig,
   };
   const tools = createGeneratorTools(ctx);
 
@@ -43,6 +49,7 @@ export async function agentGenerator(state, config) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
   const llmWithTools = llm.bindTools(tools);
 
@@ -92,9 +99,16 @@ EXECUTION INSTRUCTIONS:
    f. BLIND COMPLIANCE (if doubleBlind): Sanitize \\hypersetup{pdfauthor={}}, anonymize identifying content
    g. VENUE-SPECIFIC STRUCTURE: Follow any venue-specific structural requirements from your system prompt (e.g. checklist for NeurIPS, impact statement for ICML)
 4. After each major step, re-read the file to verify your changes
+5. After completing all content edits, call compileLatex(mainFile=targetMainFile) to verify the project compiles. Fix any reported errors with applyDiff and re-run compileLatex. Only declare done after either a successful compile or after exhausting reasonable fixes.
 
-STRATEGY NOTES:
-- For the initial full migration (iteration 0), prefer writeFile for the complete .tex rewrite
+STRATEGY NOTES (mock placeholders — format %%MOCK:segment_name:8_hex_chars%%):
+- NEVER invent a new %%MOCK:...%% token. Forbidden: new segment names (e.g. related_body), wrong hash, or copying a token from another file/path.
+- ONLY keep placeholders that already appear in the target file AND match your latest readFile("target", same path) output byte-for-byte (same segment name, same 8 hex chars).
+- If the file has no such tokens, write normal LaTeX (e.g. \\input{...}); do not add %%MOCK:...%%.
+- If writeFile/applyDiff fails with "unknown mock token", remove every unregistered %%MOCK:...%% line you introduced and restore only tokens from readFile.
+- Even when doing a full-file rewrite with writeFile, every pre-existing %%MOCK:...%% token must appear unchanged (exact string, same count).
+- If a change might touch protected token regions, switch to applyDiff around non-token lines instead of rewriting tokens.
+- For initial migration (iteration 0), use applyDiff first when tokens exist; use full writeFile only if you can preserve all tokens verbatim.
 - For subsequent fix iterations, prefer applyDiff for surgical corrections
 - Always use applyDiff if you're only changing a few lines
 - Always readFile BEFORE writeFile or applyDiff to get the current file state
@@ -112,18 +126,25 @@ When you are done with all modifications, output:
   let toolCallCount = 0;
   const projectRoot = state.workspaceRoot || state.targetProjectRoot;
   const jobId = state.jobId;
+  if (state.mockEnabled && state.mockMapPath && projectRoot) {
+    await premaskWorkspaceWithKV({ workspaceRoot: projectRoot, mockMapPath: state.mockMapPath });
+  }
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    if (lp) {
-      lp.activeRole = 'generator';
-      lp.toolName = 'llm';
-      lp.toolArgs = '';
-      lp.toolRound = round;
-      lp.maxToolRounds = MAX_TOOL_ROUNDS;
-      bumpLiveProgress(lp);
-    }
-    const response = await llmWithTools.invoke(messages);
-    messages.push(response);
+  try {
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      if (lp) {
+        lp.activeRole = 'generator';
+        lp.toolName = 'llm';
+        lp.toolArgs = '';
+        lp.toolRound = round;
+        lp.maxToolRounds = MAX_TOOL_ROUNDS;
+        bumpLiveProgress(lp);
+      }
+      const traceCtx = projectRoot && jobId
+        ? { projectRoot, jobId, agent: 'generator', iteration, round }
+        : null;
+      const response = await traceLlmInvoke(traceCtx, messages, () => llmWithTools.invoke(messages));
+      messages.push(response);
 
     // Check for tool calls
     if (response.tool_calls && response.tool_calls.length > 0) {
@@ -148,17 +169,24 @@ When you are done with all modifications, output:
           continue;
         }
         if (lp) lp.maxToolRounds = MAX_TOOL_ROUNDS;
-        const result = await runAgentToolCall({
-          config,
-          lp,
-          projectRoot,
-          jobId,
-          agent: 'generator',
-          iteration,
-          round,
-          toolCall,
-          invokeFn: () => tool.invoke(toolCall.args),
-        });
+          let result;
+          try {
+            result = await runAgentToolCall({
+              config,
+              lp,
+              projectRoot,
+              jobId,
+              agent: 'generator',
+              iteration,
+              round,
+              toolCall,
+              mockMapPath: state.mockMapPath,
+              remockOnWrite: false,
+              invokeFn: () => tool.invoke(toolCall.args),
+            });
+          } catch (err) {
+            result = `[ERROR] Tool ${toolCall.name} failed: ${err?.message || String(err)}`;
+          }
         toolCallCount++;
         messages.push({
           role: 'tool',
@@ -187,12 +215,17 @@ When you are done with all modifications, output:
 
     // If no done signal and no tool calls, it might be reasoning — let it continue
     // but ask it to either use tools or signal completion
-    if (round > MAX_TOOL_ROUNDS - 5) {
-      messages.push({
-        role: 'user',
-        content:
-          'Please complete your remaining work and output <GENERATOR_DONE>summary</GENERATOR_DONE> when finished.',
-      });
+      if (round > MAX_TOOL_ROUNDS - 5) {
+        messages.push({
+          role: 'user',
+          content:
+            'Please complete your remaining work and output <GENERATOR_DONE>summary</GENERATOR_DONE> when finished.',
+        });
+      }
+    }
+  } finally {
+    if (state.mockEnabled && state.mockMapPath && projectRoot) {
+      await unmaskWorkspaceWithKV({ workspaceRoot: projectRoot, mockMapPath: state.mockMapPath });
     }
   }
 

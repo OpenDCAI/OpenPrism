@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { listFilesRecursive } from '../../../utils/fsUtils.js';
+import { isProtectedInternalPath } from './pathGuards.js';
 
 /**
  * Creates the listProjectTree tool — lists files in a project directory.
@@ -23,7 +24,9 @@ export function createListProjectTreeTool(ctx) {
       try {
         const root =
           project === 'source' ? ctx.sourceReadRoot : ctx.workspaceRoot;
-        const entries = await listFilesRecursive(root);
+        const entries = (await listFilesRecursive(root)).filter(
+          (entry) => !isProtectedInternalPath(entry.path),
+        );
         if (!entries.length) {
           return `(empty — no files found in ${project} project)`;
         }

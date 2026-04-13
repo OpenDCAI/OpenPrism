@@ -4,11 +4,13 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { listFilesRecursive } from '../../../utils/fsUtils.js';
+import { isProtectedInternalPath } from './pathGuards.js';
+import { loadMockKV, maskWithExistingSegments } from '../mock/mockService.js';
 
 /**
  * Creates the grepFile tool — searches file contents with a regex pattern.
  *
- * @param {{ sourceReadRoot: string, workspaceRoot: string }} ctx
+ * @param {{ sourceReadRoot: string, workspaceRoot: string, mockEnabled?: boolean, mockMapPath?: string }} ctx
  */
 export function createGrepFileTool(ctx) {
   return new DynamicStructuredTool({
@@ -36,6 +38,7 @@ export function createGrepFileTool(ctx) {
         const allFiles = await listFilesRecursive(root);
         const files = allFiles
           .filter((f) => f.type === 'file')
+          .filter((f) => !isProtectedInternalPath(f.path))
           .filter((f) => {
             if (!glob) return true;
             // Simple glob: *.ext matching
@@ -57,6 +60,13 @@ export function createGrepFileTool(ctx) {
         let totalMatches = 0;
         const MAX_MATCHES = 100;
 
+        const mockKv =
+          ctx.mockEnabled && ctx.mockMapPath
+            ? await loadMockKV(ctx.mockMapPath)
+            : null;
+        const hasSegments =
+          mockKv && mockKv.segments && Object.keys(mockKv.segments).length > 0;
+
         for (const file of files) {
           if (totalMatches >= MAX_MATCHES) break;
           let content;
@@ -64,6 +74,9 @@ export function createGrepFileTool(ctx) {
             content = await fs.readFile(safeJoin(root, file.path), 'utf8');
           } catch {
             continue;
+          }
+          if (hasSegments) {
+            content = maskWithExistingSegments(content, mockKv).content;
           }
           const lines = content.split('\n');
           for (let i = 0; i < lines.length; i++) {

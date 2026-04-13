@@ -19,8 +19,11 @@ import { createReviewerTools } from '../tools/index.js';
 import { NeuripsPhase, progressUpdate } from '../progressMeta.js';
 import { extractJSON } from '../utils.js';
 import { bumpLiveProgress, runAgentToolCall, recordUnknownToolTrace } from '../toolTrace.js';
+import { traceLlmInvoke, chatOpenAiTraceRawFields } from '../llmCallTrace.js';
+import { unmaskWorkspaceWithKV } from '../mock/mockService.js';
 
 const MAX_TOOL_ROUNDS = 20;
+const MAX_STALLED_ROUNDS = 6;
 
 /**
  * Run the Reviewer agent.
@@ -37,6 +40,8 @@ export async function agentReviewer(state, config) {
     sourceReadRoot: state.sourceReadRoot || state.sourceProjectRoot,
     workspaceRoot: state.workspaceRoot || state.targetProjectRoot,
     jobId: state.jobId,
+    mockEnabled: state.mockEnabled,
+    mockMapPath: state.mockMapPath,
   };
   const tools = createReviewerTools(ctx);
 
@@ -47,6 +52,7 @@ export async function agentReviewer(state, config) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.1,
+    ...chatOpenAiTraceRawFields(),
   });
   const llmWithTools = llm.bindTools(tools);
 
@@ -128,23 +134,33 @@ Rules for verdict:
   ];
 
   let reviewResult = null;
+  let stalledRounds = 0;
   const projectRoot = state.workspaceRoot || state.targetProjectRoot;
   const jobId = state.jobId;
+  // Reviewer must inspect full paper text (unmasked).
+  if (state.mockEnabled && state.mockMapPath && projectRoot) {
+    await unmaskWorkspaceWithKV({ workspaceRoot: projectRoot, mockMapPath: state.mockMapPath });
+  }
 
-  for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
-    if (lp) {
-      lp.activeRole = 'reviewer';
-      lp.toolName = 'llm';
-      lp.toolArgs = '';
-      lp.toolRound = round;
-      lp.maxToolRounds = MAX_TOOL_ROUNDS;
-      bumpLiveProgress(lp);
-    }
-    const response = await llmWithTools.invoke(messages);
-    messages.push(response);
+  try {
+    for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
+      if (lp) {
+        lp.activeRole = 'reviewer';
+        lp.toolName = 'llm';
+        lp.toolArgs = '';
+        lp.toolRound = round;
+        lp.maxToolRounds = MAX_TOOL_ROUNDS;
+        bumpLiveProgress(lp);
+      }
+      const traceCtx = projectRoot && jobId
+        ? { projectRoot, jobId, agent: 'reviewer', iteration, round }
+        : null;
+      const response = await traceLlmInvoke(traceCtx, messages, () => llmWithTools.invoke(messages));
+      messages.push(response);
 
     // Check for tool calls
     if (response.tool_calls && response.tool_calls.length > 0) {
+      stalledRounds = 0;
       for (const toolCall of response.tool_calls) {
         const tool = tools.find((t) => t.name === toolCall.name);
         if (!tool) {
@@ -166,17 +182,24 @@ Rules for verdict:
           continue;
         }
         if (lp) lp.maxToolRounds = MAX_TOOL_ROUNDS;
-        const result = await runAgentToolCall({
-          config,
-          lp,
-          projectRoot,
-          jobId,
-          agent: 'reviewer',
-          iteration,
-          round,
-          toolCall,
-          invokeFn: () => tool.invoke(toolCall.args),
-        });
+          let result;
+          try {
+            result = await runAgentToolCall({
+              config,
+              lp,
+              projectRoot,
+              jobId,
+              agent: 'reviewer',
+              iteration,
+              round,
+              toolCall,
+              mockMapPath: state.mockMapPath,
+              remockOnWrite: false,
+              invokeFn: () => tool.invoke(toolCall.args),
+            });
+          } catch (err) {
+            result = `[ERROR] Tool ${toolCall.name} failed: ${err?.message || String(err)}`;
+          }
         messages.push({
           role: 'tool',
           content: typeof result === 'string' ? result : JSON.stringify(result),
@@ -193,6 +216,7 @@ Rules for verdict:
         : Array.isArray(response.content)
           ? response.content.map((p) => (typeof p === 'string' ? p : p?.text || '')).join('')
           : '';
+    const compact = (content || '').trim();
 
     const reviewMatch = content.match(
       /<REVIEW_RESULT>([\s\S]*?)<\/REVIEW_RESULT>/,
@@ -205,25 +229,42 @@ Rules for verdict:
       }
     }
 
-    if (!reviewResult) {
-      messages.push({
-        role: 'user',
-        content:
-          'Please output your review result as a JSON object inside <REVIEW_RESULT> tags.',
-      });
-      continue;
-    }
+      if (!reviewResult) {
+        const noProgress = !compact || compact === '.';
+        stalledRounds = noProgress ? stalledRounds + 1 : 0;
+        const forceJsonOnly = stalledRounds >= 3;
+        messages.push({
+          role: 'user',
+          content: forceJsonOnly
+            ? 'STOP free-form text. Return ONLY <REVIEW_RESULT>{...}</REVIEW_RESULT> with valid JSON and no extra commentary. If uncertain, set verdict to "revise" and explain blockers in issues[].'
+            : 'Please output your review result as a JSON object inside <REVIEW_RESULT> tags.',
+        });
+        if (stalledRounds >= MAX_STALLED_ROUNDS) break;
+        continue;
+      }
 
-    break;
+      break;
+    }
+  } finally {
+    if (state.mockEnabled && state.mockMapPath && projectRoot) {
+      await unmaskWorkspaceWithKV({ workspaceRoot: projectRoot, mockMapPath: state.mockMapPath });
+    }
   }
 
   // Fallback
   if (!reviewResult) {
     reviewResult = {
-      verdict: 'pass',
-      issues: [],
+      verdict: 'revise',
+      issues: [
+        {
+          category: 'policy',
+          severity: 'high',
+          description: 'Reviewer did not produce a structured <REVIEW_RESULT> within the allowed rounds.',
+          suggestion: 'Re-run reviewer with stricter JSON-only response constraints and re-check the target files.',
+        },
+      ],
       suggestions: [],
-      summary: 'Reviewer could not complete structured review; passing by default.',
+      summary: 'Reviewer could not complete structured review; fail-closed to revise.',
       _reviewerError: true,
     };
   }

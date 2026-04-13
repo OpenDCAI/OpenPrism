@@ -4,6 +4,7 @@ import { promises as fs } from 'fs';
 import path from 'path';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { ensureDir } from '../../../utils/fsUtils.js';
+import { isProtectedInternalPath } from './pathGuards.js';
 
 /**
  * Creates the copyAsset tool — copies a file from source project to target project.
@@ -30,6 +31,12 @@ export function createCopyAssetTool(ctx) {
     func: async ({ srcPath, destPath }) => {
       try {
         const dest = destPath || srcPath;
+        if (isProtectedInternalPath(srcPath)) {
+          return `[ERROR] Refusing to copy from protected internal path: source:${srcPath}`;
+        }
+        if (isProtectedInternalPath(dest)) {
+          return `[ERROR] Refusing to copy into protected internal path: target:${dest}`;
+        }
         const srcAbs = safeJoin(ctx.sourceReadRoot, srcPath);
         const destAbs = safeJoin(ctx.workspaceRoot, dest);
 

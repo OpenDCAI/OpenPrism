@@ -7,6 +7,7 @@ import {
   extractUnifiedDiff,
   applyUnifiedDiffToMainTex,
 } from '../llmUnifiedDiff.js';
+import { isProtectedInternalPath } from './pathGuards.js';
 
 /**
  * Creates the applyDiff tool — applies a unified diff patch to a target file.
@@ -32,6 +33,9 @@ export function createApplyDiffTool(ctx) {
     }),
     func: async ({ path, diff }) => {
       try {
+        if (isProtectedInternalPath(path)) {
+          return `[ERROR] Refusing to patch protected internal path: target:${path}`;
+        }
         const abs = safeJoin(ctx.workspaceRoot, path);
         const baseTex = await fs.readFile(abs, 'utf8');
         const patchText = extractUnifiedDiff(diff);

@@ -99,6 +99,14 @@ export const TransferState = Annotation.Root({
   reviewResult: Annotation({ reducer: replace }),
   /** Current agent phase: 'planning' | 'generating' | 'reviewing' | 'finalized' */
   agentPhase: Annotation({ reducer: replace, default: () => 'planning' }),
+  /** Mock pre/post-processing enabled for agent-facing text */
+  mockEnabled: Annotation({ reducer: replace, default: () => false }),
+  /** Mock map schema version */
+  mockVersion: Annotation({ reducer: replace, default: () => '' }),
+  /** Absolute path to kvjson map used by premock/remock */
+  mockMapPath: Annotation({ reducer: replace, default: () => '' }),
+  /** Per-file mocked segment metadata */
+  mockSegmentsMeta: Annotation({ reducer: replace, default: () => ({}) }),
 
   // --- Final output ---
   finalPdf: Annotation({ reducer: replace }),

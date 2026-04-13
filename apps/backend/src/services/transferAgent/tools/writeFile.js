@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { writeFileWithSnapshot } from '../utils.js';
+import { isProtectedInternalPath } from './pathGuards.js';
 
 /**
  * Creates the writeFile tool — writes (or overwrites) a file in the target
@@ -25,6 +26,9 @@ export function createWriteFileTool(ctx) {
     }),
     func: async ({ path, content }) => {
       try {
+        if (isProtectedInternalPath(path)) {
+          return `[ERROR] Refusing to write protected internal path: target:${path}`;
+        }
         await writeFileWithSnapshot(ctx.workspaceRoot, path, content, ctx.jobId);
         return `[OK] Wrote ${content.length} chars to target:${path}`;
       } catch (err) {

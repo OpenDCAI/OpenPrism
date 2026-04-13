@@ -4,6 +4,7 @@ import { applyPatch } from 'diff';
 import { stripCodeFences, rejectCatastrophicFullTexRewrite } from './utils.js';
 import { TransferNodeError } from './transferNodeError.js';
 import { ensureDir } from '../../utils/fsUtils.js';
+import { traceLlmInvoke } from './llmCallTrace.js';
 
 /** Set OPENPRISM_TRANSFER_SAVE_LLM_DIFF=0 to skip writing raw/patch files under .agent_runs/…/llm_diff/ */
 function isLlmDiffArtifactSaveEnabled() {
@@ -193,7 +194,12 @@ export async function runLlmUnifiedDiffWithRetries({
       ? `\n\nPREVIOUS_ATTEMPT_FAILED: ${retryHintForFailure(lastFailure)}\nReply with ONLY a corrected unified diff; headers --- a/ and +++ b/ must match the instructions.`
       : '';
     const prompt = buildPrompt(failureNote);
-    const response = await llm.invoke([{ role: 'user', content: prompt }]);
+    const messages = [{ role: 'user', content: prompt }];
+    const traceCtx =
+      debug?.projectRoot && debug?.jobId
+        ? { projectRoot: debug.projectRoot, jobId: debug.jobId, node: nodeName, attempt }
+        : null;
+    const response = await traceLlmInvoke(traceCtx, messages, () => llm.invoke(messages));
     const raw =
       typeof response.content === 'string'
         ? response.content

@@ -3,6 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { writeFileWithSnapshot, stripCodeFences } from '../utils.js';
+import { traceLlmInvoke, chatOpenAiTraceRawFields } from '../llmCallTrace.js';
 import { loadNeuripsRulesFull, formatNeuripsHandbookBlock } from '../neuripsRules.js';
 
 /**
@@ -22,6 +23,7 @@ export async function fixLayout(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   const neuripsBlock = state.transferGraphKind === 'neurips'
@@ -48,7 +50,12 @@ Common layout fixes:
 
 Output ONLY the complete corrected LaTeX file. No explanations, no markdown fences.`;
 
-  const response = await llm.invoke([{ role: 'user', content: prompt }]);
+  const projectRoot = state.workspaceRoot || state.targetProjectRoot;
+  const messages = [{ role: 'user', content: prompt }];
+  const traceCtx = projectRoot && state.jobId
+    ? { projectRoot, jobId: state.jobId, node: 'fixLayout' }
+    : null;
+  const response = await traceLlmInvoke(traceCtx, messages, () => llm.invoke(messages));
   const fixed = stripCodeFences(response.content);
 
   await writeFileWithSnapshot(

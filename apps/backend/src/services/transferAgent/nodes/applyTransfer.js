@@ -3,6 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { writeFileWithSnapshot, stripCodeFences } from '../utils.js';
+import { traceLlmInvoke, chatOpenAiTraceRawFields } from '../llmCallTrace.js';
 
 /**
  * Build the LLM prompt for content migration.
@@ -83,10 +84,16 @@ async function applyTransferLegacy(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   const prompt = buildTransferPrompt(state);
-  const response = await llm.invoke([{ role: 'user', content: prompt }]);
+  const projectRoot = state.workspaceRoot || state.targetProjectRoot;
+  const messages = [{ role: 'user', content: prompt }];
+  const traceCtx = projectRoot && state.jobId
+    ? { projectRoot, jobId: state.jobId, node: 'applyTransfer' }
+    : null;
+  const response = await traceLlmInvoke(traceCtx, messages, () => llm.invoke(messages));
   const newContent = stripCodeFences(response.content);
 
   await writeFileWithSnapshot(
@@ -112,10 +119,16 @@ async function applyTransferMineru(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   const prompt = buildMineruTransferPrompt(state);
-  const response = await llm.invoke([{ role: 'user', content: prompt }]);
+  const projectRoot = state.workspaceRoot || state.targetProjectRoot;
+  const messages = [{ role: 'user', content: prompt }];
+  const traceCtx = projectRoot && state.jobId
+    ? { projectRoot, jobId: state.jobId, node: 'applyTransfer:mineru' }
+    : null;
+  const response = await traceLlmInvoke(traceCtx, messages, () => llm.invoke(messages));
   const newContent = stripCodeFences(response.content);
 
   await writeFileWithSnapshot(

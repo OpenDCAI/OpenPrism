@@ -3,6 +3,7 @@ import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { invokeLLMForJSON } from '../utils.js';
 import { loadNeuripsRulesFull, formatNeuripsHandbookBlock } from '../neuripsRules.js';
 import { progressUpdate } from '../progressMeta.js';
+import { chatOpenAiTraceRawFields } from '../llmCallTrace.js';
 
 /**
  * draftPlan node — LLM generates a structured transfer plan
@@ -16,6 +17,7 @@ export async function draftPlan(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   const isNeurips = state.transferGraphKind === 'neurips';
@@ -90,10 +92,15 @@ ${isNeurips ? '- Follow NeurIPS handbook above for anonymous mode, floats, bibli
     bodyNotes: { type: 'string', required: false },
   };
 
+  const projectRoot = state.workspaceRoot || state.targetProjectRoot;
+  const traceCtx = projectRoot && state.jobId
+    ? { projectRoot, jobId: state.jobId, node: 'draftPlan' }
+    : undefined;
+
   const { parsed, raw, retries } = await invokeLLMForJSON(
     llm,
     [{ role: 'user', content: prompt }],
-    { schema: planSchema, maxRetries: 2, nodeName: 'draftPlan' },
+    { schema: planSchema, maxRetries: 2, nodeName: 'draftPlan', traceCtx },
   );
 
   const plan = parsed || { raw, parseError: true, sectionMapping: [], assetStrategy: {}, notes: '' };

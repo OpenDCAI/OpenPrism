@@ -91,6 +91,11 @@ CRITICAL CONSTRAINTS (MUST FOLLOW)
 13. Impact Statement: required unnumbered section before References
 14. Appendix goes AFTER references, submitted in same PDF (NOT separate file)
 15. Main body max 8 pages (excluding references and appendices)
+16. Mock placeholders look like %%MOCK:segment_name:8_hex_chars%% (one colon between parts). They are protected source markers:
+   - NEVER invent a new %%MOCK:...%%; the server rejects writes with unregistered tokens
+   - DO NOT delete, rename, split, or alter any existing token from readFile for that file
+   - Edit surrounding text only; keep every pre-existing token verbatim
+   - If there are no mock tokens, use normal LaTeX; do not add %%MOCK:...%%
 
 ═══════════════════════════════════════════════════
 BEST PRACTICES

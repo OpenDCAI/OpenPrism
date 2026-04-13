@@ -8,6 +8,7 @@ import {
   splitTexDocument,
   mergeTexDocument,
 } from '../../utils.js';
+import { traceLlmInvoke, chatOpenAiTraceRawFields } from '../../llmCallTrace.js';
 import { loadNeuripsRulesFull, formatNeuripsHandbookBlock } from '../../neuripsRules.js';
 import { NeuripsPhase, progressUpdate } from '../../progressMeta.js';
 
@@ -31,6 +32,7 @@ export async function applyBody(state) {
     openAIApiKey: apiKey,
     configuration: { baseURL: normalizeBaseURL(endpoint) },
     temperature: 0.2,
+    ...chatOpenAiTraceRawFields(),
   });
 
   const handbook = formatNeuripsHandbookBlock(await loadNeuripsRulesFull());
@@ -51,7 +53,11 @@ ${handbook}
 
 Output ONLY the document body block: from \\begin{document} through \\end{document} inclusive. Map sections per plan. Preserve all \\\\cite{}, \\\\ref{}, \\\\label{} and substantive math/figures/tables. Follow NeurIPS abstract (one paragraph) and sectioning rules from the handbook. No markdown fences.`;
 
-  const response = await llm.invoke([{ role: 'user', content: prompt }]);
+  const messages = [{ role: 'user', content: prompt }];
+  const traceCtx = root && state.jobId
+    ? { projectRoot: root, jobId: state.jobId, node: 'applyBody' }
+    : null;
+  const response = await traceLlmInvoke(traceCtx, messages, () => llm.invoke(messages));
   let newBody = stripCodeFences(
     typeof response.content === 'string' ? response.content : '',
   ).trim();

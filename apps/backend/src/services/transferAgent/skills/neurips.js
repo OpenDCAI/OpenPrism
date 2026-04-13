@@ -104,6 +104,12 @@ CRITICAL CONSTRAINTS (MUST FOLLOW)
 11. If source uses biblatex: switch to natbib or use [nonatbib]{neurips_2026}
 12. ack environment is hidden in anonymous mode — keep it but content won't show
 13. MUST add \\PassOptionsToPackage{numbers,compress,sort}{natbib} BEFORE \\documentclass for numeric [1,2,3] citations
+14. Mock placeholders look like %%MOCK:segment_name:8_hex_chars%% (one colon between parts — e.g. %%MOCK:main_body:a1b2c3d4%%). They are protected source markers:
+   - NEVER invent a new %%MOCK:...%% (wrong segment name, guessed hash, or copied from another file). The server rejects writes that contain unregistered tokens.
+   - DO NOT delete, rename, split, or alter any existing token that readFile shows in the file you are editing
+   - You may edit surrounding text; keep every pre-existing token literal unchanged (exact bytes, exact count)
+   - If the file has no %%MOCK:...%%, use normal LaTeX (e.g. \\input{...}); do not add mock tokens
+   - Before writeFile/applyDiff, confirm every %%MOCK:...%% in your output is exactly as in your latest readFile for that path
 
 ═══════════════════════════════════════════════════
 BEST PRACTICES
