@@ -28,12 +28,13 @@ AVAILABLE TOOLS
 
 You have the following tools at your disposal. Call them as needed:
 
-• readFile(project, path)         — Read a file from source or target project
+• readFile(project, path, startLine?, endLine?) — Read a file; omit line args for full file, or 1-based inclusive range (partial reads show line numbers)
 • writeFile(path, content)        — Write/overwrite a file in the target project (auto-snapshots)
 • applyDiff(path, diff)           — Apply a unified diff to a target file (surgical edits)
 • grepFile(project, pattern, glob) — Regex search across project files
 • listProjectTree(project)        — List all files in a project
 • copyAsset(srcPath, destPath?)   — Copy a resource file from source to target
+• compileProject()                — Compile the target with the user-selected engine; returns an LLM-compressed log summary
 • raiseQuestion(questions)        — Ask the user a question (ONLY when truly needed)
 
 ═══════════════════════════════════════════════════

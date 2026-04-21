@@ -1,6 +1,7 @@
 import { z } from 'zod';
 import { DynamicStructuredTool } from '@langchain/core/tools';
 import { writeFileWithSnapshot } from '../utils.js';
+import { unmaskContent } from '../masking/index.js';
 
 /**
  * Creates the writeFile tool — writes (or overwrites) a file in the target
@@ -25,8 +26,14 @@ export function createWriteFileTool(ctx) {
     }),
     func: async ({ path, content }) => {
       try {
-        await writeFileWithSnapshot(ctx.workspaceRoot, path, content, ctx.jobId);
-        return `[OK] Wrote ${content.length} chars to target:${path}`;
+        const unmasked = ctx.enableSensitiveMask
+          ? unmaskContent(content, ctx.sourceMaskManifest)
+          : { content, restored: 0, remaining: 0 };
+        await writeFileWithSnapshot(ctx.workspaceRoot, path, unmasked.content, ctx.jobId);
+        const maskNote = ctx.enableSensitiveMask
+          ? ` Restored ${unmasked.restored} token(s); remaining=${unmasked.remaining}.`
+          : '';
+        return `[OK] Wrote ${unmasked.content.length} chars to target:${path}.${maskNote}`;
       } catch (err) {
         return `[ERROR] Failed to write target:${path} — ${err.message}`;
       }

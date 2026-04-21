@@ -8,7 +8,7 @@
  * All venue-specific constraints are loaded from reviewerChecklist skill —
  * the prompt skeleton here is venue-agnostic.
  *
- * Tools available: readFile, grepFile, listProjectTree, raiseQuestion
+ * Tools available: readFile, grepFile, listProjectTree, raiseQuestion, compileProject
  */
 
 import { ChatOpenAI } from '@langchain/openai';
@@ -37,6 +37,13 @@ export async function agentReviewer(state, config) {
     sourceReadRoot: state.sourceReadRoot || state.sourceProjectRoot,
     workspaceRoot: state.workspaceRoot || state.targetProjectRoot,
     jobId: state.jobId,
+    enableSensitiveMask: !!state.enableSensitiveMask,
+    sourceMaskManifest: state.sourceMaskManifest || [],
+    sourceMaskedContents: state.sourceMaskedContents || {},
+    targetProjectId: state.targetProjectId,
+    targetMainFile: state.targetMainFile,
+    engine: state.engine || 'pdflatex',
+    llmConfig: state.llmConfig,
   };
   const tools = createReviewerTools(ctx);
 
@@ -70,6 +77,7 @@ REVIEW CHECKLIST — check each item using tools:
    - \\documentclass{article} (not revtex, amsart, llncs, etc.)
    ${checklist.structure}
    - \\begin{document} ... \\end{document} present and well-formed
+   - Use compileProject() to compile the target with the user-selected engine; the tool returns an LLM-compressed log summary — treat FAIL summaries as high-severity issues
 
 2. CONTENT COMPLETENESS:
    - All source sections mapped to target (compare with source)
@@ -93,7 +101,7 @@ ${checklist.policy}
 7. ${checklist.blind}
 
 INSTRUCTIONS:
-1. Use readFile to read the target main .tex file
+1. Use readFile to read the target main .tex file; call compileProject() when you need an actual build check (returns an LLM summary of the compile log, not the raw log)
 2. Use grepFile to check for specific patterns
 3. Use listProjectTree to verify asset files exist
 4. Compare key sections with the source if needed

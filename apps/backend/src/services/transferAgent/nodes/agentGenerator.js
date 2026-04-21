@@ -1,12 +1,12 @@
 /**
- * agentGenerator — Generator node for the NeurIPS agentic transfer.
+ * agentGenerator — Generator node for the multi-venue agentic transfer (graphVenueAgent).
  *
  * The Generator takes the migration plan from the Planner and executes it
  * by reading source files, writing/patching target files, and copying assets.
  * It operates autonomously through tool calls, deciding the order and strategy
  * of modifications (preamble first, then body, then figures, then bibliography, etc.).
  *
- * Tools available: readFile, writeFile, applyDiff, grepFile, listProjectTree, copyAsset
+ * Tools available: readFile, writeFile, applyDiff, grepFile, listProjectTree, copyAsset, measureFigures, compileProject
  */
 
 import { ChatOpenAI } from '@langchain/openai';
@@ -33,6 +33,13 @@ export async function agentGenerator(state, config) {
     sourceReadRoot: state.sourceReadRoot || state.sourceProjectRoot,
     workspaceRoot: state.workspaceRoot || state.targetProjectRoot,
     jobId: state.jobId,
+    enableSensitiveMask: !!state.enableSensitiveMask,
+    sourceMaskManifest: state.sourceMaskManifest || [],
+    sourceMaskedContents: state.sourceMaskedContents || {},
+    targetProjectId: state.targetProjectId,
+    targetMainFile: state.targetMainFile,
+    engine: state.engine || 'pdflatex',
+    llmConfig: state.llmConfig,
   };
   const tools = createGeneratorTools(ctx);
 
@@ -91,7 +98,7 @@ EXECUTION INSTRUCTIONS:
    e. BIBLIOGRAPHY: Align \\cite commands and bibliography mechanism per venue rules in your system prompt
    f. BLIND COMPLIANCE (if doubleBlind): Sanitize \\hypersetup{pdfauthor={}}, anonymize identifying content
    g. VENUE-SPECIFIC STRUCTURE: Follow any venue-specific structural requirements from your system prompt (e.g. checklist for NeurIPS, impact statement for ICML)
-4. After each major step, re-read the file to verify your changes
+4. After each major step, re-read the file to verify your changes; use compileProject() to check the target builds (uses the user-selected engine; tool returns a short LLM summary of errors/warnings)
 
 STRATEGY NOTES:
 - For the initial full migration (iteration 0), prefer writeFile for the complete .tex rewrite

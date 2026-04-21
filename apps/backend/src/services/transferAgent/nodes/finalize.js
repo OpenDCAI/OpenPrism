@@ -22,24 +22,34 @@ const VENUE_BUNDLE_NOTES = {
 export async function finalize(state) {
   const venue = (state.transferIntake?.venue || state.transferGraphKind || 'legacy').toLowerCase();
   const isAgentVenue = ['neurips', 'icml', 'cvpr', 'acl'].includes(venue);
+  const isRuleBasedTransfer = state.transferGraphKind === 'rulebasetransfer';
+  const isNoCompilePath = isAgentVenue || isRuleBasedTransfer;
   const compileOk = state.compileResult?.ok || false;
   const hasPdf = !!state.compileResult?.pdf;
+  const hasUpstreamError = state.status === 'failed' || !!state.error;
 
-  const finalStatus = isAgentVenue
-    ? 'success'
-    : compileOk && hasPdf
+  const finalStatus = hasUpstreamError
+    ? 'failed'
+    : isNoCompilePath
       ? 'success'
-      : 'failed';
-  const error = isAgentVenue
-    ? undefined
-    : !hasPdf
-      ? (state.compileResult?.error || 'No PDF generated after all attempts.')
-      : undefined;
+      : compileOk && hasPdf
+        ? 'success'
+        : 'failed';
+  const error = hasUpstreamError
+    ? state.error
+    : isNoCompilePath
+      ? undefined
+      : !hasPdf
+        ? (state.compileResult?.error || 'No PDF generated after all attempts.')
+        : undefined;
 
-  const bundleNotes = VENUE_BUNDLE_NOTES[venue] || '';
+  const bundleNotes = VENUE_BUNDLE_NOTES[venue]
+    || (isRuleBasedTransfer
+      ? '规则模式转换完成（未在服务端编译）。请在本地用 pdflatex/xelatex/latexmk 等自行生成 PDF。'
+      : '');
 
-  const summaryMsg = isAgentVenue
-    ? `Transfer ${finalStatus} (no server compile). ${bundleNotes}`
+  const summaryMsg = isNoCompilePath
+    ? `Transfer ${finalStatus} (no server compile).${bundleNotes ? ` ${bundleNotes}` : ''}`
     : `Transfer ${finalStatus}. Compile attempts: ${state.compileAttempt}, Layout attempts: ${state.layoutAttempt}.${bundleNotes ? ` ${bundleNotes}` : ''}`;
 
   return {

@@ -7,6 +7,8 @@
 
 import { buildNeuripsSkillFromState } from './neurips.js';
 import { buildIcmlSkillFromState } from './icml.js';
+import { buildCvprSkillFromState } from './cvpr.js';
+import { buildAclSkillFromState } from './acl.js';
 
 /**
  * Resolve the venue from state (checks transferIntake.venue and transferGraphKind).
@@ -25,6 +27,10 @@ function resolveVenue(state) {
 export async function buildVenueSkillFromState(state) {
   const venue = resolveVenue(state);
   switch (venue) {
+    case 'cvpr':
+      return buildCvprSkillFromState(state);
+    case 'acl':
+      return buildAclSkillFromState(state);
     case 'icml':
       return buildIcmlSkillFromState(state);
     case 'neurips':

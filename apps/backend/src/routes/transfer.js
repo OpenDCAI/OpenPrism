@@ -3,9 +3,10 @@ import path from 'path';
 import { promises as fs } from 'fs';
 import { buildTransferGraph } from '../services/transferAgent/graph.js';
 import { buildNeuripsLatexGraph } from '../services/transferAgent/graphNeurips.js';
-import { buildNeuripsAgentGraph } from '../services/transferAgent/graphNeuripsAgent.js';
+import { buildVenueAgentGraph } from '../services/transferAgent/graphVenueAgent.js';
 import { buildMineruTransferGraph } from '../services/transferAgent/graphMineru.js';
 import { buildMineruAgentGraph } from '../services/transferAgent/graphMineruAgent.js';
+import { buildRuleBaseTransferGraph } from '../services/transferAgent/graphRuleBaseTransfer.js';
 import { resolveLLMConfig } from '../services/llmService.js';
 import { resolveMineruConfig } from '../services/mineruService.js';
 import { readTemplateManifest } from '../services/templateService.js';
@@ -91,7 +92,7 @@ function buildTransferApiPayload(job, state) {
 }
 
 export function registerTransferRoutes(fastify) {
-  console.log('[transfer] Routes registered — ICML agent graph support: ENABLED (v2)');
+  console.log('[transfer] Routes registered — venue agent graph (neurips/icml/cvpr/acl): ENABLED');
 
   /**
    * POST /api/transfer/start
@@ -106,6 +107,8 @@ export function registerTransferRoutes(fastify) {
       targetTemplateId, targetMainFile,
       engine = 'pdflatex',
       layoutCheck = false,
+      enableSensitiveMask = false,
+      useAgent = false,
       llmConfig,
       venue,
       doubleBlind,
@@ -124,7 +127,7 @@ export function registerTransferRoutes(fastify) {
       return reply.code(400).send({ error: `Unknown template: ${targetTemplateId}` });
     }
 
-    // Create a new project from the template
+    // Create a new project container
     await ensureDir(DATA_DIR);
     const newProjectId = crypto.randomUUID();
     const projectRoot = path.join(DATA_DIR, newProjectId);
@@ -144,14 +147,26 @@ export function registerTransferRoutes(fastify) {
     };
     await writeJson(path.join(projectRoot, 'project.json'), meta);
 
-    // Copy template files into the new project
-    const templateRoot = path.join(TEMPLATE_DIR, targetTemplateId);
-    await copyDir(templateRoot, projectRoot);
+    // Build graph + decide whether to pre-copy the template.
+    //   useAgent=true : keep existing behavior (pre-copy template, run LLM graph).
+    //   useAgent=false: run the rule-based transfer pipeline which re-
+    //                   populates `projectRoot` from the source and overlays
+    //                   the target template itself, so we MUST NOT pre-copy.
+    const AGENT_ENABLED_VENUES = ['neurips', 'icml', 'cvpr', 'acl'];
+    let graph;
+    let transferGraphKind;
+    if (useAgent) {
+      const templateRoot = path.join(TEMPLATE_DIR, targetTemplateId);
+      await copyDir(templateRoot, projectRoot);
+      const useAgentGraph = AGENT_ENABLED_VENUES.includes(targetTemplateId);
+      graph = useAgentGraph ? buildVenueAgentGraph() : buildTransferGraph();
+      transferGraphKind = useAgentGraph ? targetTemplateId : 'legacy';
+    } else {
+      graph = buildRuleBaseTransferGraph();
+      transferGraphKind = 'rulebasetransfer';
+    }
 
     const jobId = crypto.randomUUID();
-    const useNeuripsGraph = targetTemplateId === 'neurips';
-    const useAgentGraph = useNeuripsGraph || targetTemplateId === 'icml';
-    const graph = useAgentGraph ? buildNeuripsAgentGraph() : buildTransferGraph();
 
     const transferIntake = {
       venue: venue || targetTemplateId || 'neurips',
@@ -168,9 +183,11 @@ export function registerTransferRoutes(fastify) {
       targetTemplateId,
       engine,
       layoutCheck,
+      enableSensitiveMask: !!enableSensitiveMask,
+      useAgent: !!useAgent,
       llmConfig: resolveLLMConfig(llmConfig),
       jobId,
-      transferGraphKind: useAgentGraph ? targetTemplateId : 'legacy',
+      transferGraphKind,
       transferIntake,
       userConfirmations: {},
     };
@@ -189,9 +206,10 @@ export function registerTransferRoutes(fastify) {
     });
 
     announceTransferDebugOnce();
-    transferDebugLog(jobId, 'log', 'POST /transfer/start (legacy)', {
+    transferDebugLog(jobId, 'log', 'POST /transfer/start', {
       targetTemplateId,
-      transferGraphKind: useAgentGraph ? targetTemplateId : 'legacy',
+      transferGraphKind,
+      useAgent: !!useAgent,
       newProjectId,
       sourceProjectId,
       sourceMainFile,
@@ -578,6 +596,7 @@ export function registerTransferRoutes(fastify) {
       targetTemplateId, targetMainFile,
       engine = 'pdflatex',
       layoutCheck = false,
+      enableSensitiveMask = false,
       llmConfig,
       mineruConfig,
     } = request.body || {};
@@ -624,7 +643,8 @@ export function registerTransferRoutes(fastify) {
 
     // Build MinerU transfer graph — use agent hybrid for supported venues
     const jobId = crypto.randomUUID();
-    const useAgentBackend = ['neurips', 'icml'].includes(targetTemplateId);
+    const AGENT_ENABLED_VENUES = ['neurips', 'icml', 'cvpr', 'acl'];
+    const useAgentBackend = AGENT_ENABLED_VENUES.includes(targetTemplateId);
     const graph = useAgentBackend ? buildMineruAgentGraph() : buildMineruTransferGraph();
 
     const initialState = {
@@ -635,11 +655,12 @@ export function registerTransferRoutes(fastify) {
       targetTemplateId,
       engine,
       layoutCheck,
+      enableSensitiveMask: !!enableSensitiveMask,
       llmConfig: resolveLLMConfig(llmConfig),
       mineruConfig: resolveMineruConfig(mineruConfig),
       transferMode: 'mineru',
       jobId,
-      transferGraphKind: ['neurips', 'icml'].includes(targetTemplateId) ? targetTemplateId : 'legacy',
+      transferGraphKind: useAgentBackend ? targetTemplateId : 'legacy',
       transferIntake: {
         venue: targetTemplateId || 'neurips',
         doubleBlind: true,
@@ -663,10 +684,10 @@ export function registerTransferRoutes(fastify) {
     });
 
     announceTransferDebugOnce();
-    transferDebugLog(jobId, 'log', 'POST /transfer/start-mineru', {
+      transferDebugLog(jobId, 'log', 'POST /transfer/start-mineru', {
       targetTemplateId,
       newProjectId,
-      transferGraphKind: ['neurips', 'icml'].includes(targetTemplateId) ? targetTemplateId : 'legacy',
+      transferGraphKind: useAgentBackend ? targetTemplateId : 'legacy',
       hasSourceProject: !!sourceProjectId,
     });
 

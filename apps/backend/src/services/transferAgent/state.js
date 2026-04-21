@@ -14,10 +14,13 @@ export const TransferState = Annotation.Root({
   maxCompileLoops: Annotation({ reducer: replace, default: () => 5 }),
   maxLayoutLoops: Annotation({ reducer: replace, default: () => 3 }),
   layoutCheck: Annotation({ reducer: replace, default: () => false }),
+  enableSensitiveMask: Annotation({ reducer: replace, default: () => false }),
+  /** When false, POST /transfer/start runs the rule-based transfer graph instead of the LLM-driven ones. */
+  useAgent: Annotation({ reducer: replace, default: () => false }),
   llmConfig: Annotation({ reducer: replace }),
   jobId: Annotation({ reducer: replace }),
 
-  /** 'legacy' | 'neurips' — selects LangGraph topology */
+  /** Graph topology id: 'legacy' | 'rulebasetransfer' | target template id when using venue agent (neurips, icml, …) */
   transferGraphKind: Annotation({ reducer: replace, default: () => 'legacy' }),
 
   // --- Workspace roots (explicit tool boundary) ---
@@ -41,6 +44,10 @@ export const TransferState = Annotation.Root({
   sourceFullContent: Annotation({ reducer: replace }),
   sourceAssets: Annotation({ reducer: replace }),
   sourceProfile: Annotation({ reducer: replace }),
+  sourceMaskManifest: Annotation({ reducer: replace }),
+  sourceMaskedFiles: Annotation({ reducer: replace }),
+  sourceMaskedContents: Annotation({ reducer: replace }),
+  sourceMaskWarnings: Annotation({ reducer: replace }),
 
   // --- Target analysis ---
   targetProjectRoot: Annotation({ reducer: replace }),
@@ -86,7 +93,7 @@ export const TransferState = Annotation.Root({
   sourceImages: Annotation({ reducer: replace }),
   mineruOutputDir: Annotation({ reducer: replace }),
 
-  // --- Agentic loop (neurips-agent graph) ---
+  // --- Agentic loop (graphVenueAgent: planner → generator → reviewer) ---
   /** LLM message history for the agentic loop (accumulated across iterations) */
   agentMessages: Annotation({ reducer: appendList, default: () => [] }),
   /** Current Planner→Generator→Reviewer iteration (0-based) */

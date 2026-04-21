@@ -13,12 +13,17 @@ import { createListProjectTreeTool } from './listProjectTree.js';
 import { createCopyAssetTool } from './copyAsset.js';
 import { createRaiseQuestionTool } from './raiseQuestion.js';
 import { createMeasureFiguresTool } from './measureFigures.js';
+import { createCompileProjectTool } from './compileProject.js';
 
 /**
  * @param {object} ctx
  * @param {string} ctx.sourceReadRoot  — absolute path to source project
  * @param {string} ctx.workspaceRoot   — absolute path to target workspace
  * @param {string} ctx.jobId           — transfer job ID (for snapshots)
+ * @param {string} [ctx.targetProjectId] — for compileProject
+ * @param {string} [ctx.targetMainFile]  — for compileProject
+ * @param {string} [ctx.engine]          — user-selected LaTeX engine
+ * @param {object} [ctx.llmConfig]       — for compile log summarization
  * @returns {import('@langchain/core/tools').DynamicStructuredTool[]}
  */
 export function createAllTools(ctx) {
@@ -31,6 +36,7 @@ export function createAllTools(ctx) {
     createCopyAssetTool(ctx),
     createRaiseQuestionTool(ctx),
     createMeasureFiguresTool(ctx),
+    createCompileProjectTool(ctx),
   ];
 }
 
@@ -44,6 +50,7 @@ export function createReadOnlyTools(ctx) {
     createGrepFileTool(ctx),
     createListProjectTreeTool(ctx),
     createRaiseQuestionTool(ctx),
+    createCompileProjectTool(ctx),
   ];
 }
 
@@ -60,6 +67,7 @@ export function createGeneratorTools(ctx) {
     createListProjectTreeTool(ctx),
     createCopyAssetTool(ctx),
     createMeasureFiguresTool(ctx),
+    createCompileProjectTool(ctx),
   ];
 }
 
@@ -73,5 +81,6 @@ export function createReviewerTools(ctx) {
     createGrepFileTool(ctx),
     createListProjectTreeTool(ctx),
     createRaiseQuestionTool(ctx),
+    createCompileProjectTool(ctx),
   ];
 }

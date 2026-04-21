@@ -78,8 +78,8 @@ const NEURIPS_PHASE_STEPS: { id: string; label: string }[] = [
   { id: 'finalize', label: '完成（本地编译）' },
 ];
 
-/** NeurIPS Agent 模式时间线 */
-const NEURIPS_AGENT_STEPS: { id: string; label: string }[] = [
+/** 会场 Agent 模式时间线（neurips / icml / cvpr / acl 共用） */
+const VENUE_AGENT_STEPS: { id: string; label: string }[] = [
   { id: 'agent_planning', label: '🧠 规划' },
   { id: 'agent_generating', label: '⚡ 执行' },
   { id: 'agent_reviewing', label: '🔍 审查' },
@@ -103,9 +103,13 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
   const [targetTemplateId, setTargetTemplateId] = useState('');
   const [engine, setEngine] = useState('pdflatex');
   const [layoutCheck, setLayoutCheck] = useState(false);
+  const [enableSensitiveMask, setEnableSensitiveMask] = useState(false);
   const [neuripsDoubleBlind, setNeuripsDoubleBlind] = useState(true);
   const [neuripsPreprint, setNeuripsPreprint] = useState(false);
   const [neuripsOutputNotes, setNeuripsOutputNotes] = useState('');
+  // Classic-mode-only: when false (default), use the rule-based transfer
+  // converter (no content changes). When true, use the LLM agent pipeline.
+  const [useAgent, setUseAgent] = useState(false);
 
   // LLM config — read from shared localStorage (set via ProjectPage / EditorPage settings)
   const SETTINGS_KEY = 'openprism-settings-v1';
@@ -276,6 +280,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
           targetMainFile,
           engine,
           layoutCheck,
+          ...(mineruSource === 'project' ? { enableSensitiveMask } : {}),
           llmConfig: buildLlmConfig(),
           mineruConfig,
         });
@@ -310,6 +315,8 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
           targetMainFile,
           engine,
           layoutCheck,
+          enableSensitiveMask,
+          useAgent,
           llmConfig: buildLlmConfig(),
           ...(targetTemplateId === 'neurips'
             ? {
@@ -340,7 +347,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
       setRunning(false);
       setStatus('error');
     }
-  }, [transferMode, mineruSource, uploadedPdf, targetTemplateId, sourceMainFile, projectId, engine, layoutCheck, selectedTemplate, mineruApiBase, mineruToken, mineruRasterToPdf, neuripsDoubleBlind, neuripsPreprint, neuripsOutputNotes, onJobUpdate]);
+  }, [transferMode, mineruSource, uploadedPdf, targetTemplateId, sourceMainFile, projectId, engine, layoutCheck, enableSensitiveMask, useAgent, selectedTemplate, mineruApiBase, mineruToken, mineruRasterToPdf, neuripsDoubleBlind, neuripsPreprint, neuripsOutputNotes, onJobUpdate]);
 
   const pushJobUpdate = useCallback((jid: string, res: TransferStepResult) => {
     setProgressLog(res.progressLog || []);
@@ -704,6 +711,39 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
         {t('启用排版检查 (VLM)')}
       </label>
 
+      <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 12 }}>
+        <input
+          type="checkbox"
+          checked={enableSensitiveMask}
+          onChange={e => setEnableSensitiveMask(e.target.checked)}
+          disabled={transferMode === 'mineru' && mineruSource === 'upload'}
+        />
+        {t('启用关键数据 mask（表格/公式）')}
+      </label>
+      {transferMode === 'mineru' && mineruSource === 'upload' && (
+        <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: -8, marginBottom: 12 }}>
+          {t('上传 PDF 模式没有源 .tex/.bib 文件，此开关不会生效。')}
+        </div>
+      )}
+
+      {transferMode === 'legacy' && (
+        <>
+          <label style={{ fontSize: 12, display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+            <input
+              type="checkbox"
+              checked={useAgent}
+              onChange={e => setUseAgent(e.target.checked)}
+            />
+            {t('使用 Agent 进行论文重构（可能会对内容进行一定更改）')}
+          </label>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginBottom: 12, paddingLeft: 22 }}>
+            {useAgent
+              ? t('开启：使用大模型按规划-生成-审查循环重写论文以贴合目标模板。')
+              : t('关闭：走 Rule-Based Transfer 规则式无损转换，保留原文内容不变。')}
+          </div>
+        </>
+      )}
+
       {transferMode === 'legacy' && targetTemplateId === 'neurips' && (
         <div style={{ fontSize: 12, marginBottom: 12, padding: 10, borderRadius: 8, background: 'rgba(120, 98, 83, 0.08)' }}>
           <div style={{ fontWeight: 600, marginBottom: 8 }}>NeurIPS 投稿选项</div>
@@ -899,11 +939,11 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
         </div>
       )}
 
-      {/* NeurIPS phase timeline */}
-      {['neurips', 'icml'].includes(targetTemplateId) && status !== 'idle' && status !== 'starting' && (() => {
+      {/* NeurIPS phase timeline — suppressed for the rule-based transfer path */}
+      {['neurips', 'icml'].includes(targetTemplateId) && status !== 'idle' && status !== 'starting' && transferGraphKind !== 'rulebasetransfer' && (() => {
         // Use transferGraphKind from backend to determine mode (not agentPhase which is only set mid-run)
         const isAgentMode = transferGraphKind === 'neurips' || agentPhase != null || currentPhase?.startsWith('agent_');
-        const steps = isAgentMode ? NEURIPS_AGENT_STEPS : NEURIPS_PHASE_STEPS;
+        const steps = isAgentMode ? VENUE_AGENT_STEPS : NEURIPS_PHASE_STEPS;
         return (
           <div style={{ fontSize: 11, marginBottom: 10 }}>
             <div style={{ fontWeight: 600, marginBottom: 6 }}>

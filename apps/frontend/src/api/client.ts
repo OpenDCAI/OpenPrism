@@ -481,6 +481,9 @@ export interface TransferStartPayload {
   targetMainFile: string;
   engine?: string;
   layoutCheck?: boolean;
+  enableSensitiveMask?: boolean;
+  /** When true, run the LLM-driven agent pipeline; when false (default), run the rule-based transfer converter. */
+  useAgent?: boolean;
   llmConfig?: Partial<LLMConfig>;
   venue?: string;
   doubleBlind?: boolean;
@@ -691,6 +694,7 @@ export interface MineruTransferStartPayload {
   targetMainFile: string;
   engine?: string;
   layoutCheck?: boolean;
+  enableSensitiveMask?: boolean;
   llmConfig?: Partial<LLMConfig>;
   mineruConfig?: MineruConfig;
 }

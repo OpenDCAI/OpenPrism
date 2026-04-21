@@ -4,21 +4,26 @@ import { getProjectRoot } from '../../projectService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { listFilesRecursive } from '../../../utils/fsUtils.js';
 import { progressUpdate } from '../progressMeta.js';
+import { maskSourceProjectFiles } from '../masking/index.js';
 
 /**
  * Recursively resolve \input{} and \include{} references,
  * returning the concatenated full content.
  */
-async function resolveInputs(projectRoot, relPath, visited = new Set()) {
+async function resolveInputs(projectRoot, relPath, visited = new Set(), contentOverrides = {}) {
   if (visited.has(relPath)) return '';
   visited.add(relPath);
 
   const absPath = safeJoin(projectRoot, relPath);
   let content;
-  try {
-    content = await fs.readFile(absPath, 'utf8');
-  } catch {
-    return '';
+  if (typeof contentOverrides[relPath] === 'string') {
+    content = contentOverrides[relPath];
+  } else {
+    try {
+      content = await fs.readFile(absPath, 'utf8');
+    } catch {
+      return '';
+    }
   }
 
   // Match \input{...} and \include{...}
@@ -32,7 +37,7 @@ async function resolveInputs(projectRoot, relPath, visited = new Set()) {
     let ref = match[1].trim();
     // Add .tex extension if missing
     if (!path.extname(ref)) ref += '.tex';
-    const childContent = await resolveInputs(projectRoot, ref, visited);
+    const childContent = await resolveInputs(projectRoot, ref, visited, contentOverrides);
     result += childContent;
     lastIndex = pattern.lastIndex;
   }
@@ -189,12 +194,35 @@ export async function analyzeSource(state) {
 
   const projectRoot = await getProjectRoot(state.sourceProjectId);
   const allFiles = await listFilesRecursive(projectRoot);
+  let sourceMaskManifest = [];
+  let sourceMaskedFiles = [];
+  let sourceMaskedContents = {};
+  let sourceMaskWarnings = [];
+
+  if (state.enableSensitiveMask) {
+    const masked = await maskSourceProjectFiles(projectRoot);
+    sourceMaskManifest = masked.manifest;
+    sourceMaskedFiles = masked.maskedFiles;
+    sourceMaskedContents = masked.maskedContents;
+    sourceMaskWarnings = masked.warnings;
+  }
 
   // Resolve all \input/\include and get full content
-  const fullContent = await resolveInputs(projectRoot, state.sourceMainFile);
+  const fullContent = await resolveInputs(
+    projectRoot,
+    state.sourceMainFile,
+    new Set(),
+    sourceMaskedContents,
+  );
   const outline = parseOutline(fullContent);
   const assets = collectAssets(fullContent, allFiles);
   const sourceProfile = buildSourceProfile(fullContent);
+  const maskSummary = state.enableSensitiveMask
+    ? `; maskedFiles=${sourceMaskedFiles.length}; maskedSegments=${sourceMaskManifest.length}`
+    : '';
+  const warningSummary = state.enableSensitiveMask && sourceMaskWarnings.length
+    ? `; maskWarnings=${sourceMaskWarnings.length}`
+    : '';
 
   return {
     sourceProjectRoot: projectRoot,
@@ -203,10 +231,14 @@ export async function analyzeSource(state) {
     sourceFullContent: fullContent,
     sourceAssets: assets,
     sourceProfile,
+    sourceMaskManifest,
+    sourceMaskedFiles,
+    sourceMaskedContents,
+    sourceMaskWarnings,
     ...progressUpdate(
       'analyzeSource',
       'source_analysis',
-      `Parsed ${outline.length} sections; bibMechanism=${sourceProfile.bibMechanism}; class=${sourceProfile.documentclass || '?'}`,
+      `Parsed ${outline.length} sections; bibMechanism=${sourceProfile.bibMechanism}; class=${sourceProfile.documentclass || '?'}${maskSummary}${warningSummary}`,
     ),
   };
 }

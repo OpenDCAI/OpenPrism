@@ -1,7 +1,11 @@
 /**
- * graphNeuripsAgent.js — Agentic NeurIPS Transfer Graph
+ * graphVenueAgent.js — Agentic venue transfer graph (multi-template)
  *
- * Replaces the 17-node pipeline (graphNeurips.js) with a 3-node agentic loop:
+ * Used for NeurIPS, ICML, CVPR, ACL, etc. when `useAgent` is true. Venue-specific
+ * prompts come from `skills/` + `rules/<venue>.md` under `services/transferAgent/`;
+ * `transferGraphKind` holds the template id (e.g. `neurips`, `icml`).
+ *
+ * Replaces the 17-node NeurIPS-only pipeline (graphNeurips.js) with a 3-node agentic loop:
  *
  *     ┌──────────────────────────────────────┐
  *     │                                      │
@@ -15,7 +19,6 @@
  *                     (max_iterations)───────┘
  *
  * Each node is a ReAct-style agent with tool-calling capabilities.
- * The NeurIPS specification is injected as a "skill" (system prompt).
  *
  * Human-in-the-loop: the raiseQuestion tool triggers LangGraph interrupt(),
  * pausing the graph until the user provides answers via the API.
@@ -51,13 +54,11 @@ function routeAfterReview(state) {
 }
 
 /**
- * Build the NeurIPS agentic transfer graph.
+ * Build the agentic transfer graph for supported venue templates.
  *
- * This is a drop-in replacement for buildNeuripsLatexGraph().
- * The API surface (state shape, interrupt handling) is compatible
- * with the existing route handlers.
+ * API surface (state shape, interrupt handling) matches legacy transfer routes.
  */
-export function buildNeuripsAgentGraph() {
+export function buildVenueAgentGraph() {
   const graph = new StateGraph(TransferState);
 
   // Register nodes

@@ -82,6 +82,72 @@ function icmlReviewChecklist({ intake }) {
 }
 
 // ─────────────────────────────────────────────
+//  CVPR
+// ─────────────────────────────────────────────
+
+function cvprReviewChecklist({ intake }) {
+  const isBlind = intake.doubleBlind !== false;
+  return {
+    structure: `- Use official CVPR style setup and keep two-column layout
+   - Do NOT modify cvpr.sty
+   - No conflicting geometry/font packages`,
+
+    figures: `- Preserve figure* / table* when full-width layout is needed
+   - \\includegraphics paths point to files that exist
+   - Reasonable \\includegraphics widths`,
+
+    bibliography: `- Keep natbib-compatible CVPR bibliography flow
+   - Citation style should match venue defaults
+   - .bib or .bbl files present in target project`,
+
+    policy: `6. CVPR POLICY:
+   - Follow official template defaults (no ad-hoc style hacks)
+   - Preserve scientific content and ordering
+   - $$ ... $$ display math → equation/align where needed`,
+
+    blind: isBlind
+      ? `BLIND COMPLIANCE:
+   - No identifying author/affiliation details
+   - No identifying project/repo URLs unless user confirmed
+   - Self-citations in third-person form`
+      : '(Camera-ready or non-blind mode — author info can be visible)',
+  };
+}
+
+// ─────────────────────────────────────────────
+//  ACL
+// ─────────────────────────────────────────────
+
+function aclReviewChecklist({ intake }) {
+  const isBlind = intake.doubleBlind !== false;
+  return {
+    structure: `- Use \\usepackage[review]{acl} for review; \\usepackage{acl} for final
+   - Do NOT modify acl.sty
+   - Keep two-column ACL layout and avoid conflicting geometry settings`,
+
+    figures: `- Preserve figure* / table* when full-width layout is needed
+   - \\includegraphics paths point to files that exist
+   - Reasonable \\includegraphics widths`,
+
+    bibliography: `- ACL references should follow natbib author-year behavior
+   - References section before appendices
+   - .bib or .bbl files present in target project`,
+
+    policy: `6. ACL POLICY:
+   - Review mode should include line numbers via [review] option
+   - Final mode should remove review-only markers
+   - Keep citations/references consistent with ACL guidance`,
+
+    blind: isBlind
+      ? `BLIND COMPLIANCE:
+   - Remove identifying author/affiliation details
+   - Remove acknowledgements in review version
+   - Self-citations in third-person form`
+      : '(Final mode — author and acknowledgement blocks may be present)',
+  };
+}
+
+// ─────────────────────────────────────────────
 //  Fallback (generic)
 // ─────────────────────────────────────────────
 
@@ -115,6 +181,8 @@ function genericReviewChecklist({ intake }) {
 const VENUE_CHECKLIST_BUILDERS = {
   neurips: neuripsReviewChecklist,
   icml: icmlReviewChecklist,
+  cvpr: cvprReviewChecklist,
+  acl: aclReviewChecklist,
 };
 
 /**

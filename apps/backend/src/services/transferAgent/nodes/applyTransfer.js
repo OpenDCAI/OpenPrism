@@ -3,6 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { writeFileWithSnapshot, stripCodeFences } from '../utils.js';
+import { unmaskContent } from '../masking/index.js';
 
 /**
  * Build the LLM prompt for content migration.
@@ -32,7 +33,8 @@ RULES:
 7. Do NOT add any content that doesn't exist in the source
 8. Do NOT remove any substantive content from the source
 9. If the source uses \\bibliography{} but target uses \\addbibresource{}, adapt accordingly
-10. Output the COMPLETE .tex file content, not just the body
+10. Preserve placeholder markers like __OP_MASK_EQ_0001__ and __OP_MASK_TBL_0002__ exactly if they appear in the source
+11. Output the COMPLETE .tex file content, not just the body
 
 Output ONLY the complete LaTeX file content. No explanations, no markdown fences.`;
 }
@@ -88,16 +90,20 @@ async function applyTransferLegacy(state) {
   const prompt = buildTransferPrompt(state);
   const response = await llm.invoke([{ role: 'user', content: prompt }]);
   const newContent = stripCodeFences(response.content);
+  const unmasked = unmaskContent(newContent, state.sourceMaskManifest);
 
   await writeFileWithSnapshot(
     state.targetProjectRoot,
     state.targetMainFile,
-    newContent,
+    unmasked.content,
     state.jobId
   );
 
+  const maskNote = state.enableSensitiveMask
+    ? ` Restored ${unmasked.restored} mask token(s); remaining=${unmasked.remaining}.`
+    : '';
   return {
-    progressLog: `[applyTransfer] Wrote migrated content to ${state.targetMainFile} (${newContent.length} chars).`,
+    progressLog: `[applyTransfer] Wrote migrated content to ${state.targetMainFile} (${unmasked.content.length} chars).${maskNote}`,
   };
 }
 

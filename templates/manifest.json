@@ -2,8 +2,8 @@
   "templates": [
     {
       "id": "acl",
-      "label": "ACL",
-      "mainFile": "main.tex",
+      "label": "ACL(skeleton)",
+      "mainFile": "acl_latex.tex",
       "category": "academic",
       "description": "ACL 会议论文模板，适用于自然语言处理领域",
       "descriptionEn": "ACL conference paper template for NLP research",
@@ -24,7 +24,7 @@
     },
     {
       "id": "neurips",
-      "label": "NeurIPS 2026",
+      "label": "NeurIPS 2026(skeleton)",
       "mainFile": "main.tex",
       "category": "academic",
       "description": "NeurIPS 2026 官方样式（neurips_2026.sty）与投稿壳，含 checklist",

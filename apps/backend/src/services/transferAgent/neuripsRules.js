@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { REPO_ROOT } from '../../config/constants.js';
+import { RULES_DIR } from '../../config/constants.js';
 
 /**
  * Per-venue rules cache: venueId → { content, mtimeMs }
@@ -10,14 +10,15 @@ const cache = new Map();
 /**
  * Load venue rules markdown from disk (cached in process memory).
  *
- * Convention: rules file lives at `${REPO_ROOT}/${venueId}/${venueId}.md`
- *   e.g. neurips/neurips.md, icml/icml.md
+ * Convention: rules file lives at `${RULES_DIR}/${venueId}.md`
+ *   e.g. apps/backend/src/services/transferAgent/rules/neurips.md
+ *        apps/backend/src/services/transferAgent/rules/acl.md
  *
  * @param {string} venueId — e.g. 'neurips', 'icml', 'cvpr'
  * @returns {Promise<string>}
  */
 export async function loadVenueRules(venueId) {
-  const filePath = path.join(REPO_ROOT, venueId, `${venueId}.md`);
+  const filePath = path.join(RULES_DIR, `${venueId}.md`);
   try {
     const st = await fs.stat(filePath);
     const cached = cache.get(venueId);

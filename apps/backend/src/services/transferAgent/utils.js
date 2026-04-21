@@ -16,6 +16,11 @@ export function briefToolArgs(toolName, args) {
   try {
     switch (toolName) {
       case 'readFile':
+        if (typeof args.startLine === 'number' || typeof args.endLine === 'number') {
+          const start = typeof args.startLine === 'number' ? args.startLine : 1;
+          const end = typeof args.endLine === 'number' ? args.endLine : '?';
+          return `${args.project || 'target'}:${args.path || ''}#L${start}-L${end}`.slice(0, 100);
+        }
         return `${args.project || 'target'}:${args.path || ''}`.slice(0, 100);
       case 'writeFile':
         return `${args.path || ''} (${(args.content || '').length} chars)`.slice(0, 100);
@@ -26,7 +31,9 @@ export function briefToolArgs(toolName, args) {
       case 'listProjectTree':
         return args.project || 'target';
       case 'copyAsset':
-        return `${args.from || ''} → ${args.to || ''}`.slice(0, 100);
+        return `${args.srcPath || ''} → ${args.destPath || ''}`.slice(0, 100);
+      case 'compileProject':
+        return 'target compile';
       case 'raiseQuestion':
         return `${(args.questions || []).length} question(s)`;
       default:

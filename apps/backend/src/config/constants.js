@@ -5,6 +5,9 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 export const REPO_ROOT = path.resolve(__dirname, '..', '..', '..', '..');
 export const DATA_DIR = process.env.OPENPRISM_DATA_DIR || path.join(REPO_ROOT, 'data');
+const TRANSFER_AGENT_DIR = path.join(REPO_ROOT, 'apps', 'backend', 'src', 'services', 'transferAgent');
+/** Venue handbook markdown for transfer agent (neurips.md, acl.md, …) */
+export const RULES_DIR = path.join(TRANSFER_AGENT_DIR, 'rules');
 export const TEMPLATE_DIR = path.join(REPO_ROOT, 'templates');
 export const TEMPLATE_MANIFEST = path.join(TEMPLATE_DIR, 'manifest.json');
 export const PORT = Number(process.env.PORT || 8787);

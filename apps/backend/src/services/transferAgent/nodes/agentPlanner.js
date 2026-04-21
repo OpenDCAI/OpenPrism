@@ -1,11 +1,11 @@
 /**
- * agentPlanner — Planner node for the NeurIPS agentic transfer.
+ * agentPlanner — Planner node for the multi-venue agentic transfer (graphVenueAgent).
  *
  * The Planner autonomously explores source and target projects using tools,
  * then produces a structured migration plan. On subsequent iterations
  * (when Reviewer sends back issues), it revises the plan accordingly.
  *
- * Tools available: readFile, grepFile, listProjectTree, raiseQuestion
+ * Tools available: readFile, grepFile, listProjectTree, raiseQuestion, compileProject
  */
 
 import { ChatOpenAI } from '@langchain/openai';
@@ -47,6 +47,13 @@ export async function agentPlanner(state, config) {
     sourceReadRoot: mergedState.sourceReadRoot || mergedState.sourceProjectRoot,
     workspaceRoot: mergedState.workspaceRoot || mergedState.targetProjectRoot,
     jobId: mergedState.jobId,
+    enableSensitiveMask: !!mergedState.enableSensitiveMask,
+    sourceMaskManifest: mergedState.sourceMaskManifest || [],
+    sourceMaskedContents: mergedState.sourceMaskedContents || {},
+    targetProjectId: mergedState.targetProjectId,
+    targetMainFile: mergedState.targetMainFile,
+    engine: mergedState.engine || 'pdflatex',
+    llmConfig: mergedState.llmConfig,
   };
   const tools = createReadOnlyTools(ctx);
 
@@ -83,6 +90,7 @@ ${isMineruMode ? 'SOURCE MODE: MinerU (PDF → Markdown → LaTeX)\n' : ''}INSTR
 3. Analyze the source paper's structure, ${isMineruMode ? 'sections, figures, tables, equations, and references from the Markdown' : 'packages, bibliography mechanism, figures, and special formatting'}
 4. Study the target template structure (follow the venue-specific rules in your system prompt)
 5. If you need user input on ambiguous decisions (e.g., float strategy, content dropping), use raiseQuestion
+6. Optional: call compileProject() to verify the target template already builds (returns an LLM summary of the log, not raw TeX output)
 
 After exploring, output your migration plan as a JSON object wrapped in <MIGRATION_PLAN> tags:
 

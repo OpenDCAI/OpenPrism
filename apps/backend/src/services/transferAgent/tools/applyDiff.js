@@ -7,6 +7,7 @@ import {
   extractUnifiedDiff,
   applyUnifiedDiffToMainTex,
 } from '../llmUnifiedDiff.js';
+import { unmaskContent } from '../masking/index.js';
 
 /**
  * Creates the applyDiff tool — applies a unified diff patch to a target file.
@@ -42,8 +43,14 @@ export function createApplyDiffTool(ctx) {
         if (!result.ok) {
           return `[ERROR] Patch failed: ${result.reason}. Context/remove lines must match the file exactly.`;
         }
-        await writeFileWithSnapshot(ctx.workspaceRoot, path, result.text, ctx.jobId);
-        return `[OK] Patch applied successfully. File is now ${result.text.length} chars.`;
+        const unmasked = ctx.enableSensitiveMask
+          ? unmaskContent(result.text, ctx.sourceMaskManifest)
+          : { content: result.text, restored: 0, remaining: 0 };
+        await writeFileWithSnapshot(ctx.workspaceRoot, path, unmasked.content, ctx.jobId);
+        const maskNote = ctx.enableSensitiveMask
+          ? ` Restored ${unmasked.restored} token(s); remaining=${unmasked.remaining}.`
+          : '';
+        return `[OK] Patch applied successfully. File is now ${unmasked.content.length} chars.${maskNote}`;
       } catch (err) {
         return `[ERROR] applyDiff failed on target:${path} — ${err.message}`;
       }
