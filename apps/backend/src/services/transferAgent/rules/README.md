@@ -36,5 +36,4 @@ venue-skill system prompt (see `apps/backend/src/services/transferAgent/skills/`
 ## Related paths
 
 - Templates: `templates/<venueId>/` (with `templates/manifest.json` listing `id`, `label`, `mainFile`, …).
-- Legacy archive: the old root-level `acl/`, `neurips/`, `icml/`, `cvpr/` directories now live at `apps/backend/src/services/transferAgent/archive/deprecated-root-venues/`; safe to delete once nothing references them.
 - Caching: `loadVenueRules` caches per venue by `mtimeMs`, so editing a file here is picked up on next load without a process restart.

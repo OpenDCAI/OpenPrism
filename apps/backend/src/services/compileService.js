@@ -8,15 +8,12 @@ import { getProjectRoot } from './projectService.js';
 
 const SUPPORTED_ENGINES = ['pdflatex', 'xelatex', 'lualatex', 'latexmk', 'tectonic'];
 
-// Prefer system TeX Live binaries to avoid conda version mismatch with .fmt files
-const SYSTEM_TEX_BIN = '/usr/bin';
-
 function buildCommand(engine, mainFile) {
   switch (engine) {
     case 'pdflatex':
     case 'xelatex':
     case 'lualatex':
-      return { cmd: path.join(SYSTEM_TEX_BIN, engine), args: ['-interaction=nonstopmode', mainFile] };
+      return { cmd: engine, args: ['-interaction=nonstopmode', mainFile] };
     case 'latexmk':
       return { cmd: 'latexmk', args: ['-pdf', '-interaction=nonstopmode', mainFile] };
     case 'tectonic':
@@ -223,8 +220,8 @@ export async function runCompile({ projectId, mainFile, engine = 'pdflatex' }) {
         }
 
         const bibCmd = useBiber
-          ? path.join(SYSTEM_TEX_BIN, 'biber')
-          : path.join(SYSTEM_TEX_BIN, 'bibtex');
+          ? 'biber'
+          : 'bibtex';
         const bibEnv = {
           ...process.env,
           BIBINPUTS: `${outDir}:`,
