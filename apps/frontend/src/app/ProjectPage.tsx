@@ -15,11 +15,10 @@ import {
   trashProject,
   updateProjectTags,
   permanentDeleteProject,
-  uploadTemplate,
   transferStatus,
   transferStream,
 } from '../api/client';
-import type { ProjectMeta, TemplateMeta, TemplateCategory, TransferProgressEntry, TransferStepResult } from '../api/client';
+import type { ProjectMeta, TemplateMeta, TransferProgressEntry, TransferStepResult } from '../api/client';
 import TransferPanel from './TransferPanel';
 
 type ViewFilter = 'all' | 'mine' | 'archived' | 'trash';
@@ -78,7 +77,6 @@ export default function ProjectPage() {
 
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [templates, setTemplates] = useState<TemplateMeta[]>([]);
-  const [categories, setCategories] = useState<TemplateCategory[]>([]);
   const [status, setStatus] = useState('');
   const [filter, setFilter] = useState('');
 
@@ -104,10 +102,6 @@ export default function ProjectPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsForm, setSettingsForm] = useState<LLMSettings>(loadLLMSettings);
 
-  const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false);
-  const [galleryCat, setGalleryCat] = useState('all');
-  const [galleryFeatured, setGalleryFeatured] = useState(false);
-  const [gallerySearch, setGallerySearch] = useState('');
   const [tagEditId, setTagEditId] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
   const [newSidebarTag, setNewSidebarTag] = useState('');
@@ -210,10 +204,6 @@ export default function ProjectPage() {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Template upload state
-  const templateZipRef = useRef<HTMLInputElement | null>(null);
-  const [uploadingTemplate, setUploadingTemplate] = useState(false);
-
   const loadProjects = useCallback(async () => {
     const res = await listProjects();
     setProjects(res.projects || []);
@@ -227,7 +217,6 @@ export default function ProjectPage() {
     listTemplates()
       .then((res) => {
         setTemplates(res.templates || []);
-        setCategories(res.categories || []);
         if (res.templates?.length && !createTemplate) {
           setCreateTemplate(res.templates[0].id);
         }
@@ -264,19 +253,6 @@ export default function ProjectPage() {
     archived: projects.filter((p) => p.archived && !p.trashed).length,
     trash: projects.filter((p) => p.trashed).length,
   }), [projects]);
-
-  const galleryTemplates = useMemo(() => {
-    let list = templates;
-    if (galleryCat !== 'all') list = list.filter((tpl) => tpl.category === galleryCat);
-    if (galleryFeatured) list = list.filter((tpl) => tpl.featured);
-    const term = gallerySearch.trim().toLowerCase();
-    if (term) list = list.filter((tpl) =>
-      tpl.label.toLowerCase().includes(term) ||
-      (tpl.description || '').toLowerCase().includes(term) ||
-      (tpl.descriptionEn || '').toLowerCase().includes(term)
-    );
-    return list;
-  }, [templates, galleryCat, galleryFeatured, gallerySearch]);
 
   const handleCreate = async () => {
     const name = createName.trim();
@@ -382,39 +358,6 @@ export default function ProjectPage() {
     }
   };
 
-  const handleCreateFromTemplate = async (tplId: string) => {
-    const tpl = templates.find((t) => t.id === tplId);
-    const name = createName.trim() || tpl?.label || 'Untitled';
-    try {
-      const created = await createProject({ name, template: tplId });
-      setTemplateGalleryOpen(false);
-      setCreateName('');
-      await loadProjects();
-      navigate(`/editor/${created.id}`);
-    } catch (err) {
-      setStatus(t('创建失败: {{error}}', { error: String(err) }));
-    }
-  };
-
-  const handleUploadTemplate = async (file: File) => {
-    const baseName = file.name.replace(/\.zip$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const templateId = baseName.toLowerCase();
-    const templateLabel = baseName;
-    setUploadingTemplate(true);
-    try {
-      await uploadTemplate(templateId, templateLabel, file);
-      const res = await listTemplates();
-      setTemplates(res.templates || []);
-      setCategories(res.categories || []);
-      setStatus(t('模板上传成功'));
-    } catch (err) {
-      setStatus(t('模板上传失败: {{error}}', { error: String(err) }));
-    } finally {
-      setUploadingTemplate(false);
-      if (templateZipRef.current) templateZipRef.current.value = '';
-    }
-  };
-
   const handleCopy = async (id: string, originalName: string) => {
     try {
       const res = await copyProject(id, `${originalName} (Copy)`);
@@ -497,7 +440,7 @@ export default function ProjectPage() {
         </button>
         <div className="sidebar-actions-row">
           <button className="btn ghost" style={{ flex: 1 }} onClick={() => setImportOpen(true)}>{t('导入项目')}</button>
-          <button className="btn ghost" style={{ flex: 1 }} onClick={() => setTemplateGalleryOpen(true)}>{t('模板库')}</button>
+        <button className="btn ghost" style={{ flex: 1 }} onClick={() => navigate('/templates')}>{t('模板库')}</button>
         </div>
 
         <nav className="sidebar-nav">
@@ -884,94 +827,6 @@ export default function ProjectPage() {
               <button className="btn" onClick={handleImportArxiv} disabled={importing || !arxivInput.trim()}>
                 {t('导入 arXiv')}
               </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* ── Template Gallery Modal ── */}
-      {templateGalleryOpen && (
-        <div className="modal-backdrop" onClick={() => setTemplateGalleryOpen(false)}>
-          <div className="modal template-gallery-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="template-gallery-header-left">
-                <button className="btn ghost" onClick={() => setTemplateGalleryOpen(false)}>{t('返回')}</button>
-                <span>{t('模板库')}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input
-                  ref={templateZipRef}
-                  type="file"
-                  accept=".zip"
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleUploadTemplate(f);
-                  }}
-                />
-                <button
-                  className="btn ghost"
-                  disabled={uploadingTemplate}
-                  onClick={() => templateZipRef.current?.click()}
-                >
-                  {uploadingTemplate ? t('上传中...') : t('上传模板')}
-                </button>
-                <button className="icon-btn" onClick={() => setTemplateGalleryOpen(false)}>✕</button>
-              </div>
-            </div>
-            <div className="modal-body">
-              <div className="template-gallery-subtitle">{t('选择模板快速开始您的项目')}</div>
-
-              <div className="template-gallery-categories">
-                {[{ id: 'all', label: t('全部'), labelEn: 'All' }, ...(categories || [])].map((cat) => (
-                  <button
-                    key={cat.id}
-                    className={`template-cat-tab${galleryCat === cat.id ? ' active' : ''}`}
-                    onClick={() => setGalleryCat(cat.id)}
-                  >
-                    {i18n.language === 'en-US' ? cat.labelEn : cat.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="template-gallery-filters">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
-                  <input type="checkbox" checked={galleryFeatured} onChange={(e) => setGalleryFeatured(e.target.checked)} />
-                  {t('精选模板')}
-                </label>
-                <input
-                  className="project-search"
-                  value={gallerySearch}
-                  onChange={(e) => setGallerySearch(e.target.value)}
-                  placeholder={t('搜索模板...')}
-                  style={{ maxWidth: 240 }}
-                />
-              </div>
-
-              <div className="template-gallery-grid">
-                {galleryTemplates.map((tpl) => (
-                  <div key={tpl.id} className="template-card" onClick={() => handleCreateFromTemplate(tpl.id)}>
-                    <div className="template-card-thumb">
-                      {tpl.featured && <span className="template-card-badge">Featured</span>}
-                    </div>
-                    <div className="template-card-body">
-                      <div className="template-card-title">{tpl.label}</div>
-                      <div className="template-card-desc">
-                        {i18n.language === 'en-US' ? (tpl.descriptionEn || tpl.description) : tpl.description}
-                      </div>
-                      {tpl.tags?.length > 0 && (
-                        <div className="template-card-tags">
-                          {tpl.tags.map((tag) => <span key={tag} className="project-tag-pill">{tag}</span>)}
-                        </div>
-                      )}
-                      {tpl.author && <div className="template-card-author">{tpl.author}</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {galleryTemplates.length === 0 && (
-                <div className="template-gallery-empty">{t('暂无匹配模板')}</div>
-              )}
             </div>
           </div>
         </div>

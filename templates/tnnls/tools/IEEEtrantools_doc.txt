@@ -1,0 +1,329 @@
+
+IEEEtrantools_doc.txt 2015/08/26 version 1.5
+(Version 1.5 is based on the commands of version 1.8b of IEEEtran.cls)
+This document is the user guide for the IEEEtrantools.sty package.
+
+The IEEEtrantools.sty package provides several popular and unique
+commands from the IEEEtran.cls class file.
+
+IEEEtrantools.sty should not be used with IEEEtran.cls.
+
+For helpful tips, answers to frequently asked questions and other support,
+visit the IEEEtrantools support page at my website:
+
+http://www.michaelshell.org/tex/ieeetran/tools/
+
+The latest version and documentation of IEEEtrantools can be obtained at:
+http://www.ctan.org/pkg/ieeetran
+
+Copyright (c) 2002-2015 by Michael Shell
+                        See
+                        http://www.michaelshell.org/
+                        for current contact information.
+
+*************************************************************************
+Legal Notice:
+This code is offered as-is without any warranty either expressed or
+implied; without even the implied warranty of MERCHANTABILITY or
+FITNESS FOR A PARTICULAR PURPOSE! 
+User assumes all risk.
+In no event shall the IEEE or any contributor to this code be liable for
+any damages or losses, including, but not limited to, incidental,
+consequential, or any other damages, resulting from the use or misuse
+of any information contained here.
+
+All comments are the opinions of their respective authors and are not
+necessarily endorsed by the IEEE.
+
+This work is distributed under the LaTeX Project Public License (LPPL)
+( http://www.latex-project.org/ ) version 1.3, and may be freely used,
+distributed and modified. A copy of the LPPL, version 1.3, is included
+in the base LaTeX documentation of all distributions of LaTeX released
+2003/12/01 or later.
+Retain all contribution notices and credits.
+** Modified files should be clearly indicated as such, including  **
+** renaming them and changing author support contact information. **
+
+File list of work: IEEEtrantools.sty, IEEEtrantools_doc.txt, changelog.txt
+*************************************************************************
+
+
+Available package options e.g., \usepackage[redeflists]{IEEEtrantools}
+
+ redeflists
+    Causes IEEEtrantools to redefine the standard LaTeX itemize,
+    enumerate and description (IED) lists to their IEEE versions.
+    The default behavior is to retain the standard definitions
+    of itemize, enumerate and description. The IEEEtran versions are
+    always available as IEEEitemize, IEEEenumerate and IEEEdescription
+    and the original LaTeX versions are always available as LaTeXitemize,
+    LaTeXenumerate and LaTeXdescription.
+
+**********************************************************************
+
+The IEEEtrantools.sty package provides several commands from IEEEtran.cls
+so that they can be used under other LaTeX classes. This guide covers only
+the differences in the use (or undocumented uses) of the commands from
+those provided by IEEEtran.cls. For complete documentation on these
+commands, see the relevant sections in the IEEEtran_HOWTO manual which
+is available at
+http://www.ctan.org/pkg/ieeetran
+
+IEEEtrantools.sty provides \IEEEPARstart; the \bstctlcite command for the
+control entry types of IEEEtran.bst V1.00 and later; \IEEEnoauxwrite; 
+the IEEE IED list environments; and the complete IEEEeqnarray family,
+including the IEEEeqnarray support commands, the IEEEproof environment
+and  \IEEEauthorrefmark.
+
+Please note that, as a package file, IEEEtrantools.sty will not attempt
+to alter document formatting (other than if the IDE lists are redefined
+if the redeflists option is invoked) as controlled by the class file.
+Therefore, there may be spacing/layout differences between the results
+of the same IEEEtran commands under IEEEtran.cls and the user's class
+file as different fonts, default values for the various length commands,
+etc., are used than under IEEEtran.cls.
+
+
+
+
+
+*** \IEEEPARstart ***
+
+\IEEEPARstart{}{} is used to provide a large initial "drop cap" letter(s) as
+well as to capitialize the remaining letters of the first word of a chapter
+or section (if placed within the second argument). e.g.,
+\IEEEPARstart{O}{nce}
+
+IEEEtrantools.sty provides the user with a way to control the various
+parameters of the \IEEEPARstart letters.
+
+Below is how the user can alter them (after the IEEEtrantools.sty package
+is loaded). Default values are shown. IEEEtrantools will not override
+any previous definitions of these parameters if they already exist when
+the package is loaded.
+
+
+% The number of lines that are indented to clear the drop cap letter.
+% You may need to increase this beyond 1 + \IEEEPARstartDROPDEPTH if
+% you are using lowercase letters with descenders.
+\renewcommand{\IEEEPARstartDROPLINES}{2}
+
+% The minimum number of lines left on a page to allow an \IEEEPARstart.
+% Does not take into consideration glue shrink, so it tends to be overly
+% cautious.
+\renewcommand{\IEEEPARstartMINPAGELINES}{2}
+
+% The height of the drop cap (*above* the baseline), is adjusted to match
+% the height of this text in the current font (when \IEEEPARstart is called).
+% Use a strut if you want a height not based on that of the main text font.
+\renewcommand{\IEEEPARstartHEIGHTTEXT}{T}
+
+% The depth the letter is lowered below the baseline. The height (and size)
+% of the letter is determined by the sum of this value and the height of
+% \IEEEPARstartHEIGHTTEXT in the current font. It is a good idea to set this
+% value in terms of the baselineskip so that it can respond to changes
+% therein.
+\renewcommand{\IEEEPARstartDROPDEPTH}{1.1\baselineskip}
+
+% The font the drop cap will be rendered in. The argument is a command that
+% can take zero or one argument.
+\renewcommand{\IEEEPARstartFONTSTYLE}{\bfseries}
+
+% Any additional, non-font related commands needed to modify the drop cap
+% letter, can take zero or one argument.
+\renewcommand{\IEEEPARstartCAPSTYLE}{\MakeUppercase}
+
+% The font that will be used to render the rest of the word (second argument
+% to \IEEEPARstart), can take zero or one argument.
+\renewcommand{\IEEEPARstartWORDFONTSTYLE}{\relax}
+
+% Any additional, non-font related commands needed to modify the rest of the
+% word (second argument to \IEEEPARstart), can take zero or one argument.
+\renewcommand{\IEEEPARstartWORDCAPSTYLE}{\MakeUppercase}
+
+% The horizontal separation distance from the drop letter to the main text.
+% Lengths that depend on the font (i.e., ex, em, etc.) will be referenced to
+% the font that is active when \IEEEPARstart is called.
+\renewcommand{\IEEEPARstartSEP}{0.15em}
+
+% The Horizontal offset applied to the left of the drop cap. The drop cap
+% can be shifted left (negative) or right (positive) using this parameter.
+% Lengths that depend on the font (e.g., ex, em, etc.) will be referenced
+% to the font that is active when \IEEEPARstart is called.
+\renewcommand{\IEEEPARstartHOFFSET}{0em}
+
+For \IEEEPARstartSEP and \IEEEPARstartHOFFSET, you can also reference the
+length variable, \IEEEPARstartletwidth, which will be set to the width of
+the drop drop before it is rendered. e.g.,
+\renewcommand{\IEEEPARstartHOFFSET}{-0.5\IEEEPARstartletwidth}
+will cause the drop cap to be shifted leftward by half its width.
+
+% Italic correction command applied at the end of the drop cap when
+% evaluating its width. Without this, italic or slanted drop cap letters will
+% "crash into" the main text because their full true width is not taken into
+% consideration.
+\renewcommand{\IEEEPARstartITLCORRECT}{\/}
+
+
+
+
+
+*** \bstctlcite ***
+
+\bstctlcite{} is used to issue a citation for a special IEEEtran.bst BibTeX
+style control entry which can control various operating parameters of the
+IEEEtran.bst file (V1.00 and later):
+
+\bstctlcite{IEEEexample:BSTcontrol}
+
+V1.2 and later of IEEEtrantools.sty provides for an optional argument so
+that different auxiliary file specifiers may be used in documents with
+multiple bibliographies:
+
+\bstctlcite[@auxoutsec]{IEEEexample:BSTcontrol}
+
+\bstctlcite operates silently and will not alter the citation numbers or
+place a citation entry into the main text or bibliography (when used with
+IEEEtran.bst). It should not be used with .bst files that do not provide
+support for these special BST control entries.
+
+See the IEEEtran.bst BibTeX style documentation for details.
+http://www.michaelshell.org/tex/ieeetran/bibtex/
+http://www.ctan.org/pkg/ieeetran
+
+
+
+
+*** \IEEEnoauxwrite ***
+
+Sometimes an author wants to cite something within \thanks or other section
+that comes early in the document, but does not want that to take the place
+of the first reference in the main text (e.g., alter the citation counter).
+Assuming the publisher's rules allow citations in footnote and/or abstract
+sections of the document, the command \IEEEnoauxwrite{} can be used:
+
+\author{... \thanks{... \IEEEnoauxwrite{\cite{myreference}}.}}
+
+to accomplish this.
+
+If the reference is not also cited elsewhere in the document, it will have
+to be manually inserted into the reference list of the bibliography via a
+\nocite. If the \nocite is done at the end of document, the citation will
+be last in the reference list rather than first as would normally happen
+with citations within \thanks.
+
+
+
+
+*** itemize, enumerate and description (IED) lists ***
+
+IEEEtrantools provides the IEEEitemize, IEEEenumerate and IEEEdescription
+list environments that offer enhanced controls and make it much easier to
+create such lists when the main text is "block indented" from the 
+labels (IEEE style).
+
+By default, the LaTeX IED list environments are not overridden with the
+IEEE IED versions. To force this, load IEEEtrantools.sty with the
+"redeflists" option:
+
+\usepackage[redeflists]{IEEEtrantools}
+
+In any event, the IEEE IED list environments are available as IEEEitemize,
+IEEEenumerate, and IEEEdescription. The IEEE IED lists depend on the LaTeX
+low-level list environment, so class files that redefine it may also alter
+the IEEE IED list formatting. The original LaTeX IED environments (as
+provided by the LaTeX kernel and class file) are always retained as
+LaTeXitemize, LaTeXenumerate and LaTeXdescription.
+
+Beware that the default enumerate label width will not be correct if
+the class file is not using normalfont "9)" style labeled enumerated lists.
+
+The support commands for the IEEE IED list environments (\IEEEsetlabelwidth,
+\IEEEusemathlabelsep, \IEEEiedlabeljustifyl, etc.) are also provided.
+
+See the section on lists in the IEEEtran_HOWTO manual for full details
+on the IEEE style lists.
+http://www.ctan.org/pkg/ieeetrantools
+
+
+
+*** The IEEEeqnarray family ***
+
+Please note that IEEEtrantools provides and sets the length variable
+\IEEEnormaljot. At the \begin{document}, \IEEEnormaljot will be set to
+the current value of \jot. If the user later alters the document's
+nominal \jot, the value of \IEEEnormaljot should be revised as well.
+
+The support commands for the IEEEeqnarray commands (\IEEEstrut, 
+\IEEEeqnarrayvrule, \IEEEvisiblestrutstrue, etc.) are also provided.
+
+For more information on the use of the IEEEeqnarray family of commands,
+the following sources of information are recommended:
+
+ 1. The IEEEtran HOWTO manual (IEEEeqnarray is covered in the Appendices):
+    http://www.ctan.org/pkg/ieeetrantools
+
+ 2. Stefan M. Moser's "How to Typeset Equations in LaTeX"
+    http://moser.cm.nctu.edu.tw/manuals.html#eqlatex
+
+ 3. Tobias Oetiker's "The Not So Short Introduction to LaTeX2e"
+    http://www.ctan.org/pkg/lshort
+
+
+
+
+*** The IEEEproof environment ***
+
+IEEEtrantools provides the IEEEtran IEEEproof environment as well as
+several undocumented IEEEtran IEEEproof commands that are useful for
+non-IEEE related work:
+
+  1. \IEEEQEDoff, when issued within an IEEEproof, turns off the 
+     automatic generation of the \IEEEQED symbol at the end of
+     the proof.
+
+  2. \IEEEQEDhere emits an \IEEEQED symbol at the place it is executed
+     and turns off the \IEEEQED symbol at the end of the proof. This
+     can be useful when using IEEEeqnarray within IEEEproof
+     \begin{IEEEproof}
+       \begin{IEEEeqnarray*}{c+x*}
+        x=1. & \IEEEQEDhere
+       \end{IEEEeqnarray*}
+     \end{IEEEproof}
+     % Thanks to Stefan M. Moser for this example.
+
+  3. \IEEEQEDhereeqn is somewhat similar to the AMS \qedhere and
+     is for use with the standard equation environment within
+     IEEEproof:
+     \begin{IEEEproof}
+       \begin{equation*}
+        x=1. \IEEEQEDhereeqn
+       \end{equation*}
+     \end{IEEEproof}
+     Note that \IEEEQEDhereeqn will put the QED symbol in front
+     of an equation number if it exists.
+
+  4. \IEEEproofindentspace allows users to change the indention
+     of the proof environment from its IEEEtran default of 2\parindent:
+     
+     \renewcommand{\IEEEproofindentspace}{1\parindent}
+     
+     Place the above redefinition before any IEEEproof environments it is
+     to affect.
+
+
+
+
+*** \IEEEauthorrefmark{} ***
+
+The \IEEEauthorrefmark{} simply takes a number as an argument and generates
+a corresponding superscript symbol. Used in IEEEtran.cls to link author
+names to their affiliations:
+
+   Michael Shell\IEEEauthorrefmark{2}
+
+
+
+%%%%%%%%%%%%%%%%%%%%%%%%%% End of IEEEtrantools_doc.txt  %%%%%%%%%%%%%%%%%%
+% That's all folks!
+

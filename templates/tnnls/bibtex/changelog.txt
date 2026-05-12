@@ -1,0 +1,173 @@
+
+
+Changelog history of the IEEEtran BibTeX class.
+ 2015/08/26
+ by Michael Shell (MDS)
+ http://www.michaelshell.org/
+
+
+ 2015/08/26 V1.14 (MDS) changes:
+  1. Added the CTLuse_url field to the IEEEtranBSTCTL control entry type
+     to allow user control of the display of URLs.
+     Thanks to Pablo Chacin, Bogdan Roman and Richard Kolacinski for
+     suggesting this feature.
+
+  2. Added functions bbl.a, bbl.an, bbl.and, bbl.etal and bbl.the
+     as needed to better support other languages.
+     Thanks to Karsten Hinz for suggesting this change.
+
+  3. Added mention, and an example, of reports about standards to the
+     documentation.
+     Thanks to Guido R. Hiertz for providing information on this topic.
+
+  4. Fixed missed comma in the BSTcontrol example in the documentation.
+     Thanks to Oscar Gustafsson for reporting this problem.
+
+  5. Corrected IEEE_J_MTT journal name string in IEEEabrv.bib.
+     Thanks to Nicolás Barabino, Chuanren Wu and Santiago Cogollos Borras
+     for suggesting this change.
+
+  6. Corrected IEEE_J_STARS journal name string in IEEEabrv.bib.
+     Thanks to Yannick Berker for suggesting this change.
+
+  7. Revised/enabled abbreviations for IEEE_J_DSC, IEEE_J_LT, IEEE_J_NSM, 
+     IEEE_J_SC, IEEE_J_DSC and full and abbreviations for IEEE_M_C
+     and IEEE_M_WC journal name strings in IEEEfull.bib and IEEEabrv.bib.
+
+  8. Added new journal name strings to IEEEfull.bib and IEEEabrv.bib.
+     Thanks to Uwe Siart and Mona Mittra for helping with obtaining the
+     correct definitions.
+     The new journal string name definitions are (full version shown):
+
+     @STRING{IEEE_J_AFFC       = "{IEEE} Transactions on Affective Computing"}
+     in 2014 ASL became ASLP
+     @STRING{IEEE_J_ASLP       = "{IEEE/ACM} Transactions on Audio, Speech, and Language Processing"}
+     @STRING{IEEE_J_JAS        = "{IEEE/CAA} Journal of Automatica Sinica"}
+     @STRING{IEEE_J_AMD        = "{IEEE} Transactions on Autonomous Mental Development"}
+     @STRING{IEEE_J_BD         = "{IEEE} Transactions on Big Data"}
+     @STRING{IEEE_J_BHI        = "{IEEE} Journal of Biomedical and Health Informatics"}
+     @STRING{IEEE_J_CC         = "{IEEE} Transactions on Cloud Computing"}
+     @STRING{IEEE_J_CCN        = "{IEEE} Transactions on Cognitive Communications and Networking"}
+     in 2015 AMD became CDS
+     @STRING{IEEE_J_CDS        = "{IEEE} Transactions on Cognitive and Developmental Systems"}
+     in 2011 CAPT became CPMT
+     @STRING{IEEE_J_CPMT       = "{IEEE} Transactions on Components, Packaging and Manufacturing Technology"}
+     @STRING{IEEE_J_CIAIG      = "{IEEE} Transactions on Computational Intelligence and {AI} in Games"}
+     @STRING{IEEE_J_CSS        = "{IEEE} Transactions on Computational Social Systems"}
+     @STRING{IEEE_J_CNS        = "{IEEE} Transactions on Control of Network Systems"}
+     in 2013 SMCB became CYB
+     @STRING{IEEE_J_CYB        = "{IEEE} Transactions on Cybernetics"}
+     @STRING{IEEE_J_EDS        = "{IEEE} Journal of Electron Devices Society"}
+     @STRING{IEEE_J_ES         = "{IEEE} Embedded Systems Letters"}
+     @STRING{IEEE_J_ETC        = "{IEEE} Transactions on Emerging Topics in Computing"}
+     @STRING{IEEE_J_ETCAS      = "{IEEE} Transactions on Emerging and Selected Topics in Circuits and Systems"}
+     @STRING{IEEE_J_ESTPE      = "{IEEE} Transactions on Emerging and Selected Topics in Power Electronics"}
+     @STRING{IEEE_J_XCDC       = "{IEEE} Journal on Exploratory Solid-State Computational Devices and Circuits"}
+     in 2013 SMCC became HMS
+     @STRING{IEEE_J_HMS        = "{IEEE} Transactions on Human-Machine Systems"}
+     @STRING{IEEE_J_IV         = "{IEEE} Transactions on Intelligent Vehicles"}
+     @STRING{IEEE_J_IOT        = "{IEEE} Internet of Things Journal"}
+     @STRING{IEEE_J_LS         = "{IEEE} Life Sciences Letters"}
+     @STRING{IEEE_J_MAGL       = "{IEEE} Magnetics Letters"}
+     in 2014 MEMS became MEMSI
+     @STRING{IEEE_J_MEMSI      = "{IEEE} Journal of Microelectromechanical Systems"}
+     @STRING{IEEE_J_MBSC       = "{IEEE} Transactions on Molecular, Biological and Multi-Scale Communications"}
+     @STRING{IEEE_J_MSCS       = "{IEEE} Transactions on Multi-Scale Computing Systems"}
+     @STRING{IEEE_J_MMCT       = "{IEEE} Journal on Multiscale and Multiphysics Computational Techniques"}
+     @STRING{IEEE_J_ENANO      = "{IEEE} Nanotechnology Express"}
+     @STRING{IEEE_J_NSE        = "{IEEE} Transactions on Network Science and Engineering"}
+     in 2012 NN became NNLS
+     @STRING{IEEE_J_NNLS       = "{IEEE} Transactions on Neural Networks and Learning Systems"}
+     @STRING{IEEE_J_OCN        = "{IEEE} Journal of Optical Communications and Networking"}
+     @STRING{IEEE_J_PJ         = "{IEEE} Photonics Journal"}
+     @STRING{IEEE_J_PHOT       = "{IEEE} Journal of Photovoltaics"}
+     @STRING{IEEE_J_PETS       = "{IEEE} Power and Energy Technology Systems Journal"}
+     @STRING{IEEE_J_RFIC       = "{IEEE} {RFIC} Journal"}
+     @STRING{IEEE_J_RFID       = "{IEEE} {RFID} Journal"}
+     @STRING{IEEE_J_RITA       = "{IEEE} Revista Iberoamericana de Technolog{\'{i}}as del Aprendizaje"}
+     @STRING{IEEE_J_RAL        = "{IEEE} Robotics and Automation Letters"}
+     @STRING{IEEE_J_SIPN       = "{IEEE} Transactions on Signal and Information Processing over Networks"}
+     @STRING{IEEE_J_SG         = "{IEEE} Transactions on Smart Grid"}
+     @STRING{IEEE_J_SUSC       = "{IEEE} Sustainable Computing"}
+     @STRING{IEEE_J_STE        = "{IEEE} Transactions on Sustainable Energy"}
+     in 2012 SMCA became SMCS
+     @STRING{IEEE_J_SMCS       = "{IEEE} Transactions on Systems, Man, and Cybernetics: Systems"}
+     @STRING{IEEE_J_TEHM       = "{IEEE} Journal of Translational Engineering in Health and Medicine"}
+     @STRING{IEEE_J_TTHZ       = "{IEEE} Transactions on Terrahertz Science and Technology"}
+     @STRING{IEEE_J_TTE        = "{IEEE} Transactions on Transportation Electrification"}
+     @STRING{IEEE_J_WCOML      = "{IEEE} Wireless Communications Letters"}
+
+     magazines and Online Publications
+     @STRING{IEEE_O_ACC        = "{IEEE} Access"}
+     @STRING{IEEE_M_CHINAC     = "China Communications Magazine"}
+     in 2012 DTC became DT
+     @STRING{IEEE_M_DT         = "{IEEE} Design \&\ Test"}
+     @STRING{IEEE_M_ETF        = "{IEEE} Electrification Magazine"}
+     @STRING{IEEE_M_EMC        = "{IEEE} Electromagnetic Compatibility Magazine"}
+     @STRING{IEEE_M_GRS        = "{IEEE} Geoscience and Remote Sensing Magazine"}
+     @STRING{IEEE_M_PEL        = "{IEEE} Power Electronics Magazine"}
+     @STRING{IEEE_M_PULSE      = "{IEEE} Pulse"}
+     @STRING{IEEE_M_SSC        = "{IEEE} Solid-State Circuits Magazine"}
+     @STRING{IEEE_M_SMC        = "{IEEE} Systems, Man, and Cybernetics Magazine"}
+
+
+ 2008/09/30 V1.13 (MDS) changes
+  1. Fixed bug with edition number to ordinal conversion. Thanks to
+     Michael Roland for reporting this and correcting the algorithm.
+
+
+ 2007/01/11 V1.12 (MDS) changes
+  1. Fixed bug with unwanted comma before "et al." when an entry contained
+     more than two author names. Thanks to Pallav Gupta for reporting this.
+
+  2. Fixed bug with anomalous closing quote in tech reports that have a
+     type, but without a number or address. Thanks to Mehrdad Mirreza for
+     reporting this.
+
+  3. Use braces in \providecommand in begin.bib to better support
+     latex2html. TeX style length assignments OK with recent versions
+     of latex2html - 1.71 (2002/2/1) or later is strongly recommended.
+     Use of the language field still causes trouble with latex2html.
+     Thanks to Federico Beffa for reporting this.
+
+  4. Added IEEEtran.bst ID and version comment string to .bbl output.
+
+  5. Provide a \BIBdecl hook that allows the user to execute commands
+     just prior to the first entry.
+
+  6. Use default urlstyle (is using url.sty) of "same" rather than rm to
+     better work with a wider variety of bibliography styles.
+
+  7. Changed month abbreviations from Sept., July and June to Sep., Jul.,
+     and Jun., respectively, as IEEE now does. Thanks to Moritz Borgmann
+     for reporting this.
+
+  8. Fixed bug where control entry types should not be considered when
+     calculating longest label width.
+
+  9. Added alias www for electronic/online entry type.
+
+ 10. Added CTLname_url_prefix control entry field to the BST control entry
+     type.
+
+
+ 2003/04/02 V1.11 (MDS) changes
+  1. Fixed bug with URLs containing underscores when using url.sty. Thanks
+     to Ming Kin Lai for reporting this.
+
+
+ 2002/09/27 V1.10 (MDS) changes
+  1. Corrected minor bug for improperly formed warning message when a
+     book was not given a title. Thanks to Ming Kin Lai for reporting this.
+
+  2. Added support for CTLname_format_string and CTLname_latex_cmd fields
+     in the BST control entry type.
+
+
+ 2002/08/13 V1.00 (MDS)
+     Initial release
+
+
+
+
+

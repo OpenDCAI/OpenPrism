@@ -11,7 +11,7 @@ template under `templates/icml/`.
 
 | File | Purpose |
 |------|---------|
-| `templates/icml/main.tex` | Paper shell and `pdflatex` entry. |
+| `templates/icml/example_paper.tex` | Paper shell and `pdflatex` entry. |
 | `templates/icml/icml2026.sty` | Official two-column style. `textwidth=487.8225pt` is enforced; the sty warns if it is altered. **Never modify.** |
 | `templates/icml/icml2026.bst` | Official bibliography style (APA author-year). |
 | `templates/icml/references.bib` | Sample bibliography. |
@@ -44,7 +44,7 @@ Facts:
 
 ## 3. Document class & preamble
 
-Required structure (matches `templates/icml/main.tex`):
+Required structure (matches `templates/icml/example_paper.tex`):
 
 ```latex
 \documentclass{article}
