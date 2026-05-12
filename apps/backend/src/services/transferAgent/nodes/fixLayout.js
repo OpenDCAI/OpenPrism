@@ -3,6 +3,7 @@ import { ChatOpenAI } from '@langchain/openai';
 import { resolveLLMConfig, normalizeBaseURL } from '../../llmService.js';
 import { safeJoin } from '../../../utils/pathUtils.js';
 import { writeFileWithSnapshot, stripCodeFences } from '../utils.js';
+import { loadNeuripsRulesFull, formatNeuripsHandbookBlock } from '../neuripsRules.js';
 
 /**
  * fixLayout node — LLM reads current main.tex + VLM layout issues,
@@ -23,6 +24,10 @@ export async function fixLayout(state) {
     temperature: 0.2,
   });
 
+  const neuripsBlock = state.transferGraphKind === 'neurips'
+    ? formatNeuripsHandbookBlock(await loadNeuripsRulesFull())
+    : '';
+
   const prompt = `You are a LaTeX layout fixer.
 
 The following LaTeX file has layout issues identified by visual inspection.
@@ -33,6 +38,7 @@ ${issuesText}
 
 CURRENT FILE (${state.targetMainFile}):
 ${currentTex}
+${neuripsBlock}
 
 Common layout fixes:
 - Overflow: adjust figure width, use \\resizebox, or \\adjustbox

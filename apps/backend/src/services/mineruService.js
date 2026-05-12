@@ -6,9 +6,31 @@ import { safeJoin } from '../utils/pathUtils.js';
 
 const MINERU_MAX_FILE_BYTES = 200 * 1024 * 1024;
 
+function envBool(name, defaultVal = false) {
+  const v = process.env[name];
+  if (v === undefined || v === '') return defaultVal;
+  return !['0', 'false', 'no', 'off'].includes(String(v).toLowerCase());
+}
+
+function envFloat(name, defaultVal) {
+  const v = process.env[name];
+  if (v === undefined || v === '') return defaultVal;
+  const n = Number(v);
+  return Number.isFinite(n) ? n : defaultVal;
+}
+
 /**
  * Resolve MinerU configuration from request config or environment variables.
  * apiBase can be overridden by the frontend; falls back to MINERU_API_BASE constant.
+ *
+ * Tuning (for clearer PDFs / different MinerU outputs):
+ * - modelVersion: MinerU API `model_version`, e.g. `vlm` or `pipeline` — compare zip contents empirically.
+ * - extraFormats: optional `['docx','html','latex']` per API; may add auxiliary files inside the result zip.
+ *
+ * Post-processing (after zip extract):
+ * - rasterToPdf / OPENPRISM_MINERU_RASTER_TO_PDF — wrap PNG/JPEG/WebP as single-page PDFs and rewrite Markdown refs.
+ * - imageScale / OPENPRISM_MINERU_IMAGE_SCALE (>1) — Lanczos upscale before embedding (optional).
+ * - bboxCrop / OPENPRISM_MINERU_BBOX_CROP — replace images using source PDF + *content_list*.json (needs `pdftoppm`).
  */
 export function resolveMineruConfig(mineruConfig) {
   const rawBase = (mineruConfig?.apiBase || process.env.OPENPRISM_MINERU_API_BASE || MINERU_API_BASE).trim();
@@ -30,6 +52,24 @@ export function resolveMineruConfig(mineruConfig) {
     callback: typeof mineruConfig?.callback === 'string' ? mineruConfig.callback.trim() : '',
     seed: typeof mineruConfig?.seed === 'string' ? mineruConfig.seed.trim() : '',
     extraFormats,
+    rasterToPdf: typeof mineruConfig?.rasterToPdf === 'boolean'
+      ? mineruConfig.rasterToPdf
+      : envBool('OPENPRISM_MINERU_RASTER_TO_PDF', false),
+    deleteRasterAfterPdf: typeof mineruConfig?.deleteRasterAfterPdf === 'boolean'
+      ? mineruConfig.deleteRasterAfterPdf
+      : envBool('OPENPRISM_MINERU_DELETE_RASTER_AFTER_PDF', false),
+    imageScale: typeof mineruConfig?.imageScale === 'number' && mineruConfig.imageScale > 0
+      ? mineruConfig.imageScale
+      : envFloat('OPENPRISM_MINERU_IMAGE_SCALE', 1),
+    bboxCrop: typeof mineruConfig?.bboxCrop === 'boolean'
+      ? mineruConfig.bboxCrop
+      : envBool('OPENPRISM_MINERU_BBOX_CROP', false),
+    cropDpi: typeof mineruConfig?.cropDpi === 'number' && mineruConfig.cropDpi > 0
+      ? mineruConfig.cropDpi
+      : envFloat('OPENPRISM_MINERU_CROP_DPI', 200),
+    bboxCoords: mineruConfig?.bboxCoords === 'top_left' || process.env.OPENPRISM_MINERU_BBOX_COORDS === 'top_left'
+      ? 'top_left'
+      : 'pdf',
   };
 }
 
@@ -245,7 +285,7 @@ async function parseExtractedOutput(outputDir) {
     images.push(...fallback);
   }
 
-  return { markdownContent, images, searchDir };
+  return { markdownContent, images, searchDir, markdownPath };
 }
 
 async function findFirstFileRecursive(rootDir, predicate) {
@@ -313,7 +353,7 @@ async function findFilesUnderDirNamedRecursive(rootDir, targetDirName, filePredi
  * @param {object} mineruConfig - { apiBase, token, modelVersion }
  * @param {string} outputDir - directory to extract results into
  * @param {function} onProgress - optional progress callback
- * @returns {{ markdownContent: string, images: Array<{name,localPath}> }}
+ * @returns {{ markdownContent: string, images: Array<{name,localPath}>, searchDir: string, markdownPath: string }}
  */
 export async function parsePdfWithMineru(pdfPath, mineruConfig, outputDir, onProgress) {
   const config = resolveMineruConfig(mineruConfig);

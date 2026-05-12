@@ -8,6 +8,43 @@ import { safeJoin } from '../../utils/pathUtils.js';
 // ---------------------------------------------------------------------------
 
 /**
+ * Produce a brief human-readable summary of tool call arguments (max ~100 chars).
+ * Used by agent nodes to populate liveProgress.toolArgs.
+ */
+export function briefToolArgs(toolName, args) {
+  if (!args || typeof args !== 'object') return '';
+  try {
+    switch (toolName) {
+      case 'readFile':
+        if (typeof args.startLine === 'number' || typeof args.endLine === 'number') {
+          const start = typeof args.startLine === 'number' ? args.startLine : 1;
+          const end = typeof args.endLine === 'number' ? args.endLine : '?';
+          return `${args.project || 'target'}:${args.path || ''}#L${start}-L${end}`.slice(0, 100);
+        }
+        return `${args.project || 'target'}:${args.path || ''}`.slice(0, 100);
+      case 'writeFile':
+        return `${args.path || ''} (${(args.content || '').length} chars)`.slice(0, 100);
+      case 'applyDiff':
+        return `${args.path || ''} (diff ${(args.diff || '').length} chars)`.slice(0, 100);
+      case 'grepFile':
+        return `pattern="${(args.pattern || '').slice(0, 40)}" ${args.path ? `in ${args.path}` : ''}`.slice(0, 100);
+      case 'listProjectTree':
+        return args.project || 'target';
+      case 'copyAsset':
+        return `${args.srcPath || ''} → ${args.destPath || ''}`.slice(0, 100);
+      case 'compileProject':
+        return 'target compile';
+      case 'raiseQuestion':
+        return `${(args.questions || []).length} question(s)`;
+      default:
+        return JSON.stringify(args).slice(0, 100);
+    }
+  } catch {
+    return '';
+  }
+}
+
+/**
  * Strip markdown code fences (```json, ```latex, ```tex, etc.) from LLM output.
  */
 export function stripCodeFences(text) {
@@ -15,6 +52,48 @@ export function stripCodeFences(text) {
     .replace(/^```(?:json|latex|tex)?\s*\n?/i, '')
     .replace(/\n?```\s*$/i, '')
     .trim();
+}
+
+/**
+ * Reject LLM "full .tex file" output that would wipe the project (empty or far shorter than input).
+ * @returns {string|null} rejection reason, or null if OK to write
+ */
+export function rejectCatastrophicFullTexRewrite(previousContent, candidateContent) {
+  const prevLen = (previousContent || '').length;
+  const outLen = (candidateContent || '').trim().length;
+  if (!outLen) return 'empty output';
+  if (prevLen > 2000 && outLen < Math.floor(prevLen * 0.2)) return 'output too short';
+  return null;
+}
+
+/**
+ * Split LaTeX into preamble (before \\begin{document}), body block (inclusive), and trailing tail.
+ */
+export function splitTexDocument(tex) {
+  const beginMark = '\\begin{document}';
+  const endMark = '\\end{document}';
+  const beginIdx = tex.indexOf(beginMark);
+  const endIdx = tex.lastIndexOf(endMark);
+  if (beginIdx === -1 || endIdx === -1 || endIdx < beginIdx) {
+    return { preamble: tex.trimEnd(), body: '', tail: '', hasDocument: false };
+  }
+  const preamble = tex.slice(0, beginIdx).trimEnd();
+  const bodyEnd = endIdx + endMark.length;
+  const body = tex.slice(beginIdx, bodyEnd);
+  const tail = tex.slice(bodyEnd);
+  return { preamble, body, tail, hasDocument: true };
+}
+
+/**
+ * Merge preamble + body + tail (body must include begin/end document).
+ */
+export function mergeTexDocument(preamble, body, tail = '') {
+  const p = (preamble || '').trimEnd();
+  const b = body || '';
+  const t = tail || '';
+  if (!p && !b) return t;
+  if (!b) return `${p}${t}`;
+  return `${p}\n\n${b}${t}`;
 }
 
 /**

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
@@ -14,9 +15,10 @@ import {
   trashProject,
   updateProjectTags,
   permanentDeleteProject,
-  uploadTemplate
+  transferStatus,
+  transferStream,
 } from '../api/client';
-import type { ProjectMeta, TemplateMeta, TemplateCategory } from '../api/client';
+import type { ProjectMeta, TemplateMeta, TransferProgressEntry, TransferStepResult } from '../api/client';
 import TransferPanel from './TransferPanel';
 
 type ViewFilter = 'all' | 'mine' | 'archived' | 'trash';
@@ -75,7 +77,6 @@ export default function ProjectPage() {
 
   const [projects, setProjects] = useState<ProjectMeta[]>([]);
   const [templates, setTemplates] = useState<TemplateMeta[]>([]);
-  const [categories, setCategories] = useState<TemplateCategory[]>([]);
   const [status, setStatus] = useState('');
   const [filter, setFilter] = useState('');
 
@@ -101,10 +102,6 @@ export default function ProjectPage() {
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsForm, setSettingsForm] = useState<LLMSettings>(loadLLMSettings);
 
-  const [templateGalleryOpen, setTemplateGalleryOpen] = useState(false);
-  const [galleryCat, setGalleryCat] = useState('all');
-  const [galleryFeatured, setGalleryFeatured] = useState(false);
-  const [gallerySearch, setGallerySearch] = useState('');
   const [tagEditId, setTagEditId] = useState<string | null>(null);
   const [tagInput, setTagInput] = useState('');
   const [newSidebarTag, setNewSidebarTag] = useState('');
@@ -119,12 +116,93 @@ export default function ProjectPage() {
   const [activeJob, setActiveJob] = useState<{
     jobId: string; status: string; progressLog: string[]; error?: string;
     sourceName?: string;
+    phase?: string;
+    currentNode?: string;
+    completedNodes?: string[];
+    pendingQA?: unknown;
+    progressLogEntries?: TransferProgressEntry[];
   } | null>(null);
-  const [jobWidgetOpen, setJobWidgetOpen] = useState(true);
+  /** 右侧滑出进度面板 */
+  const [transferProgressDrawerOpen, setTransferProgressDrawerOpen] = useState(false);
 
-  // Template upload state
-  const templateZipRef = useRef<HTMLInputElement | null>(null);
-  const [uploadingTemplate, setUploadingTemplate] = useState(false);
+  // SSE ref for progress streaming recovery
+  const recoverySSERef = useRef<EventSource | null>(null);
+
+  // Recover active transfer job from sessionStorage on mount
+  useEffect(() => {
+    try {
+      const saved = sessionStorage.getItem('openprism-active-job');
+      if (!saved) return;
+      const { jobId: savedJobId } = JSON.parse(saved);
+      if (!savedJobId) return;
+
+      transferStatus(savedJobId).then((res: TransferStepResult) => {
+        if (!res || !res.status) {
+          sessionStorage.removeItem('openprism-active-job');
+          return;
+        }
+
+        // Restore the floating progress window
+        setActiveJob({
+          jobId: savedJobId,
+          status: res.status,
+          progressLog: res.progressLog || [],
+          error: res.error,
+          phase: res.phase,
+          currentNode: res.currentNode,
+          completedNodes: res.completedNodes,
+          progressLogEntries: res.progressLogEntries,
+        });
+
+        const isTerminal = ['success', 'failed', 'error'].includes(res.status);
+        if (!isTerminal) {
+          // Job still active — connect SSE for real-time updates to the floating window
+          if (recoverySSERef.current) recoverySSERef.current.close();
+          recoverySSERef.current = transferStream(
+            savedJobId,
+            (data) => {
+              setActiveJob((prev) => ({
+                ...prev,
+                jobId: savedJobId,
+                status: data.status,
+                progressLog: data.progressLog || [],
+                error: data.error,
+                phase: data.phase,
+                currentNode: data.currentNode,
+                completedNodes: data.completedNodes,
+                progressLogEntries: data.progressLogEntries,
+              }));
+            },
+            (data) => {
+              setActiveJob((prev) => ({
+                ...prev,
+                jobId: savedJobId,
+                status: data.status,
+                progressLog: data.progressLog || [],
+                error: data.error,
+                phase: data.phase,
+                currentNode: data.currentNode,
+                completedNodes: data.completedNodes,
+                progressLogEntries: data.progressLogEntries,
+              }));
+              recoverySSERef.current = null;
+              if (['success', 'failed'].includes(data.status)) {
+                sessionStorage.removeItem('openprism-active-job');
+                loadProjects();
+              }
+            },
+          );
+        }
+      }).catch(() => {
+        sessionStorage.removeItem('openprism-active-job');
+      });
+    } catch { /* ignore */ }
+
+    return () => {
+      if (recoverySSERef.current) { recoverySSERef.current.close(); recoverySSERef.current = null; }
+    };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const loadProjects = useCallback(async () => {
     const res = await listProjects();
@@ -139,7 +217,6 @@ export default function ProjectPage() {
     listTemplates()
       .then((res) => {
         setTemplates(res.templates || []);
-        setCategories(res.categories || []);
         if (res.templates?.length && !createTemplate) {
           setCreateTemplate(res.templates[0].id);
         }
@@ -176,19 +253,6 @@ export default function ProjectPage() {
     archived: projects.filter((p) => p.archived && !p.trashed).length,
     trash: projects.filter((p) => p.trashed).length,
   }), [projects]);
-
-  const galleryTemplates = useMemo(() => {
-    let list = templates;
-    if (galleryCat !== 'all') list = list.filter((tpl) => tpl.category === galleryCat);
-    if (galleryFeatured) list = list.filter((tpl) => tpl.featured);
-    const term = gallerySearch.trim().toLowerCase();
-    if (term) list = list.filter((tpl) =>
-      tpl.label.toLowerCase().includes(term) ||
-      (tpl.description || '').toLowerCase().includes(term) ||
-      (tpl.descriptionEn || '').toLowerCase().includes(term)
-    );
-    return list;
-  }, [templates, galleryCat, galleryFeatured, gallerySearch]);
 
   const handleCreate = async () => {
     const name = createName.trim();
@@ -294,39 +358,6 @@ export default function ProjectPage() {
     }
   };
 
-  const handleCreateFromTemplate = async (tplId: string) => {
-    const tpl = templates.find((t) => t.id === tplId);
-    const name = createName.trim() || tpl?.label || 'Untitled';
-    try {
-      const created = await createProject({ name, template: tplId });
-      setTemplateGalleryOpen(false);
-      setCreateName('');
-      await loadProjects();
-      navigate(`/editor/${created.id}`);
-    } catch (err) {
-      setStatus(t('创建失败: {{error}}', { error: String(err) }));
-    }
-  };
-
-  const handleUploadTemplate = async (file: File) => {
-    const baseName = file.name.replace(/\.zip$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_');
-    const templateId = baseName.toLowerCase();
-    const templateLabel = baseName;
-    setUploadingTemplate(true);
-    try {
-      await uploadTemplate(templateId, templateLabel, file);
-      const res = await listTemplates();
-      setTemplates(res.templates || []);
-      setCategories(res.categories || []);
-      setStatus(t('模板上传成功'));
-    } catch (err) {
-      setStatus(t('模板上传失败: {{error}}', { error: String(err) }));
-    } finally {
-      setUploadingTemplate(false);
-      if (templateZipRef.current) templateZipRef.current.value = '';
-    }
-  };
-
   const handleCopy = async (id: string, originalName: string) => {
     try {
       const res = await copyProject(id, `${originalName} (Copy)`);
@@ -409,7 +440,7 @@ export default function ProjectPage() {
         </button>
         <div className="sidebar-actions-row">
           <button className="btn ghost" style={{ flex: 1 }} onClick={() => setImportOpen(true)}>{t('导入项目')}</button>
-          <button className="btn ghost" style={{ flex: 1 }} onClick={() => setTemplateGalleryOpen(true)}>{t('模板库')}</button>
+        <button className="btn ghost" style={{ flex: 1 }} onClick={() => navigate('/templates')}>{t('模板库')}</button>
         </div>
 
         <nav className="sidebar-nav">
@@ -801,94 +832,6 @@ export default function ProjectPage() {
         </div>
       )}
 
-      {/* ── Template Gallery Modal ── */}
-      {templateGalleryOpen && (
-        <div className="modal-backdrop" onClick={() => setTemplateGalleryOpen(false)}>
-          <div className="modal template-gallery-modal" onClick={(e) => e.stopPropagation()}>
-            <div className="modal-header">
-              <div className="template-gallery-header-left">
-                <button className="btn ghost" onClick={() => setTemplateGalleryOpen(false)}>{t('返回')}</button>
-                <span>{t('模板库')}</span>
-              </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <input
-                  ref={templateZipRef}
-                  type="file"
-                  accept=".zip"
-                  style={{ display: 'none' }}
-                  onChange={(e) => {
-                    const f = e.target.files?.[0];
-                    if (f) handleUploadTemplate(f);
-                  }}
-                />
-                <button
-                  className="btn ghost"
-                  disabled={uploadingTemplate}
-                  onClick={() => templateZipRef.current?.click()}
-                >
-                  {uploadingTemplate ? t('上传中...') : t('上传模板')}
-                </button>
-                <button className="icon-btn" onClick={() => setTemplateGalleryOpen(false)}>✕</button>
-              </div>
-            </div>
-            <div className="modal-body">
-              <div className="template-gallery-subtitle">{t('选择模板快速开始您的项目')}</div>
-
-              <div className="template-gallery-categories">
-                {[{ id: 'all', label: t('全部'), labelEn: 'All' }, ...(categories || [])].map((cat) => (
-                  <button
-                    key={cat.id}
-                    className={`template-cat-tab${galleryCat === cat.id ? ' active' : ''}`}
-                    onClick={() => setGalleryCat(cat.id)}
-                  >
-                    {i18n.language === 'en-US' ? cat.labelEn : cat.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="template-gallery-filters">
-                <label style={{ display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
-                  <input type="checkbox" checked={galleryFeatured} onChange={(e) => setGalleryFeatured(e.target.checked)} />
-                  {t('精选模板')}
-                </label>
-                <input
-                  className="project-search"
-                  value={gallerySearch}
-                  onChange={(e) => setGallerySearch(e.target.value)}
-                  placeholder={t('搜索模板...')}
-                  style={{ maxWidth: 240 }}
-                />
-              </div>
-
-              <div className="template-gallery-grid">
-                {galleryTemplates.map((tpl) => (
-                  <div key={tpl.id} className="template-card" onClick={() => handleCreateFromTemplate(tpl.id)}>
-                    <div className="template-card-thumb">
-                      {tpl.featured && <span className="template-card-badge">Featured</span>}
-                    </div>
-                    <div className="template-card-body">
-                      <div className="template-card-title">{tpl.label}</div>
-                      <div className="template-card-desc">
-                        {i18n.language === 'en-US' ? (tpl.descriptionEn || tpl.description) : tpl.description}
-                      </div>
-                      {tpl.tags?.length > 0 && (
-                        <div className="template-card-tags">
-                          {tpl.tags.map((tag) => <span key={tag} className="project-tag-pill">{tag}</span>)}
-                        </div>
-                      )}
-                      {tpl.author && <div className="template-card-author">{tpl.author}</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-              {galleryTemplates.length === 0 && (
-                <div className="template-gallery-empty">{t('暂无匹配模板')}</div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Transfer Modal */}
       {transferOpen && transferSource && (
         <div className="modal-backdrop" onClick={() => setTransferOpen(false)}>
@@ -902,7 +845,6 @@ export default function ProjectPage() {
                 projectId={transferSource.id}
                 onJobUpdate={(job) => {
                   setActiveJob({ ...job, sourceName: transferSource.name });
-                  setJobWidgetOpen(true);
                   if (job.status === 'success') loadProjects();
                 }}
               />
@@ -911,33 +853,119 @@ export default function ProjectPage() {
         </div>
       )}
 
-      {/* Floating transfer progress widget */}
-      {activeJob && !transferOpen && jobWidgetOpen && (
-        <div className="transfer-widget">
-          <div className="transfer-widget-header">
-            <span>{t('模板转换')} — {activeJob.sourceName || ''}</span>
-            <div style={{ display: 'flex', gap: 4 }}>
-              <button className="icon-btn" onClick={() => {
-                setTransferOpen(true);
-                if (transferSource) setTransferSource(transferSource);
-              }} title={t('展开')}>&#x2197;</button>
-              <button className="icon-btn" onClick={() => setJobWidgetOpen(false)}>✕</button>
-            </div>
+      {/* 转换进度：悬浮按钮 + 右侧抽屉（Portal 到 body，避免被 overflow 裁剪；弹窗打开时也显示） */}
+      {typeof document !== 'undefined' && activeJob && createPortal(
+        <>
+          <button
+            type="button"
+            className={`transfer-progress-fab${['running', 'starting', 'pending', 'waiting_images', 'waiting_confirm'].includes(activeJob.status) ? ' transfer-progress-fab--pulse' : ''}`}
+            title={t('查看转换进度')}
+            aria-expanded={transferProgressDrawerOpen}
+            onClick={() => setTransferProgressDrawerOpen((o) => !o)}
+          >
+            <span className="transfer-progress-fab-icon" aria-hidden>
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <line x1="10" y1="9" x2="8" y2="9" />
+              </svg>
+            </span>
+            <span className="transfer-progress-fab-label">{t('进度')}</span>
+          </button>
+
+          <div
+            className={`transfer-progress-drawer-root${transferProgressDrawerOpen ? ' is-open' : ''}`}
+            aria-hidden={!transferProgressDrawerOpen}
+          >
+            <div
+              className="transfer-progress-drawer-backdrop"
+              onClick={() => setTransferProgressDrawerOpen(false)}
+            />
+            <aside className="transfer-progress-drawer" role="dialog" aria-labelledby="transfer-progress-drawer-title">
+              <div className="transfer-progress-drawer-header">
+                <h2 id="transfer-progress-drawer-title" className="transfer-progress-drawer-title">
+                  {t('模板转换进度')}
+                </h2>
+                <div className="transfer-progress-drawer-actions">
+                  <button
+                    type="button"
+                    className="btn ghost small"
+                    onClick={() => {
+                      setTransferOpen(true);
+                      if (transferSource) setTransferSource(transferSource);
+                      setTransferProgressDrawerOpen(false);
+                    }}
+                  >
+                    {t('打开转换窗口')}
+                  </button>
+                  <button
+                    type="button"
+                    className="icon-btn"
+                    onClick={() => setTransferProgressDrawerOpen(false)}
+                    aria-label={t('关闭')}
+                  >
+                    ✕
+                  </button>
+                </div>
+              </div>
+              <div className="transfer-progress-drawer-meta">
+                <div><strong>{t('项目')}</strong> {activeJob.sourceName || '—'}</div>
+                <div>
+                  <strong>{t('状态')}</strong> {activeJob.status}
+                  {activeJob.currentNode && (
+                    <span className="transfer-progress-drawer-node">
+                      {' '}· {activeJob.currentNode}
+                      {activeJob.phase ? ` (${activeJob.phase})` : ''}
+                    </span>
+                  )}
+                  {activeJob.status === 'waiting_images' && (
+                    <span className="transfer-progress-drawer-badge transfer-progress-drawer-badge--images">{t('等待截图')}</span>
+                  )}
+                  {activeJob.status === 'waiting_confirm' && (
+                    <span className="transfer-progress-drawer-badge transfer-progress-drawer-badge--qa">{t('等待问卷')}</span>
+                  )}
+                </div>
+              </div>
+              {activeJob.completedNodes && activeJob.completedNodes.length > 0 && (
+                <div className="transfer-progress-drawer-nodes">
+                  <div className="transfer-progress-drawer-nodes-label">{t('已完成节点')}</div>
+                  <div className="transfer-progress-drawer-nodes-list">
+                    {[...new Set(activeJob.completedNodes)].map((n) => (
+                      <span key={n} className="transfer-progress-drawer-node-chip">{n}</span>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {activeJob.error && (
+                <div className="transfer-progress-drawer-error">{activeJob.error}</div>
+              )}
+              <div className="transfer-progress-drawer-log-wrap">
+                <div className="transfer-progress-drawer-log-title">{t('完整日志')}</div>
+                <div className="transfer-progress-drawer-log">
+                  {activeJob.progressLogEntries && activeJob.progressLogEntries.length > 0
+                    ? activeJob.progressLogEntries.map((e, i) => (
+                      <div
+                        key={i}
+                        className={`transfer-progress-drawer-log-line transfer-progress-drawer-log-line--${e.level || 'info'}`}
+                      >
+                        {e.node ? <span className="transfer-progress-drawer-log-node">[{e.node}]</span> : null}
+                        {e.message || ''}
+                      </div>
+                    ))
+                    : (activeJob.progressLog || []).map((line, i) => (
+                      <div key={i} className="transfer-progress-drawer-log-line transfer-progress-drawer-log-line--info">{line}</div>
+                    ))}
+                  {!activeJob.progressLog?.length && !(activeJob.progressLogEntries?.length) && (
+                    <div className="transfer-progress-drawer-log-empty">{t('暂无日志')}</div>
+                  )}
+                </div>
+              </div>
+            </aside>
           </div>
-          <div className="transfer-widget-status">
-            <strong>{t('状态')}:</strong> {activeJob.status}
-          </div>
-          {activeJob.error && (
-            <div className="transfer-widget-error">{activeJob.error}</div>
-          )}
-          {activeJob.progressLog.length > 0 && (
-            <div className="transfer-widget-log">
-              {activeJob.progressLog.map((line, i) => (
-                <div key={i}>{line}</div>
-              ))}
-            </div>
-          )}
-        </div>
+        </>,
+        document.body,
       )}
 
       {/* Settings Modal */}

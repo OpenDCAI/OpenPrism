@@ -321,7 +321,13 @@ export function registerProjectRoutes(fastify) {
     const parts = req.parts();
     for await (const part of parts) {
       if (part.type !== 'file') continue;
-      const relPath = sanitizeUploadPath(part.filename);
+      // With preservePath (busboy), filename keeps relative dirs (e.g. figs/a.png).
+      // Fallback for odd clients: basename-only still works.
+      const rawRel =
+        (typeof part.filename === 'string' && part.filename.trim()) ||
+        (typeof part.filepath === 'string' && part.filepath.trim()) ||
+        '';
+      const relPath = sanitizeUploadPath(rawRel);
       if (!relPath) continue;
       const abs = safeJoin(projectRoot, relPath);
       await ensureDir(path.dirname(abs));

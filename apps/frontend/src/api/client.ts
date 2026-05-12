@@ -50,7 +50,15 @@ export interface ArxivPaper {
   arxivId: string;
 }
 
-const API_BASE = '';
+const rawApiBase = import.meta.env.VITE_API_BASE;
+const API_BASE =
+  typeof rawApiBase === 'string' && rawApiBase.trim() !== '' ? rawApiBase.trim().replace(/\/$/, '') : '';
+
+function apiUrl(path: string): string {
+  const p = path.startsWith('/') ? path : `/${path}`;
+  return `${API_BASE}${p}`;
+}
+
 const LANG_KEY = 'openprism-lang';
 const COLLAB_TOKEN_KEY = 'openprism-collab-token';
 const COLLAB_SERVER_KEY = 'openprism-collab-server';
@@ -104,7 +112,7 @@ async function request<T>(url: string, options?: RequestInit): Promise<T> {
   if (options?.body) {
     mergedHeaders['Content-Type'] = 'application/json';
   }
-  const res = await fetch(`${API_BASE}${url}`, {
+  const res = await fetch(apiUrl(url), {
     ...options,
     headers: mergedHeaders
   });
@@ -210,7 +218,7 @@ export function renamePath(id: string, from: string, to: string) {
 
 export async function deleteFile(id: string, filePath: string) {
   const qs = new URLSearchParams({ path: filePath }).toString();
-  const res = await fetch(`/api/projects/${id}/file?${qs}`, {
+  const res = await fetch(apiUrl(`/api/projects/${id}/file?${qs}`), {
     method: 'DELETE',
     headers: {
       'x-lang': getLangHeader()
@@ -236,7 +244,7 @@ export async function uploadFiles(projectId: string, files: File[], basePath?: s
     const finalPath = basePath ? `${basePath}/${rel}` : rel;
     form.append('files', file, finalPath);
   });
-  const res = await fetch(`/api/projects/${projectId}/upload`, {
+  const res = await fetch(apiUrl(`/api/projects/${projectId}/upload`), {
     method: 'POST',
     body: form,
     headers: {
@@ -319,7 +327,7 @@ export async function uploadTemplate(templateId: string, templateLabel: string, 
   form.append('templateLabel', templateLabel);
   form.append('file', file);
   const lang = getLangHeader();
-  const res = await fetch(`${API_BASE}/api/templates/upload`, {
+  const res = await fetch(apiUrl('/api/templates/upload'), {
     method: 'POST',
     headers: { 'x-lang': lang, ...getAuthHeader() },
     body: form,
@@ -384,7 +392,7 @@ export async function importZip(payload: { file: File; projectName?: string }) {
   if (payload.projectName) {
     form.append('projectName', payload.projectName);
   }
-  const res = await fetch('/api/projects/import-zip', {
+  const res = await fetch(apiUrl('/api/projects/import-zip'), {
     method: 'POST',
     body: form,
     headers: {
@@ -407,7 +415,7 @@ export function importArxivSSE(
     if (payload.projectName) params.set('projectName', payload.projectName);
     const token = getCollabToken();
     if (token) params.set('token', token);
-    const es = new EventSource(`/api/projects/import-arxiv-sse?${params.toString()}`);
+    const es = new EventSource(apiUrl(`/api/projects/import-arxiv-sse?${params.toString()}`));
 
     es.addEventListener('progress', (e) => {
       if (onProgress) {
@@ -450,7 +458,7 @@ export async function visionToLatex(payload: {
   if (payload.llmConfig) {
     form.append('llmConfig', JSON.stringify(payload.llmConfig));
   }
-  const res = await fetch('/api/vision/latex', {
+  const res = await fetch(apiUrl('/api/vision/latex'), {
     method: 'POST',
     body: form,
     headers: {
@@ -473,13 +481,80 @@ export interface TransferStartPayload {
   targetMainFile: string;
   engine?: string;
   layoutCheck?: boolean;
+  enableSensitiveMask?: boolean;
+  /** When true, run the LLM-driven agent pipeline; when false (default), run the rule-based transfer converter. */
+  useAgent?: boolean;
   llmConfig?: Partial<LLMConfig>;
+  venue?: string;
+  doubleBlind?: boolean;
+  preprint?: boolean;
+  outputNotes?: string;
+}
+
+export interface TransferQaItem {
+  id: string;
+  prompt: string;
+  type: 'single' | 'multi' | 'text';
+  options?: string[];
+}
+
+export interface TransferProgressEntry {
+  node?: string;
+  level?: 'info' | 'warn' | 'error';
+  message?: string;
+  ts?: number;
+}
+
+export interface LiveProgress {
+  activeRole: string;
+  toolName: string;
+  toolArgs: string;
+  toolRound: number;
+  maxToolRounds: number;
+  /** Monotonic; SSE uses this to detect back-to-back same toolName updates */
+  seq?: number;
+  lastUpdate: number;
+}
+
+/** One completed agent tool invocation (from job.toolTraceRecent / SSE). */
+export interface ToolTraceEntry {
+  ts: number;
+  agent: string;
+  iteration: number;
+  round: number;
+  tool: string;
+  argsBrief: string;
+  toolCallId?: string;
+  phase?: string;
+  durationMs?: number;
+  ok: boolean;
+  error?: string;
 }
 
 export interface TransferStepResult {
   status: string;
   progressLog: string[];
+  progressLogEntries?: TransferProgressEntry[];
+  currentNode?: string;
+  phase?: string;
+  agentPhase?: string | null;
+  currentIteration?: number | null;
+  interruptedBeforeNode?: string;
+  completedNodes?: string[];
+  pendingQA?: TransferQaItem[] | null;
   error?: string;
+  bundleNotes?: string | null;
+  transferGraphKind?: string;
+  liveProgress?: LiveProgress | null;
+  toolTraceRecent?: ToolTraceEntry[];
+  /** Present on 500 from /transfer/step when a graph node fails (e.g. diff retries exhausted) */
+  failedNode?: string;
+  failedPhase?: string;
+  failedDetail?: string;
+  /** Project-relative path to saved LLM raw/patch (unified-diff nodes) */
+  failedDebugPath?: string;
+  /** Length of target .tex input to the failed diff step */
+  failedInputChars?: number;
 }
 
 export interface PageImage {
@@ -495,10 +570,45 @@ export function transferStart(payload: TransferStartPayload) {
   });
 }
 
-export function transferStep(jobId: string) {
-  return request<TransferStepResult>('/api/transfer/step', {
+/**
+ * Parses JSON error bodies so TransferNodeError fields (failedNode, etc.) are available on thrown Error.
+ */
+export function transferStep(jobId: string): Promise<TransferStepResult> {
+  const lang = getLangHeader();
+  const mergedHeaders: Record<string, string> = {
+    'x-lang': lang,
+    ...getAuthHeader(),
+    'Content-Type': 'application/json',
+  };
+  return fetch(apiUrl('/api/transfer/step'), {
     method: 'POST',
+    headers: mergedHeaders,
     body: JSON.stringify({ jobId }),
+  }).then(async (res) => {
+    const text = await res.text();
+    let body: Record<string, unknown> = {};
+    try {
+      body = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+    } catch {
+      body = { error: text || 'Step failed' };
+    }
+    if (!res.ok) {
+      const baseMsg = String(body.error ?? text ?? 'Step failed');
+      const err = new Error(baseMsg) as Error & {
+        failedNode?: string;
+        failedPhase?: string;
+        failedDetail?: string;
+        failedDebugPath?: string;
+        failedInputChars?: number;
+      };
+      if (typeof body.failedNode === 'string') err.failedNode = body.failedNode;
+      if (typeof body.failedPhase === 'string') err.failedPhase = body.failedPhase;
+      if (typeof body.failedDetail === 'string') err.failedDetail = body.failedDetail;
+      if (typeof body.failedDebugPath === 'string') err.failedDebugPath = body.failedDebugPath;
+      if (typeof body.failedInputChars === 'number') err.failedInputChars = body.failedInputChars;
+      throw err;
+    }
+    return body as unknown as TransferStepResult;
   });
 }
 
@@ -513,12 +623,68 @@ export function transferStatus(jobId: string) {
   return request<TransferStepResult>(`/api/transfer/status/${jobId}`);
 }
 
+/**
+ * Connect to the SSE progress stream for a transfer job.
+ * Returns an EventSource instance. Call .close() to disconnect.
+ */
+export function transferStream(
+  jobId: string,
+  onProgress: (data: TransferStepResult) => void,
+  onDone?: (data: TransferStepResult) => void,
+  onError?: (err: Event) => void,
+): EventSource {
+  const es = new EventSource(apiUrl(`/api/transfer/stream/${jobId}`));
+
+  es.addEventListener('progress', (e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data) as TransferStepResult;
+      onProgress(data);
+    } catch { /* ignore parse errors */ }
+  });
+
+  es.addEventListener('done', (e: MessageEvent) => {
+    try {
+      const data = JSON.parse(e.data) as TransferStepResult;
+      (onDone || onProgress)(data);
+    } catch { /* ignore */ }
+    es.close();
+  });
+
+  es.onerror = (e) => {
+    if (onError) onError(e);
+    // EventSource auto-reconnects on transient errors;
+    // only close on permanent failure (readyState === CLOSED)
+    if (es.readyState === EventSource.CLOSED) {
+      es.close();
+    }
+  };
+
+  return es;
+}
+
+export function transferSubmitConfirm(jobId: string, answers: Record<string, string | string[]>) {
+  return request<{ ok: boolean }>('/api/transfer/submit-confirm', {
+    method: 'POST',
+    body: JSON.stringify({ jobId, answers }),
+  });
+}
+
 // ─── MinerU Transfer API ───
 
 export interface MineruConfig {
   apiBase?: string;
   token?: string;
   modelVersion?: string;
+  /** Wrap PNG/JPEG/WebP as single-page PDF and rewrite Markdown (or set env OPENPRISM_MINERU_RASTER_TO_PDF=1). */
+  rasterToPdf?: boolean;
+  deleteRasterAfterPdf?: boolean;
+  /** Upscale factor before PDF embed when rasterToPdf is true (or env OPENPRISM_MINERU_IMAGE_SCALE). */
+  imageScale?: number;
+  /** Replace images from source PDF using *content_list*.json (needs pdftoppm; or env OPENPRISM_MINERU_BBOX_CROP=1). */
+  bboxCrop?: boolean;
+  cropDpi?: number;
+  /** MinerU bbox coords: default PDF bottom-left; use top_left if crops misaligned. */
+  bboxCoords?: 'pdf' | 'top_left';
 }
 
 export interface MineruTransferStartPayload {
@@ -528,6 +694,7 @@ export interface MineruTransferStartPayload {
   targetMainFile: string;
   engine?: string;
   layoutCheck?: boolean;
+  enableSensitiveMask?: boolean;
   llmConfig?: Partial<LLMConfig>;
   mineruConfig?: MineruConfig;
 }
@@ -543,7 +710,7 @@ export async function mineruTransferUploadPdf(jobId: string, pdfFile: File) {
   const form = new FormData();
   form.append('jobId', jobId);
   form.append('pdf', pdfFile);
-  const res = await fetch('/api/transfer/upload-pdf', {
+  const res = await fetch(apiUrl('/api/transfer/upload-pdf'), {
     method: 'POST',
     body: form,
     headers: {

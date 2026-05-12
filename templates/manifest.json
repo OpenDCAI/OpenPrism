@@ -2,57 +2,419 @@
   "templates": [
     {
       "id": "acl",
-      "label": "ACL",
-      "mainFile": "main.tex",
-      "category": "academic",
-      "description": "ACL 会议论文模板，适用于自然语言处理领域",
-      "descriptionEn": "ACL conference paper template for NLP research",
-      "tags": ["ACL", "NLP"],
-      "author": "OpenPrism",
+      "label": "ACL 2026",
+      "mainFile": "acl_latex.tex",
+      "category": "nlp",
+      "description": "ACL 官方 LaTeX 样式文件，适用于 ACL 主会论文投稿。",
+      "descriptionEn": "Official ACL LaTeX style files for ACL conference submissions.",
+      "tags": [
+        "ACL",
+        "NLP",
+        "Conference"
+      ],
+      "author": "ACL Anthology",
       "featured": true
+    },
+    {
+      "id": "emnlp",
+      "label": "EMNLP 2026",
+      "mainFile": "acl_latex.tex",
+      "category": "nlp",
+      "description": "EMNLP/ACL 官方样式包，面向自然语言处理会议论文。",
+      "descriptionEn": "Official ACL-style template for EMNLP NLP conference papers.",
+      "tags": [
+        "EMNLP",
+        "NLP",
+        "Conference"
+      ],
+      "author": "ACL Anthology",
+      "featured": true
+    },
+    {
+      "id": "naacl",
+      "label": "NAACL 2026",
+      "mainFile": "acl_latex.tex",
+      "category": "nlp",
+      "description": "NAACL/ACL 官方样式包，适用于北美自然语言处理投稿。",
+      "descriptionEn": "Official ACL-style template for NAACL language processing papers.",
+      "tags": [
+        "NAACL",
+        "NLP",
+        "Conference"
+      ],
+      "author": "ACL Anthology",
+      "featured": true
+    },
+    {
+      "id": "coling",
+      "label": "COLING",
+      "mainFile": "acl_latex.tex",
+      "category": "nlp",
+      "description": "COLING 可用的 ACL 系列样式包，适合计算语言学论文。",
+      "descriptionEn": "ACL-family style files suitable for COLING computational linguistics papers.",
+      "tags": [
+        "COLING",
+        "NLP",
+        "Conference"
+      ],
+      "author": "ACL Anthology",
+      "featured": false
+    },
+    {
+      "id": "acl-findings",
+      "label": "ACL Findings",
+      "mainFile": "acl_latex.tex",
+      "category": "nlp",
+      "description": "ACL Findings 投稿可用的 ACL 官方样式包。",
+      "descriptionEn": "Official ACL-style template for ACL Findings submissions.",
+      "tags": [
+        "ACL",
+        "Findings",
+        "NLP"
+      ],
+      "author": "ACL Anthology",
+      "featured": false
     },
     {
       "id": "cvpr",
-      "label": "CVPR (skeleton)",
+      "label": "CVPR 2026",
       "mainFile": "main.tex",
-      "category": "academic",
-      "description": "CVPR 会议论文骨架模板，适用于计算机视觉领域",
-      "descriptionEn": "CVPR conference paper skeleton template for computer vision",
-      "tags": ["CVPR", "Computer Vision"],
-      "author": "OpenPrism",
+      "category": "vision",
+      "description": "CVPR author-kit 官方模板，包含主文、章节与参考文献配置。",
+      "descriptionEn": "Official CVPR author-kit with main paper, sections, and bibliography setup.",
+      "tags": [
+        "CVPR",
+        "Computer Vision",
+        "CVF"
+      ],
+      "author": "CVF",
       "featured": true
     },
     {
-      "id": "neurips",
-      "label": "NeurIPS (skeleton)",
+      "id": "iccv",
+      "label": "ICCV 2026",
       "mainFile": "main.tex",
-      "category": "academic",
-      "description": "NeurIPS 会议论文骨架模板，适用于机器学习领域",
-      "descriptionEn": "NeurIPS conference paper skeleton template for machine learning",
-      "tags": ["NeurIPS", "Machine Learning"],
-      "author": "OpenPrism",
+      "category": "vision",
+      "description": "CVF author-kit 模板，可用于 ICCV/CVF 视觉会议论文起稿。",
+      "descriptionEn": "CVF author-kit template for ICCV/CVF computer vision submissions.",
+      "tags": [
+        "ICCV",
+        "Computer Vision",
+        "CVF"
+      ],
+      "author": "CVF",
+      "featured": true
+    },
+    {
+      "id": "eccv",
+      "label": "ECCV 2026",
+      "mainFile": "main.tex",
+      "category": "vision",
+      "description": "ECCV 2026 官方 paper-template 包，含 eccv.sty、LNCS 类与样例。",
+      "descriptionEn": "Official ECCV 2026 paper-template package with eccv.sty, LNCS class, and sample paper.",
+      "tags": [
+        "ECCV",
+        "Computer Vision",
+        "Springer"
+      ],
+      "author": "ECCV / Springer",
+      "featured": true
+    },
+    {
+      "id": "wacv",
+      "label": "WACV 2026",
+      "mainFile": "main.tex",
+      "category": "vision",
+      "description": "CVF author-kit 模板，适合 WACV/CVF 视觉会议论文。",
+      "descriptionEn": "CVF author-kit template suitable for WACV/CVF computer vision papers.",
+      "tags": [
+        "WACV",
+        "Computer Vision",
+        "CVF"
+      ],
+      "author": "CVF",
+      "featured": false
+    },
+    {
+      "id": "bmvc",
+      "label": "BMVC 2026",
+      "mainFile": "bmvc_review.tex",
+      "category": "vision",
+      "description": "BMVC 官方模板包，包含 review/final LaTeX 示例与 BMVA 样式。",
+      "descriptionEn": "Official BMVC template package with review/final LaTeX examples and BMVA style files.",
+      "tags": [
+        "BMVC",
+        "Computer Vision",
+        "BMVA"
+      ],
+      "author": "BMVA",
+      "featured": false
+    },
+    {
+      "id": "neurips",
+      "label": "NeurIPS 2026",
+      "mainFile": "main.tex",
+      "category": "ml",
+      "description": "NeurIPS 2026 样式文件与投稿入口，含 checklist 配套文件。",
+      "descriptionEn": "NeurIPS 2026 style files and submission entry with checklist support.",
+      "tags": [
+        "NeurIPS",
+        "Machine Learning",
+        "Checklist"
+      ],
+      "author": "NeurIPS",
       "featured": true
     },
     {
       "id": "icml",
-      "label": "ICML (skeleton)",
-      "mainFile": "main.tex",
-      "category": "academic",
-      "description": "ICML 会议论文骨架模板，适用于机器学习领域",
-      "descriptionEn": "ICML conference paper skeleton template for machine learning",
-      "tags": ["ICML", "Machine Learning"],
-      "author": "OpenPrism",
+      "label": "ICML 2026",
+      "mainFile": "example_paper.tex",
+      "category": "ml",
+      "description": "ICML 2026 官方 LaTeX style files 与 example_paper 示例。",
+      "descriptionEn": "Official ICML 2026 LaTeX style files and example_paper sample.",
+      "tags": [
+        "ICML",
+        "Machine Learning",
+        "Conference"
+      ],
+      "author": "ICML",
       "featured": true
+    },
+    {
+      "id": "iclr",
+      "label": "ICLR 2026",
+      "mainFile": "iclr2026_conference.tex",
+      "category": "ml",
+      "description": "ICLR 2026 官方 master template，适用于表示学习论文。",
+      "descriptionEn": "Official ICLR 2026 master template for representation learning papers.",
+      "tags": [
+        "ICLR",
+        "Machine Learning",
+        "Deep Learning"
+      ],
+      "author": "ICLR",
+      "featured": true
+    },
+    {
+      "id": "aistats",
+      "label": "AISTATS 2026",
+      "mainFile": "sample_paper.tex",
+      "category": "ml",
+      "description": "AISTATS 2026 官方 PaperPack，包含样例论文与补充材料模板。",
+      "descriptionEn": "Official AISTATS 2026 PaperPack with sample paper and supplement template.",
+      "tags": [
+        "AISTATS",
+        "Statistics",
+        "Machine Learning"
+      ],
+      "author": "AISTATS / PMLR",
+      "featured": false
+    },
+    {
+      "id": "uai",
+      "label": "UAI 2026",
+      "mainFile": "uai2026-template.tex",
+      "category": "ml",
+      "description": "UAI 2026 官方模板包，包含 uai2026.cls 与 Amsterdam 示例图。",
+      "descriptionEn": "Official UAI 2026 template package with uai2026.cls and sample assets.",
+      "tags": [
+        "UAI",
+        "Probabilistic Modeling",
+        "Conference"
+      ],
+      "author": "UAI",
+      "featured": false
+    },
+    {
+      "id": "aaai",
+      "label": "AAAI 2026",
+      "mainFile": "aaai2026-unified-template.tex",
+      "category": "ai",
+      "description": "AAAI 2026 unified LaTeX 模板，支持匿名投稿与 camera-ready 切换。",
+      "descriptionEn": "AAAI 2026 unified LaTeX template with anonymous and camera-ready modes.",
+      "tags": [
+        "AAAI",
+        "AI",
+        "Conference"
+      ],
+      "author": "AAAI",
+      "featured": true
+    },
+    {
+      "id": "ijcai",
+      "label": "IJCAI 2026",
+      "mainFile": "ijcai26.tex",
+      "category": "ai",
+      "description": "IJCAI-ECAI 2026 官方 formatting guidelines LaTeX 包。",
+      "descriptionEn": "Official IJCAI-ECAI 2026 formatting guidelines LaTeX package.",
+      "tags": [
+        "IJCAI",
+        "AI",
+        "Conference"
+      ],
+      "author": "IJCAI",
+      "featured": true
+    },
+    {
+      "id": "kdd",
+      "label": "KDD / ACM SIGCONF",
+      "mainFile": "main.tex",
+      "category": "data",
+      "description": "ACM acmart 官方 SIGCONF 模板，适用于 KDD 等 ACM 会议。",
+      "descriptionEn": "Official ACM acmart SIGCONF template suitable for KDD and ACM conferences.",
+      "tags": [
+        "KDD",
+        "ACM",
+        "Data Mining"
+      ],
+      "author": "ACM",
+      "featured": true
+    },
+    {
+      "id": "sigir",
+      "label": "SIGIR / ACM SIGCONF",
+      "mainFile": "main.tex",
+      "category": "data",
+      "description": "ACM acmart 官方 SIGCONF 模板，适合 SIGIR 信息检索论文。",
+      "descriptionEn": "Official ACM acmart SIGCONF template for SIGIR information retrieval papers.",
+      "tags": [
+        "SIGIR",
+        "ACM",
+        "Information Retrieval"
+      ],
+      "author": "ACM",
+      "featured": true
+    },
+    {
+      "id": "www",
+      "label": "WWW / ACM SIGCONF",
+      "mainFile": "main.tex",
+      "category": "data",
+      "description": "ACM acmart 官方 SIGCONF 模板，适用于 Web 与社交计算论文。",
+      "descriptionEn": "Official ACM acmart SIGCONF template for web and social computing papers.",
+      "tags": [
+        "WWW",
+        "ACM",
+        "Web"
+      ],
+      "author": "ACM",
+      "featured": false
+    },
+    {
+      "id": "tacl",
+      "label": "TACL",
+      "mainFile": "template.tex",
+      "category": "journal",
+      "description": "Transactions of the ACL 官方期刊模板。",
+      "descriptionEn": "Official Transactions of the ACL journal template.",
+      "tags": [
+        "TACL",
+        "Journal",
+        "NLP"
+      ],
+      "author": "Transactions of the ACL",
+      "featured": false
+    },
+    {
+      "id": "ijcv",
+      "label": "IJCV / Springer Nature",
+      "mainFile": "sn-article.tex",
+      "category": "journal",
+      "description": "Springer Nature 官方期刊文章模板，可作为 IJCV 稿件起点。",
+      "descriptionEn": "Official Springer Nature journal article template suitable as an IJCV manuscript starting point.",
+      "tags": [
+        "IJCV",
+        "Springer",
+        "Journal"
+      ],
+      "author": "Springer Nature",
+      "featured": false
+    },
+    {
+      "id": "jmlr",
+      "label": "JMLR",
+      "mainFile": "template.tex",
+      "category": "journal",
+      "description": "JMLR/PMLR 官方样式文件，适合机器学习期刊论文。",
+      "descriptionEn": "Official JMLR/PMLR style files for machine learning journal articles.",
+      "tags": [
+        "JMLR",
+        "PMLR",
+        "Journal"
+      ],
+      "author": "JMLR / PMLR",
+      "featured": true
+    },
+    {
+      "id": "tnnls",
+      "label": "IEEE TNNLS",
+      "mainFile": "template.tex",
+      "category": "journal",
+      "description": "IEEEtran 官方模板包，适合 TNNLS/IEEE Transactions 稿件。",
+      "descriptionEn": "Official IEEEtran template package for TNNLS and IEEE Transactions manuscripts.",
+      "tags": [
+        "TNNLS",
+        "IEEE",
+        "Journal"
+      ],
+      "author": "IEEE",
+      "featured": false
+    },
+    {
+      "id": "arxiv",
+      "label": "arXiv Preprint",
+      "mainFile": "template.tex",
+      "category": "preprint",
+      "description": "arXiv 风格预印本模板，适合会议版之外的公开稿。",
+      "descriptionEn": "arXiv-style preprint template for public versions beyond conference submissions.",
+      "tags": [
+        "arXiv",
+        "Preprint"
+      ],
+      "author": "arXiv",
+      "featured": false
     }
   ],
   "categories": [
-    { "id": "all", "label": "所有", "labelEn": "All" },
-    { "id": "academic", "label": "学术论文", "labelEn": "Academic" },
-    { "id": "thesis", "label": "学位论文", "labelEn": "Thesis" },
-    { "id": "resume", "label": "简历", "labelEn": "Resume" },
-    { "id": "presentation", "label": "演示文稿", "labelEn": "Presentation" },
-    { "id": "book", "label": "书籍", "labelEn": "Book" },
-    { "id": "letter", "label": "信件", "labelEn": "Letter" },
-    { "id": "report", "label": "报告", "labelEn": "Report" }
+    {
+      "id": "all",
+      "label": "所有",
+      "labelEn": "All"
+    },
+    {
+      "id": "nlp",
+      "label": "自然语言处理",
+      "labelEn": "NLP"
+    },
+    {
+      "id": "vision",
+      "label": "计算机视觉",
+      "labelEn": "Computer Vision"
+    },
+    {
+      "id": "ml",
+      "label": "机器学习",
+      "labelEn": "Machine Learning"
+    },
+    {
+      "id": "ai",
+      "label": "人工智能",
+      "labelEn": "AI"
+    },
+    {
+      "id": "data",
+      "label": "数据挖掘与检索",
+      "labelEn": "Data & Retrieval"
+    },
+    {
+      "id": "journal",
+      "label": "期刊",
+      "labelEn": "Journals"
+    },
+    {
+      "id": "preprint",
+      "label": "预印本",
+      "labelEn": "Preprint"
+    }
   ]
 }

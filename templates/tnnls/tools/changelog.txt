@@ -1,0 +1,119 @@
+
+
+ Changelog history of the IEEEtrantools.sty LaTeX package.
+ 2015/08/26
+ by Michael Shell (MDS)
+ http://www.michaelshell.org/
+
+
+2015/08/26 V1.5 (V1.8b of IEEEtran.cls)
+
+ 1) Revised IEEEeqnarray column specifications to work with active " 
+    (or other punctuation catcode changes) as with babel under the
+    german or ngerman language modes. 
+    Thanks to Stefan M. Moser for reporting this problem.
+
+ 2) Fixed bug with IEEEeqnarray equation number foreground color
+    under the color environment of Beamer class.
+    Thanks to Joschi Brauchle for reporting this problem.
+
+ 3) Added the \IEEEnoauxwrite command.
+    Thanks to Sudarshan Mukherjee for suggesting this feature.
+
+
+*******
+2014/09/17 V1.4 (V1.8a of IEEEtran.cls) changes:
+
+ 1) Internal code improvements for command argument processing and
+    support for future features.
+
+
+*******
+12/2012 V1.3 (V1.8 of IEEEtran.cls) changes:
+
+ 1) No longer redefines the standard LaTeX itemize, enumerate and 
+    description (IED) lists by default. (e.g., the older package option
+    "retainorgcmds" is now the default behavior.) A new package option,
+    "redeflists", can be invoked to redefine the standard IED list
+    environments to their IEEE versions. IEEEitemize, IEEEenumerate and
+    IEEEdescription remain available in any case. The redeflists option
+    may not be compatible with other packages that alter the standard
+    IED list environments.
+
+ 2) Added new *-forms of \IEEEyesnumber*, \IEEEnonumber*, \IEEEyessubnumber*,
+    and \IEEEnosubnumber* (the non-star form of the latter is also new) which
+    persist across IEEEeqnarray lines until countermanded. To provide for
+    continued subequations across instances of IEEEeqnarrays as well as for
+    subequations that follow a main equation (e.g., 14, 14a, 14b ...)
+    \IEEEyessubnumber no longer automatically increments the equation number
+    on it's first invocation of a subequation group. Invoke both
+    \IEEEyesnumber\IEEEyessubnumber together to start a new
+    equation/subequation group.
+
+ 3) Hyperref links now work with IEEEeqnarray equations.
+    Thanks to Stefan M. Moser for reporting this problem.
+
+ 4) Now provides the IEEEproof environment, as well as the
+    \IEEEQEDhere, \IEEEQEDhereeqn and \IEEEQEDoff commands.
+    Also, \IEEEproofindentspace allows users to change the
+    IEEEproof indentation via \renewcommand.
+    Thanks to Mark D. Butala, Hennadiy Leontyev and Stefan M. Moser
+    for suggesting this. Special thanks to Stefan M. Moser for beta
+    testing and additional suggestions which improved IEEEproof.
+
+ 5) Revised \IEEEeqnarraymulticol{} to allow inner alignments without
+    requiring extra containing braces to prevent an incomplete \ifx error.
+    Thanks to Stefan M. Moser and Auke van der Valk for reporting this
+    problem.
+
+ 6) Added \IEEEauthorrefmark.
+
+ 7) Removed support for legacy IED list commands.
+    IEEEtrantools no longer defines or references \labelindent so as to
+    avoid namespace problems with list packages that define it.
+    Thanks to Sven Köhler for reporting the problem with enumitem.sty.
+
+
+*******
+ 1/2007 V1.2 (V1.7 of IEEEtran.cls) changes:
+
+ 1) Several commands and environments have depreciated in favor of
+    replacements with IEEE prefixes to better avoid potential future name
+    clashes with other packages. Legacy code retained to allow
+    use of the obsolete forms, but with an warning message to the
+    console during compilation:
+    \IEEEPARstart
+    For IED lists:
+    \IEEEiedlabeljustifyc, \IEEEiedlabeljustifyl, \IEEEiedlabeljustifyr,
+    \IEEEnocalcleftmargin, \IEEElabelindent, \IEEEsetlabelwidth,
+    \IEEEusemathlabelsep
+ 
+ 2) These commands/lengths now require the IEEE prefix and do not have
+    legacy support: \IEEEnormaljot.
+    For IED lists: \ifIEEEnocalcleftmargin, \ifIEEEnolabelindentfactor,
+    \IEEEiedlistdecl, \IEEElabelindentfactor
+
+ 3) \normalsizebaselineskip no longer provided.
+
+ 4) New \IEEEPARstart controls:
+    \IEEEPARstartHEIGHTTEXT, \IEEEPARstartFONTSTYLE, \IEEEPARstartCAPSTYLE,
+    \IEEEPARstartWORDFONTSTYLE, \IEEEPARstartWORDCAPSTYLE,
+    \IEEEPARstartHOFFSET, \IEEEPARstartITLCORRECT
+    and the (output) length \IEEEPARstartletwidth.
+
+ 5) Provide for an optional argument to \bstctlcite to provide a way to
+    specify a different aux file.
+
+
+*******
+ 11/2002 V1.1 (V1.6b of IEEEtran.cls) changes:
+ 
+ 1) In addition to the IEEE IED lists, the original LaTeX IED style list
+    environments are now preserved as LaTeXitemize, LaTeXenumerate, and
+    LaTeXdescription. Also, users can now redefine \makelabel within
+    IEEE IED list controls. There may be some use for these in specialized
+    applications. Thanks to Eli Barzilay for suggesting this feature.
+
+
+*******
+

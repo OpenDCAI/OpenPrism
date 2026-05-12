@@ -1,0 +1,745 @@
+% File tacl2021v1.tex
+% Dec. 15, 2021
+
+% The English content of this file was modified from various *ACL instructions
+% by Lillian Lee and Kristina Toutanova
+%
+% LaTeXery is mostly all adapted from acl2018.sty.
+
+\documentclass[11pt,a4paper]{article}
+\usepackage{times,latexsym}
+\usepackage{url}
+\usepackage[T1]{fontenc}
+
+%% Package options:
+%% Short version: "hyperref" and "submission" are the defaults.
+%% More verbose version:
+%% Most compact command to produce a submission version with hyperref enabled
+%%    \usepackage[]{tacl2021v1}
+%% Most compact command to produce a "camera-ready" version
+%%    \usepackage[acceptedWithA]{tacl2021v1}
+%% Most compact command to produce a double-spaced copy-editor's version
+%%    \usepackage[acceptedWithA,copyedit]{tacl2021v1}
+%
+%% If you need to disable hyperref in any of the above settings (see Section
+%% "LaTeX files") in the TACL instructions), add ",nohyperref" in the square
+%% brackets. (The comma is a delimiter in case there are multiple options specified.)
+
+\usepackage[]{tacl2021v1}
+% \setlength\titlebox{10cm} % <- for Option 2 below
+
+%%%% Material in this block is specific to generating TACL instructions
+\usepackage{xspace,mfirstuc,tabulary}
+\newcommand{\dateOfLastUpdate}{Dec. 15, 2021}
+\newcommand{\styleFileVersion}{tacl2021v1}
+
+\newcommand{\ex}[1]{{\sf #1}}
+
+\newif\iftaclinstructions
+\taclinstructionsfalse % AUTHORS: do NOT set this to true
+\iftaclinstructions
+\renewcommand{\confidential}{}
+\renewcommand{\anonsubtext}{(No author info supplied here, for consistency with
+TACL-submission anonymization requirements)}
+\newcommand{\instr}
+\fi
+
+%
+\iftaclpubformat % this "if" is set by the choice of options
+\newcommand{\taclpaper}{final version\xspace}
+\newcommand{\taclpapers}{final versions\xspace}
+\newcommand{\Taclpaper}{Final version\xspace}
+\newcommand{\Taclpapers}{Final versions\xspace}
+\newcommand{\TaclPapers}{Final Versions\xspace}
+\else
+\newcommand{\taclpaper}{submission\xspace}
+\newcommand{\taclpapers}{{\taclpaper}s\xspace}
+\newcommand{\Taclpaper}{Submission\xspace}
+\newcommand{\Taclpapers}{{\Taclpaper}s\xspace}
+\newcommand{\TaclPapers}{Submissions\xspace}
+\fi
+
+%%%% End TACL-instructions-specific macro block
+%%%%
+
+\title{Formatting Instructions for TACL \TaclPapers \\
+(Base files: \styleFileVersion-template.tex \& \styleFileVersion.sty, dated \dateOfLastUpdate)}
+
+% Author information does not appear in the pdf unless the "acceptedWithA" option is given
+
+% The author block may be formatted in one of two ways:
+
+% Option 1. Author’s address is underneath each name, centered.
+
+\author{
+  Template Author1\Thanks{The {\em actual} contributors to this instruction
+    document and corresponding template file are given in Section
+    \ref{sec:contributors}.} 
+  \\
+  Template Affiliation1/Address Line 1
+  \\
+  Template Affiliation1/Address Line 2
+  \\
+  Template Affiliation1/Address Line 2
+  \\
+  \texttt{template.email1example.com}
+  \And
+  Template Author2 
+  \\
+  Template Affiliation2/Address Line 1
+  \\
+  Template Affiliation2/Address Line 2
+  \\
+  Template Affiliation2/Address Line 2
+  \\
+  \texttt{template.email2@example.com}
+}
+
+% % Option 2.  Author’s address is linked with superscript
+% % characters to its name, author names are grouped, centered.
+
+% \author{
+%   Template Author1\Thanks{The {\em actual} contributors to this instruction
+%     document and corresponding template file are given in Section
+%     \ref{sec:contributors}.}$^\diamond$ 
+%   \and
+%   Template Author2$^\dagger$
+%   \\
+%   \ \\
+%   $^\diamond$Template Affiliation1/Address Line 1
+%   \\
+%   Template Affiliation1/Address Line 2
+%   \\
+%   Template Affiliation1/Address Line 2
+%   \\
+%   \texttt{template.email1example.com}
+%   \\
+%   \ \\
+%   \\
+%   $^\dagger$Template Affiliation2/Address Line 1
+%   \\
+%   Template Affiliation2/Address Line 2
+%   \\
+%   Template Affiliation2/Address Line 2
+%   \\
+%   \texttt{template.email2@example.com}
+% }
+
+\date{}
+
+\begin{document}
+\maketitle
+\begin{abstract}
+  This document contains the formatting requirements for TACL \taclpapers. These
+  formatting rules take effect for all \taclpapers received from September 2, 2018
+  onwards.
+\end{abstract}
+
+\iftaclpubformat
+\section{Courtesy warning: Common violations of \taclpaper rules that have
+resulted in papers being returned to authors for corrections}
+
+Avoid publication delays by avoiding these.
+\begin{enumerate}
+\item Violation: incorrect parentheses for in-text citations.  See \S
+\ref{sec:in-text-cite} and Table \ref{tab:cite-commands}.
+\item Violation: URLs that, when clicked, yield an error such as a 404 or go
+to the wrong page.
+  \begin{itemize}
+     \item Advice: best scholarly practice for referencing URLS would be to also
+     include the date last accessed.
+  \end{itemize}
+\item Violation: non-fulfillment of promise from submission to provide access
+instructions (such as a URL) for code or data.
+\item Violation: References incorrectly formatted (see \S\ref{sec:references}).
+Specifically:
+\begin{enumerate}
+  \item Violation: initials instead of full first/given names in references.
+  \item Violation: missing periods after middle initials.
+  \item Violation: incorrect capitalization.  For example, change ``lstm'' to
+  LSTM and ``glove'' to GloVe.
+  \begin{itemize}
+    \item Advice: if using BibTex, apply curly braces within the title field to
+    preserve intended capitalization.
+  \end{itemize}
+  \item Violation: using ``et al.'' in a reference instead of listing all
+  authors of a work.
+  \begin{itemize}
+    \item Advice: List all authors and check accents on author names even when
+    dozens of authors are involved.
+  \end{itemize}
+  \item Violation: not giving a complete arXiv citation number.
+  \begin{itemize}
+     \item Advice: best scholarly practice would be to give not only the full
+     arXiv number, but also the version number, even if one is citing version 1.
+  \end{itemize}
+  \item Violation: not citing an existing peer-reviewed version in addition to
+  or instead of a preprints
+    \begin{itemize}
+     \item Advice: When preparing the camera-ready, perform an additional check
+     of preprints cited to see whether a peer-reviewed version has appeared
+     in the meantime.
+  \end{itemize}
+  \item Violation: book titles do not have the first initial of all main words
+  capitalized.
+  \item Violation: In a title, not capitalizing the first letter of the first word
+  after a colon or similar punctuation mark.
+\end{enumerate}
+\item Violation: figures or tables appear on the first page.
+  \item Violation: the author block under the title is not
+    formatted according to Appendix~\ref{sec:authorformatting}.
+\end{enumerate}
+\else
+% Submission-specific rules
+\section{Courtesy warning: Common violations of \taclpaper rules that have
+resulted in desk
+rejects}
+\begin{enumerate}
+  \item Violation: wrong paper format.
+  \emph{As of the September 2018 submission round and beyond, TACL requires A4
+  format.  This is a change from the prior paper size.}
+
+  \item Violation: main document text smaller than 11pt, or table or figure
+  captions in a font smaller than 10pt. See Table \ref{tab:font-table}.
+
+  \item Violation: fewer than seven pages of content or more than ten pages of
+  content, {\em including} any appendices. (Exceptions are made for
+  re-submissions where a TACL Action Editor explicitly granted a set number of
+  extra pages to address reviewer comments.) See
+  Section \ref{sec:length}.
+  \item Violation: Author-identifying information in the document content or
+  embedded in the file itself.
+    \begin{itemize}
+      \item Advice: Make sure the submitted PDF does \emph{not} embed within it
+      any author info: check the document properties before submitting.
+      Useful tools include Adobe Reader and {\tt pdfinfo}.
+      \item Advice: Check that no URLs (or corresponding websites) inadvertently
+      disclose any author information. If software or data is to be distributed,
+      mention so in {\em anonymized} fashion.
+      \item Advice: Make sure that author names have been omitted
+      from the author block. (It's OK to include some sort of anonymous
+      placeholder.)
+      \item Advice: Do not include acknowledgments in a submission.
+      \item Advice: While citation of one's own relevant prior work is as
+      encouraged as the citation of any other relevant prior work,
+      self-citations should be made in the third, not first, person.
+      No citations should be attributed to ``anonymous'' or the like.
+      See Section \ref{sec:self-cite}.
+    \end{itemize}
+\end{enumerate}
+\fi
+
+
+\section{General instructions}
+
+\Taclpapers that do not comply with this document's instructions
+risk
+\iftaclpubformat
+publication delays until the camera-ready is brought into compliance.
+\else
+rejection without review.
+\fi
+
+
+\Taclpapers should consist of a Portable Document Format (PDF) file formatted
+for  \textbf{A4 paper}.\footnote{Prior to the September 2018 submission round, a
+different paper size was used.} All necessary fonts should be
+included in the  file.
+
+\iftaclpubformat
+Note that you will need to provide both a single-spaced and a double-spaced
+version; see \S \ref{ssec:layout}.
+
+If you promised to provide code or data at submission, specific instructions for
+how to access such resources must be provided.  (Typically, a URL to a stable,
+resource-specific site suffices.)
+
+All URLs should be manually checked to verify that they
+lead to a valid webpage, and to the site that was intended.
+\fi
+
+
+\section{\LaTeX\ files}
+
+\LaTeX\ files compliant with these instructions are available at the
+Author Guidelines section of the
+TACL website, \href{https://www.transacl.org/}
+{https://www.transacl.org}.\footnote{Last accessed \dateOfLastUpdate.} Use of the
+TACL \LaTeX\ files is highly recommended: \emph{MIT Press requires authors to
+supply \LaTeX\ source files as part of the publication process}; and
+use of the recommended \LaTeX\ files makes conversion to the
+required camera-ready format simple.
+\iftaclpubformat
+Specifically, the conversion can be accomplished by as little as: (1) add
+``acceptedWithA'' in the square brackets in the line invoking the TACL package,
+like so:
+{\footnotesize {\tt {\textbackslash usepackage}[acceptedWithA]\{\styleFileVersion\}}} (2) add author information;
+(3) add acknowledgments.
+\fi
+
+\subsection{Workarounds for problems with the hyperref package}
+
+The provided files use the hyperref package by default. The TACL files
+employs the hyperref package to make clickable links for URLs and other references,
+and to make titles of bibliographic items into clickable links to their DOIs
+in the generated pdf.\footnote{Indeed, for some versions of acl\_natbib.sty,
+DOIs and URLs are not printed out or included in the bibliography in any form
+if the hyperref package is not used.}
+
+However, it is known that citations or URLs that cross pages can trigger the
+compilation error ``{\tt {\textbackslash}pdfendlink ended up in different nesting
+level than {\textbackslash}pdfstartlink}''.  In such cases, you may temporarily
+disable the hyperref package and then compile to locate the offending portion of
+the tex file; edit to avoid a pagebreak within a link;\footnote{If the problematic
+link is part of a reference in the bibliography and you do not wish to
+directly edit the corresponding .bbl file, a heavy-handed approach is to
+add the line
+{\tt \textbackslash interlinepenalty=10000}
+just after the line
+{\tt \textbackslash sloppy\textbackslash clubpenalty4000\textbackslash widowpenalty4000} in the
+``{\tt \textbackslash def\textbackslash thebibliography}'' portion
+of the file \styleFileVersion.sty.  This penalty means that LaTex will not allow
+individual bibliography items to cross a page break.
+}
+ and then re-enable the
+hyperref package.
+
+To disable it,
+add {\tt nohyperref} in the square brackets to pass that option to the TACL package.
+For example, change
+\iftaclpubformat
+\verb+[acceptedWithA]+ in
+{\footnotesize {\tt {\textbackslash usepackage}[acceptedWithA]\{\styleFileVersion\}}}
+to
+\verb+[acceptedWithA,nohyperref]+.
+\else
+{\tt {\textbackslash usepackage}[]\{\styleFileVersion\}}
+to
+{\tt {\textbackslash usepackage}[nohyperref]\{\styleFileVersion\}}.
+\fi
+
+
+
+\section{Length limits}
+\label{sec:length}
+
+\iftaclpubformat
+Camera-ready documents may consist of as many pages of content as allowed by
+the Action Editor in their final acceptance letter.
+\else
+Submissions may consist of seven to ten (7-10) A4 format (not letter) pages of
+content.
+\fi
+
+The page limit \emph{includes} any appendices. However, references
+\iftaclpubformat
+and acknowledgments
+\fi
+do not count
+toward the page limit.
+
+\iftaclpubformat
+\else
+Exception: Revisions of (b) or (c) submissions may have been allowed
+additional pages of content by the prior Action Editor, as specified in their
+decision letter.
+\fi
+
+\section{Fonts and text size}
+
+Adobe's {Times Roman} font should be used. In \LaTeX2e{} this is accomplished by
+putting \verb+\usepackage{times,latexsym}+ in the preamble.\footnote{Should
+Times Roman be unavailable to you, use
+{Computer Modern Roman} (\LaTeX2e{}'s default).  Note that the latter is about
+10\% less dense than Adobe's Times Roman font.}
+
+Font size requirements are listed in Table \ref{tab:font-table}. In addition to
+those requirements, the content of figures, tables, equations, etc. must be
+of reasonable size and readability.
+\begin{table}[t]
+\begin{center}
+\begin{tabular}{|l|rl|}
+\hline \bf Type of Text & \bf Size & \bf Style \\ \hline
+paper title & 15 pt & bold \\
+\iftaclpubformat
+author names & 12 pt & bold \\
+author affiliation & 12 pt & \\
+\else
+\fi
+the word ``Abstract'' as header & 12 pt & bold \\
+abstract text & 10 pt & \\
+section titles & 12 pt & bold \\
+document text & 11 pt  &\\
+captions & 10 pt & \\
+%bibliography & 10 pt & \\
+footnotes & 9 pt & \\
+\hline
+\end{tabular}
+\end{center}
+\caption{\label{tab:font-table} Font requirements}
+\end{table}
+
+
+
+
+\section{Page Layout}
+\label{ssec:layout}
+
+
+The margin dimensions for a page in A4 format (21 cm $\times$ 29.7 cm) are given
+in Table \ref{tab:margin-table}.  Start the content of all pages directly under
+the top margin.
+\iftaclpubformat
+\else
+(The confidentiality header (\S\ref{sec:ruler-and-header}) for submissions is an
+exception.)
+\fi
+
+
+\begin{table}[ht]
+\begin{center}
+\begin{tabular}{|l|}  \hline
+Left and right margins: 2.5 cm \\
+Top margin: 2.5 cm \\
+Bottom margin: 2.5 cm \\
+Column width: 7.7 cm \\
+Column height: 24.7 cm \\
+Gap between columns: 0.6 cm \\ \hline
+\end{tabular}
+\end{center}
+\caption{\label{tab:margin-table} Margin requirements}
+\end{table}
+
+
+\Taclpapers must be in two-column format.
+Allowed exceptions to the two-column format are the title, which must be
+centered at the top of the first page;
+\iftaclpubformat
+the author block containing author names and affiliations and addresses, which
+must be centered on the top of the first page and placed after the
+title; The author names and affiliations must be formatted according
+to MIT Press's requirements, which are described in Appendix
+\ref{sec:authorformatting}. Using the provided LaTeX style file should
+satisfy these requirments.
+
+\else
+the  confidentiality header (see \S\ref{sec:ruler-and-header}) on submissions;
+\fi
+and any full-width figures or tables.
+
+Should the pages be numbered?  Yes, for submissions (to facilitate review); but
+no, for camera-readies (page numbers will be added at publication time).
+
+\Taclpapers should be single-spaced.
+\iftaclpubformat
+But, {\em an additional double-spaced version must also be provided, together with the
+single-spaced version, for the use of the copy-editors.}  A double-spaced version can
+be created by adding the ``copyedit'' option: Change \verb+[acceptedWithA]+ in
+{\footnotesize {\tt {\textbackslash usepackage}[acceptedWithA]\{\styleFileVersion\}}}
+to \verb+[acceptedWithA,copyedit]+.
+\fi
+
+{Indent} by about 0.4cm when starting a new paragraph that is not the first in a
+section or subsection.
+
+\subsection{The confidentiality header and line-number ruler}
+\label{sec:ruler-and-header}
+\iftaclpubformat
+Camera-readies should not include the left- and right-margin line-number rulers
+or headers from the submission version.
+\else
+Each page of the submission should have the header ``\confidentialtext''
+centered across both columns in the top margin.
+
+Submissions must include line numbers in the left and right
+margins, as demonstrated in the TACL submission-formatting
+instructions pdf file, because the line numbering allows reviewers to be very
+specific in their comments.\footnote{Authors using Word to prepare their
+submissions can create the marginal line numbers by inserting text
+boxes containing the line numbers.}
+Note that the numbers on the ruler need not line up exactly with the text lines
+of the paper. (Indeed, the line numbers generated by the recommended \LaTeX\
+files typically do not correspond exactly to the text lines.)
+\fi
+
+The presence or absence of the ruler or header should not change the appearance
+of any other content on the page.
+
+
+
+\begin{table*}[t]
+\centering
+\begin{tabular}{p{7.8cm}@{\hskip .5cm}p{7.8cm}}
+\multicolumn{1}{c}{{\bf Incorrect}} & \multicolumn{1}{c}{{\bf Correct}} \\  \hline
+``\ex{(Cardie, 1992) employed learning.}'' &
+``\ex{Cardie (1992) employed learning.}'' \\
+{The problem}:  ``employed learning.'' is not a sentence.  & Create by
+\verb+\citet{+\ldots\verb+}+  or \verb+\newcite{+\ldots\verb+}+. \\
+\\  \hline
+``\ex{The method of (Cardie, 1992) works.}'' &
+``\ex{The method of Cardie (1992) works.}''  \\
+{The problem}:  ``The method of was used.'' is not a sentence.  & Create as
+above.\\ \\\hline
+``\ex{Use the method of (Cardie, 1992).}'' &
+``\ex{Use the method of Cardie (1992).}''  \\
+{The problem}:  ``Use the method of.'' is not a sentence.  & Create as
+above.\\ \\\hline
+\ex{Related work exists Lee (1997).} & \ex{Related work exists (Lee,
+1997).} \\
+{The problem}:  ``Related work exists Lee.'' is not a sentence (unless one
+is scolding a Lee). & Create by
+\verb+\citep{+\ldots\verb+}+  or \verb+\cite{+\ldots\verb+}+. \\
+\\  \hline
+\end{tabular}
+\caption{\label{tab:cite-commands} Examples of incorrect and correct citation
+  format.  Also depicted are citation commands supported by the
+  tacl2018.sty file, which is based on the natbib package and
+  supports all natbib citation commands.
+  The tacl2018.sty file also supports commands defined in previous ACL style
+  files
+  for compatibility.
+  }
+\end{table*}
+
+
+
+
+
+\section{The First Page}
+\label{ssec:first}
+
+Center the title, which should be placed 2.5cm from the top of the page,
+\iftaclpubformat
+and author names and affiliations
+\fi
+across both columns of the first page. Long titles should be typed on two lines
+without a blank line intervening.
+\iftaclpubformat
+After the title, include a blank line before the author block.
+Do not use only initials for given names, although middle initials are allowed.
+Do not put surnames in all capitals.\footnote{Correct: ``Lillian Lee'';
+incorrect: ``Lillian LEE''.} Affiliations should include authors' email
+addresses. Do not use footnotes for affiliations.
+\else
+Do not include the paper ID number assigned during the submission process.
+\fi
+
+\iftaclpubformat
+\else
+Although submissions should not include any author information, maintain space
+for names and affiliations/addresses so that they will fit in the final
+(camera-ready)
+version.
+\fi
+
+
+Start the abstract at the beginning of the first
+column, about 8 cm from the top of the page, with the centered header
+``Abstract'' as specified in Table \ref{tab:font-table}.
+The width of the abstract text
+should be narrower than the width of the columns for the text in the body of the
+paper by about 0.6cm on each side.
+
+\section{Section headings}
+
+Use numbered section headings (Arabic numerals) in order to facilitate cross
+references. Number subsections with the section number and the subsection number
+separated by a dot.
+
+
+
+\section{Figures and Tables}
+
+Place figures and tables in the paper near where they are first discussed.
+Note that MIT Press disallows figures and tables on the first page.
+
+Provide a caption for every illustration. Number each one
+sequentially in the form:  ``Figure 1: Caption of the Figure.'' or ``Table 1:
+Caption of the Table.''
+
+Authors should ensure that tables and figures do not rely solely on color to
+convey critical distinctions and are, in general,  accessible to the
+color-blind.
+
+
+
+\section{Citations and references}
+\label{sec:cite}
+
+
+\subsection{In-text citations}
+\label{sec:in-text-cite}
+Use correctly parenthesized author-date citations
+(not numbers) in the text. To understand correct parenthesization, obey the
+principle that \emph{a sentence containing parenthetical items should remain
+grammatical when the parenthesized material is omitted.} Consult Table
+\ref{tab:cite-commands} for usage examples.
+
+
+\iftaclpubformat
+\else
+\subsection{Self-citations}
+\label{sec:self-cite}
+
+Citing one's own relevant prior work should be done,  but use the third
+person instead of the first person, to preserve anonymity:
+\begin{tabular}{l}
+Correct: \ex{Zhang (2000) showed ...} \\
+Correct: \ex{It has been shown (Zhang, 2000)...} \\
+Incorrect: \ex{We (Zhang, 2000) showed ...} \\
+Incorrect: \ex{We (Anonymous, 2000) showed ...}
+\end{tabular}
+\fi
+
+\subsection{References}
+\label{sec:references}
+Gather the full set of references together under
+the boldface heading ``References''. Arrange the references alphabetically
+by first author's last/family name, rather than by order of occurrence in the
+text.
+
+References to peer-reviewed publications should be given in addition to or
+instead of preprint versions. When giving a reference to a preprint, including
+arXiv preprints, include the number.
+
+List all authors of a given reference, even if there are dozens; do not
+truncate the author list with an ``et al.''  Use full first/given names for
+authors, not initials.  Include periods after middle initials.
+
+Titles should have correct capitalization.  For example, change
+``lstm'' or ``Lstm'' to ``LSTM''.\footnote{If using BibTex, apply curly braces
+within the title field to preserve intended capitalization.}   Capitalize the
+first letter of the first word after a colon or similar punctuation mark.  For
+book titles, capitalize the first letter of all main words.  See the
+reference entry for \citet{Jurafsky+Martin:2009a} for an example.
+
+
+We strongly encourage the following, but do not absolutely mandate them:
+\begin{itemize}
+\item Include DOIs.\footnote{The supplied \LaTeX\ files will
+automatically add hyperlinks to the DOI when BibTeX or
+BibLateX are invoked if the hyperref package is used and
+the doi field is employed in the corresponding bib entries.
+The DOI itself will not be separately printed out in that case.}
+\item Include the version number when citing arXiv preprints, even if only one
+version exists at the time of writing.
+For example,\footnote{Bibtex entries for \citet{DBLP:journals/corr/cs-CL-0108005} and
+\citet{DBLP:journals/corr/cs-CL-9905001} corresponding to the depicted output
+can be found in the supplied sample file {\tt tacl.bib}.  We also cite
+the peer-reviewed versions \cite{GOODMAN2001403,P99-1010}, as required.}
+note the ``v1'' in the following.
+\begin{quote}
+Joshua Goodman.  2001.  A bit of progress in language modeling. {\it CoRR},
+cs.CL/0108005v1.
+\end{quote}
+An alternative format is:
+\begin{quote}
+Rebecca Hwa. 1999. Supervised grammar induction using training data with limited constituent
+information. {cs.CL/9905001}. Version 1.
+\end{quote}
+\end{itemize}
+
+\section{Appendices} Appendices, if any, directly follow the text and the
+references.  Recall from Section \ref{sec:length} that {\em appendices count
+towards the page
+limit.}
+
+
+\iftaclpubformat
+
+\section{Including acknowledgments}
+Acknowledgments appear immediately before the references.  Do not number this
+section.\footnote{In \LaTeX, one can use {\tt {\textbackslash}section*} instead
+of {\tt {\textbackslash}section}.} If you found the reviewers' or Action
+Editor's comments helpful, consider acknowledging them.
+\else
+\fi
+
+\section{Contributors to this document}
+\label{sec:contributors}
+
+This document was adapted by Lillian Lee and Kristina Toutanova
+from the instructions and files for ACL 2018, by Shay Cohen, Kevin Gimpel, and
+Wei Lu. 
+This document was updated by Cindy Robinson to
+include additional information on formatting final versions.
+Those files were drawn from earlier *ACL proceedings, including those
+for ACL 2017 by Dan Gildea and Min-Yen Kan, NAACL 2017 by Margaret Mitchell,
+ACL 2012 by Maggie Li and Michael White, those from ACL 2010 by Jing-Shing
+Chang and Philipp Koehn, those for ACL 2008 by Johanna D. Moore, Simone
+Teufel, James Allan, and Sadaoki Furui, those for ACL 2005 by Hwee Tou Ng and
+Kemal Oflazer, those for ACL 2002 by Eugene Charniak and Dekang Lin, and
+earlier ACL and EACL formats,  which were written by several people,
+including John Chen, Henry S. Thompson and Donald Walker. Additional elements
+were taken from the formatting instructions of the {\em International Joint
+Conference on Artificial   Intelligence} and the \emph{Conference on Computer
+Vision and Pattern Recognition}.
+
+\bibliography{tacl2021}
+\bibliographystyle{acl_natbib}
+
+\iftaclpubformat
+
+\onecolumn
+
+\appendix
+\section{Author/Affiliation Options as set forth by MIT Press}
+\label{sec:authorformatting}
+
+Option 1. Author’s address is underneath each name, centered.
+
+\begin{quote}\centering
+  \begin{tabular}{c}
+    \textbf{First Author} \\
+    First Affiliation \\
+    First Address 1 \\
+    First Address 2 \\
+    \texttt{first.email@example.com}
+  \end{tabular}
+  \ 
+  \begin{tabular}{c}
+    \textbf{Second Author} \\
+    Second Affiliation \\
+    Second Address 1 \\
+    Second Address 2 \\
+    \texttt{second.email@example.com}
+  \end{tabular}
+
+  \begin{tabular}{c}
+    \textbf{Third Author} \\
+    Third Affiliation \\
+    Third Address 1 \\
+    Third Address 2 \\
+    \texttt{third.email@example.com}
+  \end{tabular}
+\end{quote}
+  
+
+Option 2. Author’s address is linked with superscript characters to its name,
+author names are grouped, centered.
+
+\begin{quote}\centering
+    \textbf{First Author$^\diamond$} \quad \textbf{Second Author$^\dagger$} \quad
+    \textbf{Third Author$^\ddagger$}
+    \\ \ \\
+    $^\diamond$First Affiliation \\
+    First Address 1 \\
+    First Address 2 \\
+    \texttt{first.email@example.com}
+     \\ \ \\
+     $^\dagger$Second Affiliation \\
+    Second Address 1 \\
+    Second Address 2 \\
+    \texttt{second.email@example.com}
+     \\ \ \\
+    $^\ddagger$Third Affiliation \\
+    Third Address 1 \\
+    Third Address 2 \\
+    \texttt{third.email@example.com}
+\end{quote}
+  
+\fi
+
+\end{document}
+
+

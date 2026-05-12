@@ -113,6 +113,12 @@ export default function LandingPage() {
           >
             {t('landing.startWriting')} &rarr;
           </button>
+          <button
+            className="landing-btn-secondary"
+            onClick={() => navigate('/templates')}
+          >
+            {t('打开模板库')}
+          </button>
         </div>
 
         {/* Feature badges */}
