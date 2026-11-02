@@ -6,11 +6,12 @@ from rest_framework.response import Response
 from collab.views import flush_room, live_room
 from projects import files
 from projects.access import get_project
-from projects.models import ProjectFile
+from projects.models import Membership, ProjectFile
+from projects.workspaces import membership_for, require_admin
 from projects.paths import InvalidPath, safe_path
 
-from . import bibtex, crypto, zotero
-from .models import ZoteroConnection
+from . import bibtex, crypto, llmconfig, zotero
+from .models import WorkspaceLlmConfig, ZoteroConnection
 
 
 def _status(conn):
@@ -173,3 +174,35 @@ def zotero_add(request, pk):
             applied = True
     return Response({'ok': True, 'file': bib_path, 'added': added, 'skipped': skipped, 'refused': refused,
                      'applied': applied, 'text': text if not applied else ''})
+
+
+# ---- workspace LLM provider -----------------------------------------------------------------------------------------
+
+def _llm_status(config, membership):
+    can_manage = membership.role in Membership.ADMIN_ROLES
+    if config is None:
+        return {'ok': True, 'configured': False, 'canManage': can_manage}
+    body = {'ok': True, 'configured': True, 'endpoint': config.endpoint, 'model': config.model, 'canManage': can_manage,
+            'updatedAt': config.updated_at.isoformat().replace('+00:00', 'Z'),
+            'updatedBy': (config.updated_by.name or config.updated_by.email) if config.updated_by else ''}
+    if can_manage:
+        body['lastFour'] = config.last_four
+    return body
+
+
+@api_view(['GET', 'PUT', 'DELETE'])
+def workspace_llm(request, pk):
+    membership = membership_for(request.user, pk)
+    config = WorkspaceLlmConfig.objects.select_related('updated_by').filter(workspace_id=pk).first()
+    if request.method == 'GET':
+        return Response(_llm_status(config, membership))
+    require_admin(request.user, pk)
+    if request.method == 'DELETE':
+        WorkspaceLlmConfig.objects.filter(workspace_id=pk).delete()
+        return Response(_llm_status(None, membership))
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        config = llmconfig.save(membership.workspace, request.user, b.get('endpoint'), b.get('model'), b.get('apiKey'))
+    except llmconfig.LlmConfigError as exc:
+        return Response({'ok': False, 'error': str(exc)})
+    return Response(_llm_status(config, membership))
