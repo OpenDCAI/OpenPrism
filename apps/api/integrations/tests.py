@@ -101,3 +101,118 @@ class RotationTests(ZoteroBase):
             self.assertEqual(crypto.decrypt(fresh), 'x')
             with self.assertRaises(ValueError):  # the old key is gone: old rows are unreadable, with a clear message
                 get_zotero_key(self.user)
+
+
+GROUPS = [{'id': 77, 'data': {'name': 'Lab'}}]
+
+
+def item(key, title, year='2020', item_type='journalArticle', **extra):
+    return {'key': key, 'data': {'key': key, 'itemType': item_type, 'title': title, 'date': f'{year}-05-01',
+                                 'creators': [{'creatorType': 'author', 'firstName': 'Ada', 'lastName': 'Lovelace'},
+                                              {'name': 'Acme Group'}], **extra},
+            'meta': {'parsedDate': f'{year}-05-01'}}
+
+
+class BrowseTests(ZoteroBase):
+    def setUp(self):
+        super().setUp()
+        self.fake.routes.update({
+            '/users/4242/groups': (200, GROUPS),
+            '/users/4242/items/top': (200, [item('AAAA1111', 'Attention', citationKey='lovelace2020'),
+                                            item('NOTE0001', 'a note', item_type='note')], {'Total-Results': '41'}),
+            '/groups/77/items/top': (200, [item('GGGG7777', 'Group paper')], {'Total-Results': '1'}),
+            '/users/4242/collections/COLL1234/items/top': (200, [item('CCCC1234', 'In collection')]),
+            '/users/4242/collections': (200, [{'key': 'COLL1234', 'data': {'name': 'Thesis', 'parentCollection': False}},
+                                              {'key': 'SUB00001', 'data': {'name': 'Ch1', 'parentCollection': 'COLL1234'}}]),
+        })
+        self.connect()
+        self.fake.requests.clear()
+
+    def get(self, path, **params):
+        return self.c.get(f'/api/integrations/zotero/{path}', params).json()
+
+    def test_not_connected(self):
+        self.c.delete('/api/integrations/zotero')
+        res = self.get('libraries')
+        self.assertEqual(res, {'ok': False, 'error': 'Zotero is not connected.'})
+
+    def test_libraries(self):
+        res = self.get('libraries')
+        self.assertEqual(res['libraries'], [{'id': 'user', 'type': 'user', 'name': 'My Library'},
+                                            {'id': '77', 'type': 'group', 'name': 'Lab'}])
+
+    def test_items_page_and_summary(self):
+        res = self.get('items', library='user')
+        self.assertEqual(res['total'], 41)
+        self.assertEqual(len(res['items']), 1)  # the standalone note is dropped
+        self.assertEqual(res['items'][0], {
+            'key': 'AAAA1111', 'title': 'Attention', 'creators': ['Ada Lovelace', 'Acme Group'], 'year': '2020',
+            'itemType': 'journalArticle', 'citationKey': 'lovelace2020', 'doi': ''})
+        q = self.fake.requests[-1]['query']
+        self.assertEqual((q['limit'], q['start'], q['format']), ('25', '0', 'json'))
+
+    def test_paging_limit_is_capped(self):
+        self.get('items', library='user', start=50, limit=9999)
+        q = self.fake.requests[-1]['query']
+        self.assertEqual((q['limit'], q['start']), ('50', '50'))
+
+    def test_search_text_is_url_encoded(self):
+        self.get('items', library='user', q='a&b=c #1/ü')
+        last = self.fake.requests[-1]
+        self.assertEqual(last['query']['q'], 'a&b=c #1/ü')
+        self.assertEqual(last['path'], '/users/4242/items/top')
+        self.assertNotIn('b', last['query'])
+
+    def test_group_library_and_collection_filter(self):
+        self.assertEqual(self.get('items', library='77')['items'][0]['key'], 'GGGG7777')
+        res = self.get('items', library='user', collection='COLL1234')
+        self.assertEqual(res['items'][0]['key'], 'CCCC1234')
+        self.assertEqual(self.get('collections', library='user')['collections'], [
+            {'key': 'COLL1234', 'name': 'Thesis', 'parent': None}, {'key': 'SUB00001', 'name': 'Ch1', 'parent': 'COLL1234'}])
+
+    def test_library_allow_list_and_path_injection(self):
+        for lib in ('99', '../users/1', '77/../../x', '', 'user/items', '7 7'):
+            res = self.get('items', library=lib)
+            self.assertFalse(res['ok'], lib)
+        res = self.get('items', library='user', collection='../../keys')
+        self.assertFalse(res['ok'])
+        bad = [r['path'] for r in self.fake.requests if r['path'] not in ('/users/4242/groups', '/users/4242/items/top')]
+        self.assertEqual(bad, [])
+
+    def test_bad_numbers(self):
+        self.assertFalse(self.get('items', library='user', limit='x')['ok'])
+
+    def test_backoff_on_a_good_reply_is_honoured(self):
+        self.fake.routes['/users/4242/items/top'] = (200, [], {'Backoff': '3'})
+        with mock.patch('integrations.zotero.time.sleep') as sleep:
+            self.assertTrue(self.get('items', library='user')['ok'])
+        sleep.assert_called_once_with(3.0)
+
+    def test_retry_after_waits_once_then_reports(self):
+        self.fake.routes['/users/4242/items/top'] = (429, 'slow down', {'Retry-After': '2'})
+        with mock.patch('integrations.zotero.time.sleep') as sleep:
+            res = self.get('items', library='user')
+        self.assertFalse(res['ok'])
+        self.assertIn('Try again in 2 s', res['error'])
+        sleep.assert_called_once_with(2.0)
+        self.assertEqual(len([r for r in self.fake.requests if r['path'].endswith('/items/top')]), 2)
+
+    def test_long_retry_after_is_not_waited_for(self):
+        self.fake.routes['/users/4242/items/top'] = (429, '', {'Retry-After': '600'})
+        with mock.patch('integrations.zotero.time.sleep') as sleep:
+            res = self.get('items', library='user')
+        sleep.assert_not_called()
+        self.assertIn('Try again in 600 s', res['error'])
+
+    def test_revoked_key(self):
+        self.fake.routes['/users/4242/items/top'] = (403, 'Forbidden')
+        res = self.get('items', library='user')
+        self.assertIn('Reconnect Zotero', res['error'])
+
+    def test_garbage_reply(self):
+        self.fake.routes['/users/4242/items/top'] = (200, '<html>oops</html>')
+        self.assertIn('unexpected reply', self.get('items', library='user')['error'])
+
+    def test_key_never_in_responses(self):
+        for path in ('libraries', 'collections?library=user', 'items?library=user'):
+            self.assertNotIn(KEY, self.c.get(f'/api/integrations/zotero/{path}').content.decode())
