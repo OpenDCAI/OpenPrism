@@ -51,6 +51,7 @@ import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
 import { yCollab } from 'y-codemirror.next';
 import { CollabProvider } from '../collab/provider';
+import ZoteroPanel from './ZoteroPanel';
 import {
   AppTopBar,
   Avatar,
@@ -132,7 +133,7 @@ const RIGHT_VIEW_OPTIONS = (t: (key: string) => string) => [
 ];
 
 type LeftView = 'files' | 'outline' | 'search';
-type RightTool = 'agent' | 'vision' | 'search' | 'websearch' | 'plot' | 'review' | 'collab';
+type RightTool = 'agent' | 'vision' | 'search' | 'zotero' | 'websearch' | 'plot' | 'review' | 'collab';
 type ViewMode = 'editor' | 'split' | 'pdf';
 
 const EDITOR_LAYOUT_KEY = 'openprism-editor-layout-v1';
@@ -4268,6 +4269,7 @@ export default function EditorPage() {
     { id: 'agent', label: t('Assistant'), icon: 'sparkles' },
     { id: 'review', label: t('Review'), icon: 'review' },
     { id: 'search', label: t('论文检索'), icon: 'book-open' },
+    { id: 'zotero', label: t('Zotero'), icon: 'quote' },
     { id: 'websearch', label: t('Websearch'), icon: 'globe' },
     { id: 'vision', label: t('图像识别'), icon: 'scan' },
     { id: 'plot', label: t('绘图'), icon: 'bar-chart' },
@@ -5432,6 +5434,28 @@ export default function EditorPage() {
                         </button>
                       </div>
                     </div>
+                  </div>
+                </div>
+              </>
+            ) : activeSidebar === 'zotero' ? (
+              <>
+                <PanelHeader title={t('Zotero')} side="right" onCollapse={() => setRightOpen(false)} collapseLabel={t('Collapse panel')} />
+                <div className="ed-panel-body">
+                  <div className="tools-body">
+                    <ZoteroPanel
+                      projectId={projectId}
+                      onInsertCite={(keys) => insertAtCursor(`\\cite{${keys.join(',')}}`)}
+                      onAppendLive={async (file, text) => {
+                        const live = collabDocRef.current;
+                        if (!collabActiveRef.current || !live || file !== activePath) return false;
+                        live.doc.transact(() => live.text.insert(live.text.length, `${live.text.toString().endsWith('\n') ? '' : '\n'}\n${text}`));
+                        return true;
+                      }}
+                      onFileChanged={(file) => {
+                        void refreshTree();
+                        if (file === activePath) void openFile(file);
+                      }}
+                    />
                   </div>
                 </div>
               </>

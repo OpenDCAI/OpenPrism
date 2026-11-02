@@ -138,6 +138,11 @@ Everything is environment variables in `.env` (see `.env.sample` for the full li
 - `DATABASE_URL`, `REDIS_URL`, `S3_*`: data service connections. Compose supplies container-side hostnames itself.
 - `OPENPRISM_LLM_*`: optional server-side LLM defaults; `LLM_ALLOW_PRIVATE_ENDPOINTS=1` lets the AI worker call a local model (dev only).
 - `OPENPRISM_MINERU_*`: PDF-to-Markdown for template transfer.
+- `CREDENTIAL_ENCRYPTION_KEY`: encrypts stored Zotero API keys (comma-separated Fernet keys; the first encrypts). Generate one with `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`. Keep it: without it stored keys are unreadable.
+
+### Zotero
+
+In the editor's right rail choose **Zotero**, paste an API key created at https://www.zotero.org/settings/keys/new (library access, plus group read access if needed), then search your library and **Insert \cite{}** or **Add to bibliography**. Entries are appended to the project's `.bib` (`references.bib` if there is none); existing text is never rewritten.
 
 The values in `.env.sample` (all-zero Garage secrets, `dev-insecure-change-me`) are for local development only. Never reuse them on a shared deployment.
 
