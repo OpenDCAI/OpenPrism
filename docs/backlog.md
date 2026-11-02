@@ -10,22 +10,7 @@ Moved to `docs/todo.md` (issue #10).
 
 ## v0.0.2 - Zotero
 
-- [ ] **Zotero connector.** Let a user link their Zotero library (and group libraries) and use it from a project: browse or
-      search references, insert `\cite{}` keys at the cursor, and keep a project `.bib` file in sync. It would sit
-      beside the existing arXiv search/BibTeX tools in the editor. Notes for whoever picks it up:
-      - Zotero's Web API (v3, `api.zotero.org`) can return items as BibTeX/BibLaTeX and supports incremental sync with
-        a library version number; it asks clients to honour `Backoff` / `Retry-After`. Check current limits first.
-      - *Credentials are the main design decision.* A Zotero API key (or OAuth token) is a long-lived per-user secret,
-        and the app currently stores no user secrets (LLM keys live only in Redis for a job's duration). Either keep it in
-        the browser like the LLM key, or store it server-side encrypted, which needs key management and a deletion/rotation
-        path. Sync from a Celery task (not the request) needs the secret available there.
-      - Citation keys must be stable and unique across a library; decide between Zotero's own keys, Better BibTeX keys,
-        or generating them, and what happens when a key changes after it has been cited.
-      - Generated `.bib` content should be treated as managed: decide whether users may edit it, and how a re-sync
-        handles local edits (it will collide with collaborative editing of the same file).
-      - The API host is fixed, so the SSRF guard that protects user-supplied URLs is not needed, but responses are
-        untrusted input (BibTeX is fed to LaTeX/bibtex, which run in the hardened compile worker).
-      - Tests can follow the existing pattern: a fake HTTP server standing in for Zotero.
+Moved to `docs/todo.md` (issues #12-#15).
 
 
 ## v0.0.3 - Workspace LLM Keys
