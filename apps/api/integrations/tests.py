@@ -216,3 +216,187 @@ class BrowseTests(ZoteroBase):
     def test_key_never_in_responses(self):
         for path in ('libraries', 'collections?library=user', 'items?library=user'):
             self.assertNotIn(KEY, self.c.get(f'/api/integrations/zotero/{path}').content.decode())
+
+
+from projects import files
+from projects.models import Membership, Project
+
+from . import bibtex
+
+ENTRY_A = '@article{lovelace_attention_2020,\n\ttitle = {Attention},\n\tauthor = {Lovelace, Ada},\n\tyear = {2020},\n}'
+ENTRY_B = '@book{babbage_engines_1864,\n\ttitle = {Engines},\n\tyear = {1864},\n}'
+
+
+class BibtexUnitTests(ZoteroBase):
+    def test_accepts_regular_entry(self):
+        entry, kind, key = bibtex.parse_single_entry('  ' + ENTRY_A + '\n')
+        self.assertEqual((entry, kind, key), (ENTRY_A, 'article', 'lovelace_attention_2020'))
+
+    def test_refuses_hostile_or_malformed(self):
+        bad = ['', 'hello', '@preamble{"\\input{/etc/passwd}"}', '@string{a = "b"}', '@comment{x}',
+               '@article{k, title = {unbalanced}', '@article{k, title = {a}}}', ENTRY_A + '\n\\input{x}',
+               ENTRY_A + '\n' + ENTRY_B, '@article{k, title = {a\x00b}}', '@article{k, note = {' + 'x' * 30000 + '}}',
+               '\\write18{x}\n' + ENTRY_A, '@article {k title = {no comma}}']
+        for text in bad:
+            with self.assertRaises(bibtex.BibError, msg=text[:40]):
+                bibtex.parse_single_entry(text)
+
+    def test_with_key_and_generated_key(self):
+        self.assertIn('@article{newkey,', bibtex.with_key(ENTRY_A, 'newkey'))
+        data = {'creators': [{'lastName': 'Ünal'}], 'date': '2020-01-02', 'title': 'The Attention Machine'}
+        self.assertEqual(bibtex.generate_key(data), 'unal2020attention')
+
+    def test_unique_key(self):
+        self.assertEqual(bibtex.unique_key('smith2020', set()), 'smith2020')
+        self.assertEqual(bibtex.unique_key('smith2020', {'smith2020'}), 'smith2020a')
+        self.assertEqual(bibtex.unique_key('smith2020', {'smith2020', 'smith2020a'}), 'smith2020b')
+
+
+class AddFixture(ZoteroBase):
+    def setUp(self):
+        super().setUp()
+        self.items = {
+            'AAAA1111': (ENTRY_A, {'title': 'Attention', 'date': '2020', 'creators': [{'lastName': 'Lovelace'}]}),
+            'BBBB2222': (ENTRY_B, {'title': 'Engines', 'date': '1864', 'creators': [{'lastName': 'Babbage'}]}),
+            'CCCC3333': ('@article{lovelace_attention_2020,\n\ttitle = {Other},\n}',
+                         {'title': 'Other', 'date': '2020', 'creators': [{'lastName': 'Lovelace'}]}),
+            'EVIL0000': ('@preamble{"x"}', {}),
+        }
+        self.fake.routes['/users/4242/groups'] = (200, [])
+        self.fake.routes['/users/4242/items'] = self.items_reply
+        self.connect()
+        self.pid = self.new_project()
+        self.project = Project.objects.get(pk=self.pid)
+
+    def items_reply(self, query):
+        fmt = query['include'].split(',')[1]
+        wanted = query['itemKey'].split(',')
+        return 200, [{'key': k, 'data': self.items[k][1], fmt: self.items[k][0]} for k in wanted if k in self.items]
+
+    def add(self, keys, **extra):
+        return self.c.post(f'/api/projects/{self.pid}/zotero/add', {'library': 'user', 'keys': keys, **extra}, format='json').json()
+
+    def bib(self, path='references.bib'):
+        return files.read_text(self.project, path)
+
+
+class AddToProjectTests(AddFixture):
+    def test_creates_references_bib(self):
+        res = self.add(['AAAA1111', 'BBBB2222'])
+        self.assertTrue(res['ok'], res)
+        self.assertEqual(res['file'], 'references.bib')
+        self.assertEqual([a['citeKey'] for a in res['added']], ['lovelace_attention_2020', 'babbage_engines_1864'])
+        self.assertTrue(res['applied'])
+        text = self.bib()
+        self.assertIn('% zotero: user:AAAA1111\n@article{lovelace_attention_2020,', text)
+        self.assertIn(ENTRY_B, text)
+
+    def test_adding_again_changes_nothing(self):
+        self.add(['AAAA1111'])
+        before = self.bib()
+        res = self.add(['AAAA1111'])
+        self.assertEqual(res['added'], [])
+        self.assertEqual(res['skipped'], [{'zoteroKey': 'AAAA1111', 'citeKey': 'lovelace_attention_2020'}])
+        self.assertEqual(self.bib(), before)
+
+    def test_existing_text_is_never_altered_and_new_entries_are_appended(self):
+        files.write_text(self.project, 'refs.bib', '% my notes\n@misc{mine,\n  title = {Mine}\n}\n')
+        res = self.add(['BBBB2222'])
+        self.assertEqual(res['file'], 'refs.bib')  # the project's only .bib
+        text = self.bib('refs.bib')
+        self.assertTrue(text.startswith('% my notes\n@misc{mine,\n  title = {Mine}\n}\n'))
+        self.assertTrue(text.endswith(ENTRY_B + '\n'))
+
+    def test_key_collision_with_a_different_entry_gets_a_generated_key(self):
+        files.write_text(self.project, 'references.bib', '@misc{lovelace_attention_2020,\n  title = {Not Zotero}\n}\n')
+        res = self.add(['AAAA1111', 'CCCC3333'])
+        keys = [a['citeKey'] for a in res['added']]
+        self.assertEqual(keys, ['lovelace2020attention', 'lovelace2020other'])
+        text = self.bib()
+        self.assertIn('title = {Not Zotero}', text)
+        self.assertIn('@article{lovelace2020attention,', text)
+
+    def test_duplicate_keys_within_one_batch(self):
+        res = self.add(['AAAA1111', 'CCCC3333'])
+        self.assertEqual([a['citeKey'] for a in res['added']], ['lovelace_attention_2020', 'lovelace2020other'])
+
+    def test_hostile_entries_are_refused_and_others_still_added(self):
+        res = self.add(['EVIL0000', 'BBBB2222', 'MISSING1'])
+        self.assertEqual([a['zoteroKey'] for a in res['added']], ['BBBB2222'])
+        self.assertEqual(sorted(r['zoteroKey'] for r in res['refused']), ['EVIL0000', 'MISSING1'])
+        self.assertNotIn('preamble', self.bib())
+
+    def test_explicit_file_and_bad_file_names(self):
+        self.assertEqual(self.add(['AAAA1111'], bibFile='bib/mine.bib')['file'], 'bib/mine.bib')
+        for bad in ('../x.bib', '/etc/x.bib', 'notes.txt', 'main.tex'):
+            self.assertFalse(self.add(['AAAA1111'], bibFile=bad)['ok'], bad)
+
+    def test_biblatex_projects_get_biblatex_entries(self):
+        files.write_text(self.project, 'main.tex', '\\documentclass{article}\n\\usepackage[backend=biber]{biblatex}\n')
+        self.add(['AAAA1111'])
+        self.assertIn('biblatex', self.fake.requests[-1]['query']['include'])
+        self.add(['BBBB2222'])
+        files.write_text(self.project, 'main.tex', '\\documentclass{article}\n')
+        self.add(['AAAA1111'], bibFile='x.bib')
+        self.assertIn('bibtex', self.fake.requests[-1]['query']['include'])
+        self.assertNotIn('biblatex', self.fake.requests[-1]['query']['include'])
+
+    def test_permissions(self):
+        viewer = make_user('viewer@example.com')
+        Membership.objects.create(workspace=self.project.workspace, user=viewer, role=Membership.VIEWER)
+        vc = client_for(viewer)
+        self.connect(vc)
+        res = vc.post(f'/api/projects/{self.pid}/zotero/add', {'library': 'user', 'keys': ['AAAA1111']}, format='json')
+        self.assertEqual(res.status_code, 403)
+        stranger = client_for(make_user('stranger@example.com'))
+        res = stranger.post(f'/api/projects/{self.pid}/zotero/add', {'library': 'user', 'keys': ['AAAA1111']}, format='json')
+        self.assertEqual(res.status_code, 404)
+
+    def test_requires_connection_and_keys_and_allowed_library(self):
+        self.assertFalse(self.add([])['ok'])
+        self.assertFalse(self.add(['AAAA1111'], library='99')['ok'])
+        self.c.delete('/api/integrations/zotero')
+        self.assertEqual(self.add(['AAAA1111'])['error'], 'Zotero is not connected.')
+
+    def test_live_room_leaves_the_write_to_the_editor(self):
+        with mock.patch('integrations.views.live_room', return_value=True), \
+                mock.patch('integrations.views.flush_room', return_value=True) as flush:
+            res = self.add(['AAAA1111'])
+        flush.assert_called_once()
+        self.assertFalse(res['applied'])
+        self.assertIn('@article{lovelace_attention_2020,', res['text'])
+        self.assertFalse(self.project.files.filter(path='references.bib').exists())
+
+    def test_flush_timeout_is_reported(self):
+        with mock.patch('integrations.views.flush_room', return_value=False):
+            self.assertIn('Timed out', self.add(['AAAA1111'])['error'])
+
+    def test_bibtex_preview_endpoint(self):
+        res = self.c.get('/api/integrations/zotero/bibtex', {'library': 'user', 'keys': 'AAAA1111,EVIL0000'}).json()
+        self.assertEqual(res['entries'], [{'zoteroKey': 'AAAA1111', 'citeKey': 'lovelace_attention_2020', 'bibtex': ENTRY_A}])
+        self.assertEqual(res['refused'][0]['zoteroKey'], 'EVIL0000')
+
+
+import shutil
+from unittest import skipUnless
+
+from jobs import compile as tex
+
+
+@skipUnless(shutil.which('pdflatex') and shutil.which('bibtex'),
+            'needs TeX Live: docker compose run --rm worker-tex python manage.py test integrations')
+class CompileWithZoteroEntriesTests(AddFixture):
+    """A reference added from Zotero (marker comment and all) is resolved by the real bibtex pass."""
+
+    def test_cited_entry_resolves(self):
+        self.items['AAAA1111'] = (
+            '@article{lovelace_notes_1843,\n\ttitle = {Notes by the Translator},\n\tauthor = {Lovelace, Ada},\n'
+            '\tdate = {1843},\n\tjournal = {Scientific Memoirs},\n\tfile = {x.pdf:/tmp/x.pdf:application/pdf},\n}',
+            {'title': 'Notes', 'date': '1843', 'creators': [{'lastName': 'Lovelace'}]})
+        res = self.add(['AAAA1111'])
+        self.assertEqual(res['added'][0]['citeKey'], 'lovelace_notes_1843')
+        files.write_text(self.project, 'main.tex', '\\documentclass{article}\\begin{document}See \\cite{lovelace_notes_1843}.'
+                         '\\bibliographystyle{plain}\\bibliography{references}\\end{document}')
+        out = tex.compile_project(self.project, 'main.tex', 'pdflatex')
+        self.assertTrue(out['pdf'], out['log'][-800:])
+        self.assertNotIn("Citation `lovelace_notes_1843' undefined", out['log'].split('This is pdfTeX')[-1])
