@@ -23,8 +23,8 @@ export async function newAccount(prefix = 'e2e'): Promise<Session> {
   return api<Session>('/api/auth/register', null, 'POST', { email, password: 'correct-horse-battery' });
 }
 
-export async function newProject(session: Session, name: string, files: Record<string, string> = {}): Promise<string> {
-  const project = await api<{ id: string }>('/api/projects', session.access, 'POST', { name });
+export async function newProject(session: Session, name: string, files: Record<string, string> = {}, template?: string): Promise<string> {
+  const project = await api<{ id: string }>('/api/projects', session.access, 'POST', { name, ...(template ? { template } : {}) });
   for (const [path, content] of Object.entries(files)) {
     await api(`/api/projects/${project.id}/file`, session.access, 'PUT', { path, content });
   }

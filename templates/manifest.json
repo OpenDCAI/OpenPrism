@@ -3,11 +3,22 @@
     {
       "id": "acl",
       "label": "ACL",
-      "mainFile": "main.tex",
+      "mainFile": "acl_latex.tex",
       "category": "academic",
       "description": "ACL 会议论文模板，适用于自然语言处理领域",
       "descriptionEn": "ACL conference paper template for NLP research",
       "tags": ["ACL", "NLP"],
+      "author": "OpenPrism",
+      "featured": true
+    },
+    {
+      "id": "arxiv",
+      "label": "arXiv",
+      "mainFile": "template.tex",
+      "category": "academic",
+      "description": "arXiv 预印本模板，适用于任何学科的预印本论文",
+      "descriptionEn": "arXiv preprint template for papers in any field",
+      "tags": ["arXiv", "Preprint"],
       "author": "OpenPrism",
       "featured": true
     },

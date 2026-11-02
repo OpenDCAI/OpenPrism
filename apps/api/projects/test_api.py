@@ -1,11 +1,13 @@
 """Contract tests for the endpoints used by apps/frontend/src/api/client.ts."""
 import base64
 import io
+import shutil
 import zipfile
 
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
+from unittest import skipUnless
 from rest_framework.test import APIClient
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -226,6 +228,28 @@ class TemplateTests(ApiBase):
         paths = [i['path'] for i in self.c.get(f'/api/projects/{pid}/tree').data['items'] if i['type'] == 'file']
         self.assertEqual(paths, ['logo.png', 'main.tex', 'sty/x.sty'])
 
+    def test_upload_picks_the_root_document_as_main_file(self):
+        doc = b'\\documentclass{article}\n\\begin{document}x\\end{document}'
+        self.upload(tid='paper', entries={'paper.tex': doc, 'macros.tex': b'\\newcommand{\\x}{y}', 'sec/a.tex': doc})
+        self.assertEqual(Template.objects.get(pk='paper').main_file, 'paper.tex')
+        self.upload(tid='both', entries={'main.tex': doc, 'a.tex': doc})
+        self.assertEqual(Template.objects.get(pk='both').main_file, 'main.tex')
+        self.upload(tid='none', entries={'macros.tex': b'\\newcommand{\\x}{y}'})
+        self.assertEqual(Template.objects.get(pk='none').main_file, 'main.tex')  # nothing to detect: the old default
+
+    def test_reupload_keeps_a_main_file_that_still_exists(self):
+        doc = b'\\documentclass{article}\n\\begin{document}x\\end{document}'
+        self.upload(tid='t', entries={'a.tex': doc, 'b.tex': doc})
+        Template.objects.filter(pk='t').update(main_file='b.tex')
+        self.upload(tid='t', entries={'a.tex': doc, 'b.tex': doc})
+        self.assertEqual(Template.objects.get(pk='t').main_file, 'b.tex')
+
+    def test_detect_main_file(self):
+        texts = {'x.tex': 'plain', 'y.tex': '\\documentclass{a}', 'z.tex': '\\documentclass{b}', 'sub/w.tex': '\\documentclass{c}'}
+        self.assertEqual(templates.detect_main_file(list(texts), texts.get), 'y.tex')
+        self.assertEqual(templates.detect_main_file(['main.tex', 'y.tex'], texts.get), 'main.tex')
+        self.assertIsNone(templates.detect_main_file(['x.tex', 'sub/w.tex', 'a.sty'], texts.get))
+
     def test_upload_validation(self):
         self.assertEqual(self.upload(tid='../evil').status_code, 400)
         self.assertEqual(self.c.post('/api/templates/upload', {'templateId': 'x'}, format='multipart').status_code, 400)
@@ -247,3 +271,35 @@ class TemplateTests(ApiBase):
         merged = self.c.get(f'/api/projects/{pid}/file', {'path': 'main.tex'}).data['content']
         self.assertIn('MY BODY', merged)
         self.assertFalse(self.c.post(f'/api/projects/{pid}/convert-template', {'targetTemplate': 'nope'}, format='json').data['ok'])
+
+
+class BuiltinTemplateTests(ApiBase):
+    """Every template shipped in templates/ must have a main file the editor and transfer can compile."""
+    TEMPLATES_DIR = '/legacy/templates'
+
+    def test_every_builtin_template_has_an_existing_main_file(self):
+        import os
+        from django.core.management import call_command
+        if not os.path.isdir(self.TEMPLATES_DIR):
+            self.skipTest('templates/ is not mounted at /legacy/templates')
+        call_command('import_legacy', '--skip-projects', templates_dir=self.TEMPLATES_DIR, stdout=io.StringIO())
+        listing = {t['id']: t for t in self.c.get('/api/templates').data['templates']}
+        self.assertEqual({'acl', 'arxiv', 'cvpr', 'icml', 'neurips'}, set(listing))
+        for tid, meta in listing.items():
+            tpl = Template.objects.get(pk=tid)
+            self.assertIn(meta['mainFile'], list(templates.list_paths(tpl)), f'{tid}: main file missing')
+        self.assertEqual(listing['acl']['mainFile'], 'acl_latex.tex')
+        self.assertEqual(listing['arxiv']['mainFile'], 'template.tex')
+
+    @skipUnless(shutil.which('pdflatex'), 'needs TeX Live: docker compose run --rm worker-tex python manage.py test projects --noinput')
+    def test_acl_and_arxiv_compile_to_a_pdf(self):
+        import os
+        from django.core.management import call_command
+        from jobs.compile import compile_project
+        if not os.path.isdir(self.TEMPLATES_DIR):
+            self.skipTest('templates/ is not mounted at /legacy/templates')
+        call_command('import_legacy', '--skip-projects', templates_dir=self.TEMPLATES_DIR, stdout=io.StringIO())
+        for tid in ('acl', 'arxiv'):
+            pid = self.new_project(tid, template=tid)
+            out = compile_project(Project.objects.get(pk=pid), Template.objects.get(pk=tid).main_file, 'pdflatex')
+            self.assertTrue(out['pdf'], f'{tid} produced no PDF:\n{out["log"][-1500:]}')

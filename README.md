@@ -126,7 +126,7 @@ Browser tests (Playwright), with the stack and `npm run dev` running:
 
 ```bash
 npx playwright install chromium && sudo npx playwright install-deps chromium   # one-time
-npm run e2e                                    # E2E_BASE_URL=http://localhost:8080 to test the nginx image
+npm --workspace apps/frontend run e2e                                 # E2E_BASE_URL=http://localhost:8080 to test the nginx image
 ```
 
 ## Configuration
