@@ -4,6 +4,7 @@ import {
   transferStart,
   transferStep,
   transferSubmitImages,
+  transferPdf,
   mineruTransferStart,
   mineruTransferUploadPdf,
   listTemplates,
@@ -13,10 +14,12 @@ import type {
   LLMConfig,
   TemplateMeta,
   FileItem,
+  PageImage,
 } from '../api/client';
 import { Badge, Button, Icon, SegmentedControl, Select } from '@design';
 import type { BadgeTone, SelectOption } from '@design';
 import { dropLegacyLlmDefaults } from './llmDefaults';
+import { renderPdfPages } from './pageImages';
 
 interface TransferPanelProps {
   projectId: string;
@@ -87,6 +90,8 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
   const [status, setStatus] = useState<string>('idle');
   const [progressLog, setProgressLog] = useState<string[]>([]);
   const [error, setError] = useState('');
+  const [warning, setWarning] = useState('');
+  const [captureNote, setCaptureNote] = useState('');
   const [running, setRunning] = useState(false);
 
   // Template list for target selection
@@ -139,6 +144,8 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
     if (!targetTemplateId) return;
     const targetMainFile = selectedTemplate?.mainFile || 'main.tex';
     setError('');
+    setWarning('');
+    setCaptureNote('');
     setProgressLog([]);
     setRunning(true);
     setStatus('starting');
@@ -206,7 +213,23 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
         setStatus(res.status);
         onJobUpdate?.({ jobId: jid, status: res.status, progressLog: res.progressLog || [], error: res.error });
 
-        if (res.status === 'waiting_images') { setRunning(false); return; }
+        if (res.status === 'waiting_images') {
+          // The server paused to look at the compiled PDF: render its pages here and send them back.
+          let images: PageImage[] = [];
+          try {
+            setCaptureNote(t('Preparing page screenshots for the layout check…'));
+            images = await renderPdfPages(await transferPdf(jid), {
+              onProgress: (page, total) => setCaptureNote(t('Capturing page {{page}} of {{total}}…', { page, total })),
+            });
+          } catch (err: any) {
+            // An empty list tells the server to skip the layout check rather than wait forever.
+            setWarning(t('Could not capture page screenshots, so the layout check was skipped: {{message}}', { message: err.message || String(err) }));
+          }
+          setCaptureNote(t('Sending page screenshots…'));
+          try { await transferSubmitImages(jid, images); } finally { setCaptureNote(''); }
+          await new Promise(r => setTimeout(r, 1000));
+          continue;
+        }
         if (res.status === 'success' || res.status === 'failed') { setRunning(false); return; }
         if (res.error) { setError(res.error); setRunning(false); return; }
 
@@ -220,7 +243,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
         return;
       }
     }
-  }, [onJobUpdate]);
+  }, [onJobUpdate, t]);
 
   const canStart = (() => {
     if (running || !targetTemplateId) return false;
@@ -390,6 +413,14 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
           <span>{t('状态')}</span>
           <Badge tone={statusTone} icon={running ? 'loader' : undefined} spin={running}>{status}</Badge>
         </div>
+      )}
+
+      {captureNote && (
+        <p className="tp-status" role="status"><Icon name="loader" /><span>{captureNote}</span></p>
+      )}
+
+      {warning && (
+        <p className="tp-error" role="status"><Icon name="alert-circle" /><span>{warning}</span></p>
       )}
 
       {/* Error */}

@@ -125,6 +125,9 @@ def _run_segment(job_id, segment):
             if node == 'checkLayout':  # the pause: wait for the browser to send page screenshots
                 run.s['entry'] = 'checkLayout'
                 job.status = Job.WAITING_IMAGES
+                pdf_key = (run.s.get('compileResult') or {}).get('pdfKey')
+                if pdf_key:  # the browser renders this PDF's pages and sends them back
+                    job.result = {**job.result, 'pdfKey': pdf_key}
                 run.save()
                 return
             run.checkpoint()  # progress + heartbeat only; state is saved at segment boundaries

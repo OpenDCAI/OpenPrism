@@ -268,6 +268,8 @@ class TransferApiTests(ApiBase):
         job_id, new_id = self.start(fake, layoutCheck=True)
         paused = self.step(job_id)
         self.assertEqual(paused['status'], 'waiting_images')
+        pdf = self.c.get(f'/api/jobs/{job_id}/pdf')   # the browser renders this to take the page screenshots
+        self.assertEqual((pdf.status_code, pdf['Content-Type']), (200, 'application/pdf'))
         self.assertEqual(self.step(job_id)['status'], 'waiting_images')   # polling does not restart anything
         self.assertEqual(self.delay.call_count, 1)
         imgs = [{'page': 1, 'base64': 'QUJD', 'mime': 'image/png'}]
@@ -278,6 +280,7 @@ class TransferApiTests(ApiBase):
         # the resumed segment ran inline: layout issue -> fixLayout -> compile -> pause again
         again = self.c.get(f'/api/transfer/status/{job_id}').data
         self.assertEqual(again['status'], 'waiting_images')
+        self.assertEqual(self.c.get(f'/api/jobs/{job_id}/pdf').status_code, 200)   # and again after the recompile
         self.assertIn('[checkLayout] Found 1 issues, needs fix', '\n'.join(again['progressLog']))
         self.assertIn('[fixLayout] Applied LLM fix for 1 layout issues (attempt 1)', '\n'.join(again['progressLog']))
         self.assertEqual(self.c.post('/api/transfer/submit-images', {'jobId': job_id, 'images': imgs}, format='json').status_code, 200)
