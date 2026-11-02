@@ -28,6 +28,11 @@ TESTING = 'test' in sys.argv
 
 # No insecure default: a deployment that forgets the secret must fail to start.
 SECRET_KEY = env('DJANGO_SECRET_KEY', 'test-only-secret' if TESTING else None, required=True)
+# Encrypts stored third-party credentials (Zotero). Comma-separated Fernet keys: the first encrypts, all decrypt,
+# so a key is rotated by putting the new one in front. No default outside tests, like SECRET_KEY.
+CREDENTIAL_ENCRYPTION_KEY = env('CREDENTIAL_ENCRYPTION_KEY',
+                                'b3BlbnByaXNtLXRlc3Qta2V5LW5vdC1zZWNyZXQtMDE=' if TESTING else None, required=True)
+ZOTERO_API_BASE = env('ZOTERO_API_BASE', 'https://api.zotero.org').rstrip('/')
 if env_bool('DJANGO_BEHIND_TLS_PROXY', False):
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # the ingress terminates TLS
 
@@ -49,6 +54,7 @@ INSTALLED_APPS = [
     'ai',
     'transfer',
     'collab',
+    'integrations',
     'common',
 ]
 
