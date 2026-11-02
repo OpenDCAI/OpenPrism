@@ -17,6 +17,7 @@ secretGenerator:
   - name: openprism-core
     literals:
       - DJANGO_SECRET_KEY=local-development-secret-key-do-not-use-anywhere-else-0123456789
+      - CREDENTIAL_ENCRYPTION_KEY=b3BlbnByaXNtLWRldi1rZXktbm90LXNlY3JldC0wMTI=
       - DATABASE_URL=postgres://openprism:openprism-local-password@postgres:5432/openprism
       - REDIS_URL=redis://redis:6379/0
       - S3_ACCESS_KEY_ID=GK000000000000000000000001
