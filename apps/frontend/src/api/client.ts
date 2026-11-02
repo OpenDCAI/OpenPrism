@@ -414,6 +414,8 @@ export function plotFromTable(payload: {
 export function callLLM(payload: {
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
   model?: string;
+  /** lets the server use the project's workspace AI provider */
+  projectId?: string;
   llmConfig?: Partial<LLMConfig>;
 }) {
   return request<{ ok: boolean; content?: string; error?: string }>('/api/llm', {
@@ -771,6 +773,8 @@ export interface WorkspaceLlmStatus {
   error?: string;
   configured?: boolean;
   canManage?: boolean;
+  /** true when the signed-in member's AI requests use the workspace provider (a write role) */
+  canUse?: boolean;
   endpoint?: string;
   model?: string;
   /** only for owners and admins */

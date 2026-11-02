@@ -140,6 +140,10 @@ Everything is environment variables in `.env` (see `.env.sample` for the full li
 - `OPENPRISM_MINERU_*`: PDF-to-Markdown for template transfer.
 - `CREDENTIAL_ENCRYPTION_KEY`: encrypts stored Zotero API keys (comma-separated Fernet keys; the first encrypts). Generate one with `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`. Keep it: without it stored keys are unreadable.
 
+### Workspace AI provider
+
+Owners and admins can set an AI provider for a whole workspace under **Settings → AI provider** (endpoint, model, API key). Members who can edit then use it for AI features in that workspace's projects instead of their own key. The key is stored encrypted on the server (see `CREDENTIAL_ENCRYPTION_KEY`) and is never shown again, only its last four characters to admins. Order of precedence: workspace provider, then the key in your browser settings, then the server default.
+
 ### Zotero
 
 In the editor's right rail choose **Zotero**, paste an API key created at https://www.zotero.org/settings/keys/new (library access, plus group read access if needed), then search your library and **Insert \cite{}** or **Add to bibliography**. Entries are appended to the project's `.bib` (`references.bib` if there is none); existing text is never rewritten.

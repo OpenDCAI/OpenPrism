@@ -426,7 +426,7 @@ class WorkspaceLlmTests(ApiBase):
         return (client or self.c).put(self.url, body, format='json')
 
     def test_admin_sets_changes_rotates_and_removes(self):
-        self.assertEqual(self.c.get(self.url).json(), {'ok': True, 'configured': False, 'canManage': True})
+        self.assertEqual(self.c.get(self.url).json(), {'ok': True, 'configured': False, 'canManage': True, 'canUse': False})
         res = self.put(endpoint='https://llm.example.com/v1', model='gpt-x', apiKey=LLM_KEY).json()
         self.assertTrue(res['configured'])
         self.assertEqual((res['endpoint'], res['model'], res['lastFour']), ('https://llm.example.com/v1/chat/completions', 'gpt-x', '9876'))
@@ -463,6 +463,7 @@ class WorkspaceLlmTests(ApiBase):
             seen = c.get(self.url).json()
             self.assertTrue(seen['configured'], role)
             self.assertFalse(seen['canManage'])
+            self.assertEqual(seen['canUse'], role == Membership.EDITOR)
             self.assertNotIn('lastFour', seen)
             self.assertEqual(self.put(c, model='x', apiKey='k').status_code, 403, role)
             self.assertEqual(c.delete(self.url).status_code, 403, role)
