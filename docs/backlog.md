@@ -4,6 +4,10 @@
 
 Both items moved to `docs/todo.md` (issues #8, #9).
 
+## v0.0.1.1 - QA tooling
+
+Moved to `docs/todo.md` (issue #10).
+
 ## v0.0.2 - Zotero
 
 - [ ] **Zotero connector.** Let a user link their Zotero library (and group libraries) and use it from a project: browse or
