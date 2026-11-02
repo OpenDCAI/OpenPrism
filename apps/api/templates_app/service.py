@@ -13,6 +13,19 @@ from .models import Template
 ID_RE = re.compile(r'^[A-Za-z0-9_-]{1,100}$')
 
 
+def detect_main_file(paths, read_text):
+    """The file a template should compile: `main.tex`, else the first root-level .tex with a \\documentclass.
+
+    `paths` are the template's file paths and `read_text(path)` returns a file's text. None if nothing qualifies.
+    """
+    if 'main.tex' in paths:
+        return 'main.tex'
+    for path in sorted(p for p in paths if '/' not in p and p.lower().endswith('.tex')):
+        if '\\documentclass' in read_text(path):
+            return path
+    return None
+
+
 def meta(t):
     """Shape of an entry in templates/manifest.json."""
     return {
