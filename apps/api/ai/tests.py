@@ -6,6 +6,8 @@ from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import SimpleTestCase, override_settings
 
 from common.testing import FakeLLM, tool_call
+from rest_framework.response import Response
+
 from jobs.models import Job
 from projects import files, storage
 from projects.models import Membership, Project
@@ -321,3 +323,128 @@ class AiApiTests(ApiBase):
         self.assertEqual(self.c.post('/api/arxiv/bibtex', {'arxivId': ''}, format='json').data['error'], 'Invalid arXiv ID.')
         get.return_value = mock.Mock(status_code=503, text='')
         self.assertEqual(self.c.post('/api/arxiv/search', {'query': 'x'}, format='json').data['error'], 'arXiv search failed: 503')
+
+
+WS_KEY = 'sk-workspace-SECRET-4242'
+
+
+@override_settings(LLM_ALLOW_PRIVATE_ENDPOINTS=True)
+class WorkspaceKeyTests(ApiBase):
+    """A workspace provider replaces the browser's key for members who can write; precedence and permissions."""
+
+    def setUp(self):
+        super().setUp()
+        sync = lambda job_id, secrets=None: ai_tasks.run_ai_job.run(job_id, secrets)
+        patcher = mock.patch('ai.views.run_ai_job.delay', side_effect=sync)
+        self.delay = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.pid = self.new_project()
+        self.project = Project.objects.get(pk=self.pid)
+
+    def fake(self, *replies):
+        fake = FakeLLM(replies or [{'content': 'ok'}] * 4)
+        self.addCleanup(fake.close)
+        return fake
+
+    def set_workspace_key(self, fake, model='ws-model'):
+        from integrations import llmconfig
+        llmconfig.save(self.project.workspace, self.user, fake.url, model, WS_KEY)
+
+    def browser_cfg(self, fake):
+        return {'endpoint': fake.url, 'apiKey': KEY, 'model': 'browser-model'}
+
+    def member(self, role):
+        user = make_user(f'{role}@example.com')
+        Membership.objects.create(workspace=self.project.workspace, user=user, role=role)
+        return client_for(user)
+
+    def assert_ws_key_not_persisted(self):
+        for job in Job.objects.all():
+            blob = json.dumps([job.params, job.result, job.progress_log, job.error])
+            self.assertNotIn(WS_KEY, blob)
+            self.assertNotIn(KEY, blob)
+            self.assertNotIn('apiKey', blob)
+
+    def used(self, fake):
+        return [(r['auth'], r['body']['model']) for r in fake.requests]
+
+    def test_llm_with_project_uses_the_workspace_key_over_the_browsers(self):
+        ws, browser = self.fake(), self.fake()
+        self.set_workspace_key(ws)
+        res = self.c.post('/api/llm', {'messages': [], 'projectId': self.pid, 'llmConfig': self.browser_cfg(browser)}, format='json')
+        self.assertEqual(res.data, {'ok': True, 'content': 'ok'})
+        self.assertEqual(self.used(ws), [(f'Bearer {WS_KEY}', 'ws-model')])
+        self.assertEqual(browser.requests, [])
+        self.assertEqual(self.delay.call_args.args[1], {'apiKey': WS_KEY})  # only as a task argument
+        self.assert_ws_key_not_persisted()
+
+    def test_works_with_no_key_from_the_browser(self):
+        ws = self.fake()
+        self.set_workspace_key(ws)
+        self.assertTrue(self.c.post('/api/llm', {'messages': [], 'projectId': self.pid}, format='json').data['ok'])
+
+    def test_without_a_workspace_key_the_browsers_key_is_used(self):
+        browser = self.fake()
+        self.c.post('/api/llm', {'messages': [], 'projectId': self.pid, 'llmConfig': self.browser_cfg(browser)}, format='json')
+        self.assertEqual(self.used(browser), [(f'Bearer {KEY}', 'browser-model')])
+
+    def test_removing_the_workspace_key_returns_to_the_browsers(self):
+        from integrations.models import WorkspaceLlmConfig
+        ws, browser = self.fake(), self.fake()
+        self.set_workspace_key(ws)
+        WorkspaceLlmConfig.objects.all().delete()
+        self.c.post('/api/llm', {'messages': [], 'projectId': self.pid, 'llmConfig': self.browser_cfg(browser)}, format='json')
+        self.assertEqual(ws.requests, [])
+        self.assertEqual(len(browser.requests), 1)
+
+    def test_llm_without_a_project_ignores_the_workspace_key(self):
+        ws, browser = self.fake(), self.fake()
+        self.set_workspace_key(ws)
+        self.c.post('/api/llm', {'messages': [], 'llmConfig': self.browser_cfg(browser)}, format='json')
+        self.assertEqual(ws.requests, [])
+        self.assertEqual(len(browser.requests), 1)
+
+    def test_agent_and_vision_use_it(self):
+        ws = self.fake({'content': 'chat reply'}, {'content': '\\begin{equation}x\\end{equation}'})
+        self.set_workspace_key(ws)
+        res = self.c.post('/api/agent/run', {'projectId': self.pid, 'prompt': 'help', 'selection': 's', 'interaction': 'chat'}, format='json').data
+        self.assertTrue(res['ok'], res)
+        res = self.c.post('/api/vision/latex', {'image': SimpleUploadedFile('eq.png', b'\x89PNGdata', content_type='image/png'),
+                                                'projectId': self.pid, 'mode': 'equation'}, format='multipart').data
+        self.assertTrue(res['ok'], res)
+        self.assertEqual(self.used(ws), [(f'Bearer {WS_KEY}', 'ws-model')] * 2)
+        self.assert_ws_key_not_persisted()
+
+    def test_plot_job_params_get_the_workspace_provider(self):
+        ws = self.fake()
+        self.set_workspace_key(ws)
+        with mock.patch('ai.views.run_job', return_value=Response({})) as run:
+            self.c.post('/api/plot/from-table', {'projectId': self.pid, 'tableLatex': 'a', 'llmConfig': self.browser_cfg(ws)}, format='json')
+        job_type, params, secrets = run.call_args.args[1:4]
+        self.assertEqual(secrets, {'apiKey': WS_KEY})
+        self.assertEqual(params['llmConfig'], {'endpoint': ws.url + '/chat/completions', 'model': 'ws-model'})
+
+    def test_viewers_and_commenters_do_not_get_the_workspace_key(self):
+        ws, browser = self.fake(), self.fake()
+        self.set_workspace_key(ws)
+        for role in (Membership.VIEWER, Membership.COMMENTER):
+            self.member(role).post('/api/llm', {'messages': [], 'projectId': self.pid, 'llmConfig': self.browser_cfg(browser)}, format='json')
+        self.assertEqual(ws.requests, [])
+        self.assertEqual(len(browser.requests), 2)
+
+    def test_editors_get_it_and_outsiders_cannot_name_the_project(self):
+        ws = self.fake()
+        self.set_workspace_key(ws)
+        self.assertTrue(self.member(Membership.EDITOR).post('/api/llm', {'messages': [], 'projectId': self.pid}, format='json').data['ok'])
+        stranger = client_for(make_user('stranger@example.com'))
+        self.assertEqual(stranger.post('/api/llm', {'messages': [], 'projectId': self.pid}, format='json').status_code, 404)
+        self.assertEqual(len(ws.requests), 1)
+
+    def test_workspace_key_is_scoped_to_its_workspace(self):
+        ws, browser = self.fake(), self.fake()
+        self.set_workspace_key(ws)
+        other = self.c.post('/api/workspaces', {'name': 'Other'}, format='json').data['workspace']['id']
+        pid2 = self.new_project('Elsewhere', workspaceId=other)
+        self.c.post('/api/llm', {'messages': [], 'projectId': pid2, 'llmConfig': self.browser_cfg(browser)}, format='json')
+        self.assertEqual(ws.requests, [])
+        self.assertEqual(len(browser.requests), 1)
