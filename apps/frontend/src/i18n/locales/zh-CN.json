@@ -714,5 +714,20 @@
   "{{file}} is being edited live. Open it in the editor and try again.": "{{file}} 正在被实时编辑。请在编辑器中打开它后重试。",
   "{{added}} added to {{file}}, {{skipped}} already there.": "已向 {{file}} 添加 {{added}} 条，{{skipped}} 条已存在。",
   "Not added: {{reasons}}": "未添加：{{reasons}}",
-  "Connected as {{name}} (key ending {{last}})": "已连接为 {{name}}（密钥末尾 {{last}}）"
+  "Connected as {{name}} (key ending {{last}})": "已连接为 {{name}}（密钥末尾 {{last}}）",
+  "AI provider": "AI 服务商",
+  "Endpoint": "接口地址",
+  "Model": "模型",
+  "API key": "API 密钥",
+  "Replace key": "更换密钥",
+  "Remove": "移除",
+  "Key set, ending {{last}}": "已设置密钥，末尾 {{last}}",
+  "Could not save the AI provider.": "无法保存 AI 服务商。",
+  "AI provider saved": "AI 服务商已保存",
+  "AI provider removed": "AI 服务商已移除",
+  "Remove the AI provider?": "移除 AI 服务商？",
+  "Members will use their own keys, or the server default, until a new provider is set.": "在设置新的服务商之前，成员将使用自己的密钥或服务器默认配置。",
+  "Your workspace admin has set an AI provider{{model}}. It is used for AI features in this workspace.": "工作区管理员已设置 AI 服务商{{model}}，将用于此工作区的 AI 功能。",
+  "No workspace AI provider is set. You can use your own key in Settings.": "工作区未设置 AI 服务商。你可以在设置中使用自己的密钥。",
+  "Members who can edit use this provider for AI features in this workspace, instead of their own key. The key is stored encrypted and is never shown again.": "有编辑权限的成员将使用此服务商，而不是自己的密钥。密钥加密存储，之后不会再显示。"
 }

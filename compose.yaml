@@ -62,6 +62,7 @@ services:
       CREDENTIAL_ENCRYPTION_KEY: ${CREDENTIAL_ENCRYPTION_KEY:-b3BlbnByaXNtLWRldi1rZXktbm90LXNlY3JldC0wMTI=}
       ZOTERO_API_BASE: ${ZOTERO_API_BASE:-https://api.zotero.org}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,api}
+      LLM_ALLOW_PRIVATE_ENDPOINTS: ${LLM_ALLOW_PRIVATE_ENDPOINTS:-0} # 1 lets workspace admins point at a local model (Ollama, vLLM)
       TRUSTED_PROXY_COUNT: "1" # the nginx web container: rate limits must key on the real client, not on it
       DATABASE_URL: postgres://${POSTGRES_USER:-openprism}:${POSTGRES_PASSWORD:-openprism}@postgres:5432/${POSTGRES_DB:-openprism}
       REDIS_URL: redis://redis:6379/0
