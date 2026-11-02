@@ -2,14 +2,7 @@
 
 ## v0.0.1 - Templates
 
-- [ ] **Template transfer: the layout check cannot finish from the UI** *(pre-existing)*. The backend supports the whole
-      pause/resume flow, but `TransferPanel` stops at `waiting_images` and nothing renders the compiled PDF's pages or
-      calls `transferSubmitImages`, so a job with "layout check" enabled waits forever. Needs a PDF-page capture step
-      in the browser (pdf.js is already a dependency).
-- [ ] **Two built-in templates compile to nothing.** The ACL manifest entry says `main.tex`, but its files are
-      `acl_latex.tex` / `acl_lualatex.tex`. The arXiv template is not in `templates/manifest.json`, and the importer
-      defaults its main file to `main.tex` although the file is `template.tex`. A new project from either has no file to
-      compile (cvpr, neurips and icml are fine). Fix the manifest/importer, then check the editor opens the right file.
+Both items moved to `docs/todo.md` (issues #8, #9).
 
 ## v0.0.2 - Zotero
 
