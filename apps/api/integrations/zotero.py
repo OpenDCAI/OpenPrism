@@ -173,3 +173,15 @@ def collections(api_key, prefix):
             break
         start += 100
     return out
+
+
+def bibtex_for(api_key, prefix, item_keys, style='bibtex'):
+    """{zotero item key: (bibtex text, item data)} for up to PAGE_MAX items. Zotero's `include=bibtex` renders each item
+    separately, so entries can be matched to items reliably."""
+    fmt = 'biblatex' if style == 'biblatex' else 'bibtex'
+    res = request(api_key, f'{prefix}/items', {'format': 'json', 'include': f'data,{fmt}',
+                                              'itemKey': ','.join(item_keys), 'limit': PAGE_MAX})
+    out = {}
+    for it in _json_list(res):
+        out[str(it.get('key') or '')] = (it.get(fmt), it.get('data') or {})
+    return out
