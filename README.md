@@ -122,11 +122,12 @@ docker compose run --rm worker-tex python manage.py test jobs transfer --noinput
 docker compose run --rm worker-ai python manage.py test ai --noinput               # real matplotlib + plot sandbox
 ```
 
-Browser tests (Playwright), with the stack and `npm run dev` running:
+Browser tests (Playwright), with the stack and `npm run dev` running. The devcontainer ships Playwright's Chromium and Google Chrome, so nothing needs installing there (outside the devcontainer: `npx playwright install --with-deps chromium`):
 
 ```bash
-npx playwright install chromium && sudo npx playwright install-deps chromium   # one-time
-npm --workspace apps/frontend run e2e                                 # E2E_BASE_URL=http://localhost:8080 to test the nginx image
+npm run e2e                                  # E2E_BASE_URL=http://localhost:8080 to test the nginx image
+E2E_BROWSER=chrome npm run e2e               # run in Google Chrome instead of Chromium
+E2E_HEADED=1 xvfb-run -a npm run e2e         # headed run (the devcontainer has no display, hence xvfb)
 ```
 
 ## Configuration
