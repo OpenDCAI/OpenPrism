@@ -699,3 +699,67 @@ export async function removeMemberApi(id: string, userId: string) {
 export function moveProjectApi(projectId: string, workspaceId: string) {
   return request<{ ok: boolean; project: ProjectMeta }>(`/api/projects/${projectId}/workspace`, { method: 'PATCH', body: JSON.stringify({ workspaceId }) });
 }
+
+// ---- Zotero ---------------------------------------------------------------------------------------------------------
+
+export interface ZoteroStatus {
+  ok: boolean;
+  connected?: boolean;
+  username?: string;
+  lastFour?: string;
+  error?: string;
+}
+export interface ZoteroLibrary { id: string; type: 'user' | 'group'; name: string }
+export interface ZoteroCollection { key: string; name: string; parent: string | null }
+export interface ZoteroItem {
+  key: string;
+  title: string;
+  creators: string[];
+  year: string;
+  itemType: string;
+  citationKey: string;
+  doi: string;
+}
+export interface ZoteroAddResult {
+  ok: boolean;
+  error?: string;
+  file?: string;
+  added?: { zoteroKey: string; citeKey: string }[];
+  skipped?: { zoteroKey: string; citeKey: string }[];
+  refused?: { zoteroKey: string; reason: string }[];
+  /** true when the server wrote the .bib; otherwise the editor must append `text` to the open document */
+  applied?: boolean;
+  text?: string;
+}
+
+export function zoteroStatus() {
+  return request<ZoteroStatus>('/api/integrations/zotero');
+}
+export function zoteroConnect(apiKey: string) {
+  return request<ZoteroStatus>('/api/integrations/zotero', { method: 'PUT', body: JSON.stringify({ apiKey }) });
+}
+export function zoteroDisconnect() {
+  return request<{ ok: boolean }>('/api/integrations/zotero', { method: 'DELETE' });
+}
+export function zoteroLibraries() {
+  return request<{ ok: boolean; error?: string; libraries?: ZoteroLibrary[] }>('/api/integrations/zotero/libraries');
+}
+export function zoteroCollections(library: string) {
+  return request<{ ok: boolean; error?: string; collections?: ZoteroCollection[] }>(
+    `/api/integrations/zotero/collections?library=${encodeURIComponent(library)}`
+  );
+}
+export function zoteroItems(params: { library: string; q?: string; collection?: string; start?: number; limit?: number }) {
+  const qs = new URLSearchParams({ library: params.library });
+  if (params.q) qs.set('q', params.q);
+  if (params.collection) qs.set('collection', params.collection);
+  if (params.start) qs.set('start', String(params.start));
+  if (params.limit) qs.set('limit', String(params.limit));
+  return request<{ ok: boolean; error?: string; items?: ZoteroItem[]; total?: number }>(`/api/integrations/zotero/items?${qs}`);
+}
+export function zoteroAdd(projectId: string, payload: { library: string; keys: string[]; bibFile?: string }) {
+  return request<ZoteroAddResult>(`/api/projects/${encodeURIComponent(projectId)}/zotero/add`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}

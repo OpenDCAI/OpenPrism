@@ -10,4 +10,5 @@ urlpatterns = [
     path('api/', include('ai.urls')),
     path('api/', include('transfer.urls')),
     path('api/', include('collab.urls')),
+    path('api/', include('integrations.urls')),
 ]

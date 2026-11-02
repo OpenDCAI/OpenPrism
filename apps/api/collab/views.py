@@ -44,19 +44,19 @@ def resolve(request):
     return Response({'ok': True, 'projectId': str(invite.project_id), 'projectName': invite.project.name, 'role': invite.role})
 
 
-@api_view(['POST'])
-@permission_classes([IsUserOrGuest])
-def flush(request, pk):
-    """Persist the live document now. Returns after every replica holding the room has flushed (bounded wait)."""
-    project = get_project(request, pk, write=True)
-    path = (request.data or {}).get('path')
-    if not path:
-        return Response({'ok': False, 'error': 'Missing path'})
+def live_room(project, path):
+    """True when some replica currently holds a live room for this file (REST writes to it would be overwritten)."""
+    key = coord.room_key(project.id, path)
+    return bool(_redis().zrangebyscore(coord.holders_key(key), coord.fresh_since(), '+inf'))
+
+
+def flush_room(project, path):
+    """Ask every replica holding the room to persist it; False if one did not answer in time. No room: nothing to do."""
     key = coord.room_key(project.id, path)
     r = _redis()
     holders = r.zrangebyscore(coord.holders_key(key), coord.fresh_since(), '+inf')
     if not holders:
-        return Response({'ok': True})  # no live room: the database is already current
+        return True  # no live room: the database is already current
     reply = f'collab:flush-reply:{uuid.uuid4().hex}'
     r.publish(coord.channel(key), coord.pack(coord.KIND_FLUSH, b'\x00' * coord.ORIGIN_LEN, reply.encode()))
     deadline, acks = time.monotonic() + FLUSH_WAIT_SECONDS, 0
@@ -65,7 +65,18 @@ def flush(request, pk):
             break
         acks += 1
     r.delete(reply)
-    if acks < len(holders):
+    return acks >= len(holders)
+
+
+@api_view(['POST'])
+@permission_classes([IsUserOrGuest])
+def flush(request, pk):
+    """Persist the live document now. Returns after every replica holding the room has flushed (bounded wait)."""
+    project = get_project(request, pk, write=True)
+    path = (request.data or {}).get('path')
+    if not path:
+        return Response({'ok': False, 'error': 'Missing path'})
+    if not flush_room(project, path):
         return Response({'ok': False, 'error': 'Timed out waiting for the collaboration server to save.'}, status=504)
     return Response({'ok': True})
 
