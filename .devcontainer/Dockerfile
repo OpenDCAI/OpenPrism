@@ -13,6 +13,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     texlive-xetex \
     texlive-luatex \
     wget \
+    xvfb \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p -m 755 /etc/apt/keyrings \
@@ -21,6 +22,17 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" > /etc/apt/sources.list.d/github-cli.list \
     && apt-get update && apt-get install -y --no-install-recommends gh \
     && apt-get clean && rm -rf /var/lib/apt/lists/*
+
+# Browsers for the Playwright e2e specs and for QA in a real browser: Playwright's Chromium plus Google Chrome stable
+# (`E2E_BROWSER=chrome`), with their system libraries. They live outside any home directory so a rebuild brings them
+# back and the `node` user can read them. Keep PLAYWRIGHT_VERSION equal to @playwright/test in apps/frontend (the
+# browser build is tied to the Playwright version). Chrome stable has no arm64 Linux build, so it is amd64-only.
+ARG PLAYWRIGHT_VERSION=1.55.0
+ENV PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
+RUN BROWSERS="chromium"; [ "$(dpkg --print-architecture)" = "amd64" ] && BROWSERS="chromium chrome"; \
+    npx --yes playwright@${PLAYWRIGHT_VERSION} install --with-deps $BROWSERS \
+    && chmod -R a+rX /ms-playwright \
+    && apt-get clean && rm -rf /var/lib/apt/lists/* /root/.npm
 
 USER node
 

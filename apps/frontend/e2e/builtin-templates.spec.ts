@@ -11,6 +11,8 @@ for (const [template, mainFile] of [['acl', 'acl_latex.tex'], ['arxiv', 'templat
     await signIn(page, session);
     await page.goto(`/editor/${id}`);
     await page.waitForSelector('.cm-editor');
+    await page.locator('.tree-label', { hasText: mainFile }).first().waitFor(); // the editor picks its main file once the tree has loaded
+    await page.locator('.cm-content').click(); // the compile shortcut is bound inside the editor
     const request = page.waitForRequest((r) => r.method() === 'POST' && /\/api\/compile$/.test(r.url()));
     await page.keyboard.press('Control+Enter');
     expect(JSON.parse((await request).postData() ?? '{}').mainFile).toBe(mainFile);
