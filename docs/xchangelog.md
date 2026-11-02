@@ -16,3 +16,16 @@
       selects Chrome; update the docs; make it work in the running container too.
 - [x] #11 **API tests delete the built-in templates' files from the dev bucket.** `BuiltinTemplateTests` (from #8)
       imports the real templates and the shared cleanup clears their storage. Keep the real templates' files; add a guard.
+
+## v0.0.2 - Zotero
+
+- [x] #12 **Encrypted per-user key store and connect/disconnect API.** `CREDENTIAL_ENCRYPTION_KEY` (rotatable Fernet),
+      `integrations.ZoteroConnection`, `PUT/GET/DELETE /api/integrations/zotero`; the key is never returned or logged.
+- [x] #13 **Zotero client and browse API.** Libraries (personal + groups), collections, paged item search; honours
+      `Backoff`/`Retry-After`; library allow-list.
+- [x] #14 **BibTeX export and append-only add to the project `.bib`.** Skips entries already added, generated-key
+      fallback, sanitises untrusted BibTeX, flushes live collab rooms first (and leaves the write to the editor when
+      the file is open live).
+- [x] #15 **Editor panel to search and insert citations.** Connect screen, Zotero panel, `\cite{}` insertion,
+      Playwright spec against a fake Zotero (`integrations.devserver`).
+
