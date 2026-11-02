@@ -3,6 +3,7 @@ import type { Page } from '@playwright/test';
 export interface Session {
   access: string;
   refresh: string;
+  user: { id: string; email: string };
 }
 
 const baseUrl = () => process.env.E2E_BASE_URL || 'http://localhost:5173';
@@ -45,4 +46,23 @@ export function sectionedDocument(): string {
       Array.from({ length: 6 }, (_, i) => `Paragraph ${i + 1} of the ${name} section, with a little text in it.\n`).join('\n')
   ).join('\n');
   return `\\documentclass{article}\n\\usepackage[margin=1in]{geometry}\n\\begin{document}\n${body}\n\\end{document}\n`;
+}
+
+/** A team workspace owned by `session`; returns its id. */
+export async function newWorkspace(session: Session, name: string): Promise<string> {
+  const res = await api<{ workspace: { id: string } }>('/api/workspaces', session.access, 'POST', { name });
+  return res.workspace.id;
+}
+
+export async function inviteMember(session: Session, workspaceId: string, email: string, role: string) {
+  await api(`/api/workspaces/${workspaceId}/members`, session.access, 'POST', { email, role });
+}
+
+export async function setWorkspaceLlm(session: Session, workspaceId: string, body: { endpoint?: string; model?: string; apiKey?: string }) {
+  await api(`/api/workspaces/${workspaceId}/llm`, session.access, 'PUT', body);
+}
+
+/** Open the app with `workspaceId` as the active workspace for this account. */
+export async function setActiveWorkspace(page: Page, session: Session, workspaceId: string) {
+  await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [`openprism-active-workspace:${session.user.id}`, workspaceId]);
 }
