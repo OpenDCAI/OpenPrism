@@ -10,7 +10,7 @@ from django.db import transaction
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework.response import Response
 
-from ai.views import split_llm_config
+from ai.views import split_llm_config, workspace_first
 from common import secrets as job_secrets
 from common.uploads import PathMultiPartParser
 from jobs.models import Job
@@ -61,7 +61,7 @@ def _create_job(request, mode, b):
         memberships__user=request.user, memberships__role__in=Membership.WRITE_ROLES).order_by('created_at').first()
     if workspace is None:
         return None, bad('You do not have a workspace you can write to.', 403)
-    public, secrets = split_llm_config(b.get('llmConfig'))
+    public, secrets = workspace_first(request, workspace, *split_llm_config(b.get('llmConfig')))
     params = {
         'mode': mode, 'sourceProjectId': str(source.id) if source else '', 'sourceMainFile': b.get('sourceMainFile') or '',
         'targetMainFile': b['targetMainFile'], 'engine': b.get('engine') or 'pdflatex',

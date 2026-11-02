@@ -29,6 +29,13 @@ def split_llm_config(cfg):
     return public, {'apiKey': str(cfg.get('apiKey') or '')}
 
 
+def workspace_first(request, workspace, public, secrets):
+    """The workspace's provider replaces the browser's whole config (endpoint, model and key belong together) when it
+    has one and the user may use it; otherwise the browser's config stands (and, without one, the server default)."""
+    from integrations.llmconfig import workspace_llm_for
+    return workspace_llm_for(workspace, request.user) or (public, secrets)
+
+
 def run_job(request, job_type, params, secrets, project=None, job_id=None):
     job = Job.objects.create(id=job_id or uuid.uuid4(), type=job_type, user=request.user, project=project, params=params)
     run_ai_job.delay(str(job.id), secrets)
@@ -51,6 +58,8 @@ def llm_endpoint(request):
     public, secrets = split_llm_config(b.get('llmConfig'))
     if b.get('model') and 'model' not in public:
         public['model'] = str(b['model'])
+    if b.get('projectId'):
+        public, secrets = workspace_first(request, get_project(request, b['projectId']).workspace, public, secrets)
     return run_job(request, Job.LLM, {'messages': b.get('messages') or [], 'llmConfig': public}, secrets)
 
 
@@ -59,6 +68,8 @@ def agent_run(request):
     b = _body(request)
     public, secrets = split_llm_config(b.get('llmConfig'))
     project = get_project(request, b['projectId']) if b.get('projectId') else None
+    if project:
+        public, secrets = workspace_first(request, project.workspace, public, secrets)
     params = {k: b.get(k) for k in ('task', 'prompt', 'selection', 'content', 'mode', 'activePath', 'compileLog',
                                     'interaction', 'history')}
     params.update({'llmConfig': public, 'lang': get_lang(request.headers.get('x-lang'))})
@@ -84,6 +95,7 @@ def vision_latex(request):
         from projects.models import Membership
         save = Membership.objects.filter(workspace_id=project.workspace_id, user=request.user,
                                          role__in=Membership.WRITE_ROLES).exists()
+        public, secrets = workspace_first(request, project.workspace, public, secrets)
     job_id = uuid.uuid4()
     key = f'jobs/{job_id}/input'
     storage.put_bytes(key, image.read(), image.content_type or 'image/png')
@@ -108,7 +120,7 @@ def plot_from_table(request):
         asset_path = safe_path(f'assets/plots/{name}')
     except InvalidPath:
         return Response({'ok': False, 'error': 'Invalid filename.'})
-    public, secrets = split_llm_config(b.get('llmConfig'))
+    public, secrets = workspace_first(request, project.workspace, *split_llm_config(b.get('llmConfig')))
     try:
         retries = min(5, max(0, int(b.get('retries', 2))))
     except (TypeError, ValueError):
