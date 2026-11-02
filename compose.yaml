@@ -106,6 +106,7 @@ services:
       garage: {condition: service_healthy}
     volumes:
       - ./apps/api:/app
+      - ./templates:/legacy/templates:ro # real-compile tests of the built-in templates
     healthcheck:
       test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME"]
       interval: 15s

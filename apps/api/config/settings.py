@@ -8,6 +8,8 @@ from urllib.parse import unquote, urlparse
 from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
+# The app version has one source: apps/api/VERSION (the web build and Vite read the same file).
+VERSION = (BASE_DIR / 'VERSION').read_text().strip()
 
 
 def env(name, default=None, required=False):

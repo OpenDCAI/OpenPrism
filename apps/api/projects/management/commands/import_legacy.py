@@ -59,15 +59,21 @@ class Command(BaseCommand):
             if entry is None and not any(f.suffix == '.tex' for f in d.iterdir()):
                 continue
             entry = entry or {'id': d.name, 'label': d.name}
+            contents = {rel: path for path, rel in walk_all(d)}
+            declared = entry.get('mainFile')
+            main_file = declared if declared in contents else templates.detect_main_file(
+                contents, lambda rel: contents[rel].read_text(errors='replace')) or declared or 'main.tex'
+            if declared and main_file != declared:
+                self.stdout.write(f'template {d.name}: mainFile {declared!r} not found, using {main_file!r}')
             tpl, _ = Template.objects.update_or_create(id=d.name, defaults={
-                'label': entry.get('label', d.name), 'main_file': entry.get('mainFile', 'main.tex'),
+                'label': entry.get('label', d.name), 'main_file': main_file,
                 'category': entry.get('category', 'academic'), 'description': entry.get('description', d.name),
                 'description_en': entry.get('descriptionEn', d.name), 'tags': entry.get('tags', []),
                 'author': entry.get('author', ''), 'featured': entry.get('featured', False), 'builtin': d.name in known,
             })
             templates.clear(tpl)
             n = 0
-            for path, rel in walk_all(d):
+            for rel, path in contents.items():
                 templates.write(tpl, rel, path.read_bytes())
                 n += 1
             self.stdout.write(f'template {tpl.id}: {n} files')

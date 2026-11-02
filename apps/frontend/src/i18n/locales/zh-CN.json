@@ -611,6 +611,7 @@
   "Share": "分享",
   "Share…": "分享…",
   "Sign out": "退出登录",
+  "version": "版本",
   "Smaller text": "减小字号",
   "Sort projects": "排序项目",
   "Split": "分栏",
@@ -688,5 +689,9 @@
   "Password": "密码",
   "Shared project": "共享项目",
   "Server default": "服务器默认值",
-  "Needs XeLaTeX, recompiling…": "需要 XeLaTeX，正在重新编译…"
+  "Needs XeLaTeX, recompiling…": "需要 XeLaTeX，正在重新编译…",
+  "Preparing page screenshots for the layout check…": "正在为版面检查准备页面截图…",
+  "Capturing page {{page}} of {{total}}…": "正在截取第 {{page}} / {{total}} 页…",
+  "Sending page screenshots…": "正在发送页面截图…",
+  "Could not capture page screenshots, so the layout check was skipped: {{message}}": "无法截取页面截图，已跳过版面检查：{{message}}"
 }

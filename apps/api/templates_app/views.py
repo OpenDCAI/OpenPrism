@@ -33,10 +33,13 @@ def upload_template(request):
         entries = list(iter_zip_files(upload))
     except zipfile.BadZipFile:
         return Response({'ok': False, 'error': 'Invalid zip file.'}, status=400)
+    contents = dict(entries)
+    detected = service.detect_main_file(contents, lambda p: contents[p].decode('utf-8', 'replace'))
+    keep = existing.main_file if existing and existing.main_file in contents else None
     tpl, _ = Template.objects.update_or_create(id=template_id, defaults={
         'label': label or template_id, 'description': label or template_id,
         'description_en': label or template_id, 'category': 'academic', 'author': 'User',
-        **({} if existing else {'main_file': 'main.tex'}),
+        'main_file': keep or detected or 'main.tex',
     })
     service.clear(tpl)
     for path, data in entries:

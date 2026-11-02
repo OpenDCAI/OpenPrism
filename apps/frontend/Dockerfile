@@ -8,6 +8,7 @@ COPY apps/frontend/package.json apps/frontend/
 RUN npm ci --workspace apps/frontend --include-workspace-root
 COPY design design
 COPY apps/frontend apps/frontend
+COPY apps/api/VERSION apps/api/VERSION
 RUN npm --workspace apps/frontend run build
 
 FROM nginxinc/nginx-unprivileged:1.27-alpine
