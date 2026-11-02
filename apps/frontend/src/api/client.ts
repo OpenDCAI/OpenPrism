@@ -549,6 +549,13 @@ export function transferSubmitImages(jobId: string, images: PageImage[]) {
   });
 }
 
+/** The PDF the transfer job last compiled (available while it waits for page screenshots, and once it finishes). */
+export async function transferPdf(jobId: string): Promise<ArrayBuffer> {
+  const res = await apiFetch(`${API_BASE}/api/jobs/${jobId}/pdf`, { cache: 'no-store' }); // the same key is overwritten by each recompile
+  if (!res.ok) throw new Error(`Could not load the compiled PDF (${res.status})`);
+  return res.arrayBuffer();
+}
+
 export function transferStatus(jobId: string) {
   return request<TransferStepResult>(`/api/transfer/status/${jobId}`);
 }
