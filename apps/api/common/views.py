@@ -5,7 +5,7 @@ from django.http import JsonResponse
 
 
 def health(request):
-    return JsonResponse({'ok': True})
+    return JsonResponse({'ok': True, 'version': settings.VERSION})
 
 
 def ready(request):
@@ -29,4 +29,4 @@ def ready(request):
     except Exception as exc:
         checks['s3'] = str(exc)
     ok = all(v is True for v in checks.values())
-    return JsonResponse({'ok': ok, 'checks': checks}, status=200 if ok else 503)
+    return JsonResponse({'ok': ok, 'version': settings.VERSION, 'checks': checks}, status=200 if ok else 503)

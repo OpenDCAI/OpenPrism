@@ -1,11 +1,16 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath } from 'node:url';
+import { readFileSync } from 'node:fs';
 
 // Shared design system lives at the repo root: /design
 const designDir = fileURLToPath(new URL('../../design', import.meta.url));
 
+// One version for the whole app, kept next to the API that reports it too.
+const appVersion = readFileSync(fileURLToPath(new URL('../api/VERSION', import.meta.url)), 'utf8').trim();
+
 export default defineConfig({
+  define: { __APP_VERSION__: JSON.stringify(appVersion) },
   plugins: [react()],
   resolve: {
     alias: { '@design': designDir }
