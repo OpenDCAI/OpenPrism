@@ -56,8 +56,10 @@ test('a viewer is not told the provider will be used', async ({ page }) => {
   const { member, ws, projectId } = await setup('viewer');
   await signIn(page, member);
   await setActiveWorkspace(page, member, ws);
+  const asked = page.waitForResponse((r) => /\/api\/workspaces\/[^/]+\/llm$/.test(r.url())); // the editor has learned the viewer cannot use it
   await page.goto(`/editor/${projectId}`);
   await page.waitForSelector('.cm-editor');
+  expect((await (await asked).json()).canUse).toBe(false);
   await openSettings(page);
   await expect(page.getByTestId('workspace-provider-notice')).toHaveCount(0);
 });
