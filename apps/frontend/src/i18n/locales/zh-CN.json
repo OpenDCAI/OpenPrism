@@ -729,5 +729,6 @@
   "Members will use their own keys, or the server default, until a new provider is set.": "在设置新的服务商之前，成员将使用自己的密钥或服务器默认配置。",
   "Your workspace admin has set an AI provider{{model}}. It is used for AI features in this workspace.": "工作区管理员已设置 AI 服务商{{model}}，将用于此工作区的 AI 功能。",
   "No workspace AI provider is set. You can use your own key in Settings.": "工作区未设置 AI 服务商。你可以在设置中使用自己的密钥。",
-  "Members who can edit use this provider for AI features in this workspace, instead of their own key. The key is stored encrypted and is never shown again.": "有编辑权限的成员将使用此服务商，而不是自己的密钥。密钥加密存储，之后不会再显示。"
+  "Members who can edit use this provider for AI features in this workspace, instead of their own key. The key is stored encrypted and is never shown again.": "有编辑权限的成员将使用此服务商，而不是自己的密钥。密钥加密存储，之后不会再显示。",
+  "This workspace provides the AI provider{{model}}. Your own key is not used for its projects.": "此工作区提供 AI 服务商{{model}}，其项目不会使用你自己的密钥。"
 }

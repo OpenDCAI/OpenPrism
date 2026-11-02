@@ -28,6 +28,7 @@ import {
   getCollabServer,
   getFile,
   getProjectTree,
+  getWorkspaceLlm,
   getCollabToken,
   blobUrl,
   listProjects,
@@ -1478,6 +1479,8 @@ export default function EditorPage() {
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectName, setProjectName] = useState('');
+  /** The project's workspace provider, when the user's AI requests will use it (see the AI settings notice). */
+  const [workspaceProvider, setWorkspaceProvider] = useState<{ model: string } | null>(null);
   const [tree, setTree] = useState<{ path: string; type: string }[]>([]);
   const [fileOrder, setFileOrder] = useState<Record<string, string[]>>({});
   const [activePath, setActivePath] = useState<string>('');
@@ -1728,6 +1731,9 @@ export default function EditorPage() {
           return;
         }
         setProjectName(current.name);
+        getWorkspaceLlm(current.workspaceId)
+          .then((llm) => setWorkspaceProvider(llm.ok && llm.configured && llm.canUse ? { model: llm.model || '' } : null))
+          .catch(() => setWorkspaceProvider(null));
       })
       .catch((err) => setStatus(t('加载项目信息失败: {{error}}', { error: String(err) })));
   }, [navigate, projectId, t]);
@@ -2731,6 +2737,7 @@ export default function EditorPage() {
     try {
       appendLog(setWebsearchLog, t('拆分查询...'));
       const splitRes = await callLLM({
+        projectId,
         llmConfig: searchLlmConfig,
         messages: [
           { role: 'system', content: t('Split the query into 2-4 targeted search queries. Return JSON only: {"queries":["..."]}.') },
@@ -2758,6 +2765,7 @@ export default function EditorPage() {
         queries.map(async (q, idx) => {
           appendLog(setWebsearchLog, t('检索中: {{query}}', { query: q }));
           const res = await callLLM({
+            projectId,
             llmConfig: searchLlmConfig,
             messages: [
               {
@@ -2812,6 +2820,7 @@ export default function EditorPage() {
       }
       appendLog(setWebsearchLog, t('生成逐条总结...'));
       const summariesRes = await callLLM({
+        projectId,
         llmConfig: searchLlmConfig,
         messages: [
           {
@@ -2857,6 +2866,7 @@ export default function EditorPage() {
       appendLog(setWebsearchLog, t('生成综合总结...'));
       const citeKeys = deduped.map((item) => item.citeKey).filter(Boolean);
       const paragraphRes = await callLLM({
+        projectId,
         llmConfig: searchLlmConfig,
         messages: [
           {
@@ -6001,6 +6011,11 @@ export default function EditorPage() {
           }
         >
           <div className="ed-settings">
+            {workspaceProvider && (
+              <div className="muted" role="note" data-testid="workspace-provider-notice">
+                {t('This workspace provides the AI provider{{model}}. Your own key is not used for its projects.', { model: workspaceProvider.model ? ` (${workspaceProvider.model})` : '' })}
+              </div>
+            )}
             <div className="field">
               <label>{t('LLM Endpoint')}</label>
               <input

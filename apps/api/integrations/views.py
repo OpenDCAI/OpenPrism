@@ -181,8 +181,9 @@ def zotero_add(request, pk):
 def _llm_status(config, membership):
     can_manage = membership.role in Membership.ADMIN_ROLES
     if config is None:
-        return {'ok': True, 'configured': False, 'canManage': can_manage}
+        return {'ok': True, 'configured': False, 'canManage': can_manage, 'canUse': False}
     body = {'ok': True, 'configured': True, 'endpoint': config.endpoint, 'model': config.model, 'canManage': can_manage,
+            'canUse': membership.role in Membership.WRITE_ROLES,
             'updatedAt': config.updated_at.isoformat().replace('+00:00', 'Z'),
             'updatedBy': (config.updated_by.name or config.updated_by.email) if config.updated_by else ''}
     if can_manage:
