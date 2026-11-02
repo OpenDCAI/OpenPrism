@@ -277,6 +277,22 @@ class BuiltinTemplateTests(ApiBase):
     """Every template shipped in templates/ must have a main file the editor and transfer can compile."""
     TEMPLATES_DIR = '/legacy/templates'
 
+    def _cleanup(self):
+        # These tests import the *real* templates into the bucket the running app also uses, so the shared cleanup
+        # (which deletes every Template's files) would wipe the dev data. Import is idempotent: leave them in place.
+        for p in Project.objects.all():
+            files.delete_project_files(p)
+
+    def test_cleanup_leaves_the_real_templates_in_storage(self):
+        import os
+        from django.core.management import call_command
+        if not os.path.isdir(self.TEMPLATES_DIR):
+            self.skipTest('templates/ is not mounted at /legacy/templates')
+        call_command('import_legacy', '--skip-projects', templates_dir=self.TEMPLATES_DIR, stdout=io.StringIO())
+        self._cleanup()
+        for tpl in Template.objects.all():
+            self.assertTrue(list(templates.list_paths(tpl)), f'{tpl.id}: files were deleted from storage')
+
     def test_every_builtin_template_has_an_existing_main_file(self):
         import os
         from django.core.management import call_command
