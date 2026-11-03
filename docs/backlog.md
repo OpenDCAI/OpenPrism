@@ -17,6 +17,10 @@ Moved to `docs/todo.md` (issues #12-#15).
 
 Moved to `docs/todo.md` (issues #16-#19).
 
+## v0.0.3.1 - Build fixes
+
+Moved to `docs/todo.md` (issue #20).
+
 ## v0.0.4 - Version history with diff
 
 - [ ] **Version history: a saved version per compile, and a diff to compare versions.** Every compile records what was
