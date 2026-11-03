@@ -45,3 +45,9 @@
 
 - [x] #20 **Web image build.** `.dockerignore` hid `apps/api/VERSION`, so `docker compose build web` failed; the file is
       now let through (nothing else from `apps/api` enters the context).
+
+## v0.0.4 - Version history with diff
+
+- [x] #21 **Snapshot every successful compile.** `versions` app: `ProjectVersion` (manifest + PDF) and per-project
+      content-addressed `VersionBlob`s; the snapshot is taken from the same read the compiler used, unchanged
+      projects create no new version, a failed snapshot never fails the compile, project delete removes it all.

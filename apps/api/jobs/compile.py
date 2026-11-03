@@ -3,6 +3,7 @@
 Runs inside the `worker-tex` image. Project files are materialised into a temp dir, compiled with the
 requested engine, and the PDF is returned as bytes; nothing is left on local disk afterwards.
 """
+import hashlib
 import itertools
 import os
 import re
@@ -86,20 +87,33 @@ def run_command(args, cwd, log, env, timeout=None):
 
 
 def materialise(project, root):
-    """Write every project file under `root`. Text comes from Postgres, binaries from S3."""
+    """Write every project file under `root`. Text comes from Postgres, binaries from S3.
+
+    Returns what was written, one entry per row: {path, kind, size, sha256, content_type, text, s3_key}. A version
+    snapshot is built from this list, so it describes exactly the files the compiler saw (the engine may change the
+    copies on disk later, and the project may change in the database)."""
     root = Path(root).resolve()
+    written = []
     for row in project.files.all():
         target = (root / safe_path(row.path)).resolve()
         if root not in target.parents and target != root:
             raise CompileError('Invalid path in project')
         if row.kind == ProjectFile.DIR:
             target.mkdir(parents=True, exist_ok=True)
+            written.append({'path': row.path, 'kind': 'dir', 'size': 0, 'sha256': ''})
             continue
         target.parent.mkdir(parents=True, exist_ok=True)
         if row.kind == ProjectFile.TEXT:
-            target.write_text(row.content, encoding='utf-8')
+            data = row.content.encode('utf-8')
+            target.write_bytes(data)
+            written.append({'path': row.path, 'kind': 'text', 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
+                            'text': row.content})
         else:
-            target.write_bytes(storage.get_bytes(row.s3_key))
+            data = storage.get_bytes(row.s3_key)
+            target.write_bytes(data)
+            written.append({'path': row.path, 'kind': 'binary', 'size': len(data), 'sha256': hashlib.sha256(data).hexdigest(),
+                            'content_type': row.content_type, 's3_key': row.s3_key})
+    return written
 
 
 SAFE_ENV = ('PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ')
@@ -187,7 +201,8 @@ def forward_search(src, out_dir, base, focus, env):
 
 
 def compile_project(project, main_file, engine, progress=lambda msg: None, focus=None):
-    """Compile and return {'pdf': bytes|None, 'log': str, 'status': int, 'focus': {...}|None}.
+    """Compile and return {'pdf': bytes|None, 'log': str, 'status': int, 'focus': {...}|None, 'snapshot': [...]}
+    ('snapshot' is what `materialise` returned: the files this compile used).
 
     `focus` ({'file', 'line'}) asks where that source line landed in the PDF; the answer is 'focus' in the result.
     Raises CompileError for setup failures."""
@@ -200,7 +215,7 @@ def compile_project(project, main_file, engine, progress=lambda msg: None, focus
         src = work / 'src'
         src.mkdir()
         progress('Preparing project files')
-        materialise(project, src)
+        snapshot = materialise(project, src)
         if not (src / main_file).is_file():
             raise CompileError(f'Main file not found: {main_file}')
 
@@ -221,7 +236,7 @@ def compile_project(project, main_file, engine, progress=lambda msg: None, focus
         pdf_path = out_dir / f'{base}.pdf'
         pdf = pdf_path.read_bytes() if pdf_path.is_file() else None
         position = forward_search(src, out_dir, base, focus, env) if (pdf and focus) else None
-        return {'pdf': pdf, 'log': log.text(), 'status': code, 'focus': position}
+        return {'pdf': pdf, 'log': log.text(), 'status': code, 'focus': position, 'snapshot': snapshot}
     finally:
         shutil.rmtree(work, ignore_errors=True)
 
