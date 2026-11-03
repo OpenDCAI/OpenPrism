@@ -1,8 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { deleteVersion, listVersions, renameVersion } from '../api/client';
-import type { ProjectVersionMeta } from '../api/client';
-import { Badge, Button, EmptyState, FieldError } from '@design';
+import { deleteVersion, diffVersions, listVersions, renameVersion } from '../api/client';
+import type { ProjectVersionMeta, RestoreVersionResult, VersionFileChange } from '../api/client';
+import { Badge, Button, EmptyState, FieldError, Modal } from '@design';
+import VersionCompareModal from './VersionCompareModal';
 
 interface VersionsPanelProps {
   projectId: string;
@@ -14,11 +15,13 @@ interface VersionsPanelProps {
   onViewPdf: (version: ProjectVersionMeta | null) => void;
   /** A version was deleted: the preview must not keep showing its PDF. */
   onDeleted: (versionId: string) => void;
+  /** Make the project's files this version's. The editor leaves its live rooms first and reloads afterwards. */
+  onRestore: (version: ProjectVersionMeta) => Promise<RestoreVersionResult>;
 }
 
 const PAGE = 30;
 
-export default function VersionsPanel({ projectId, refreshKey, viewingId, onViewPdf, onDeleted }: VersionsPanelProps) {
+export default function VersionsPanel({ projectId, refreshKey, viewingId, onViewPdf, onDeleted, onRestore }: VersionsPanelProps) {
   const { t } = useTranslation();
   const [versions, setVersions] = useState<ProjectVersionMeta[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -29,6 +32,8 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
   const [confirmDelete, setConfirmDelete] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [comparing, setComparing] = useState(false);
+  const [restore, setRestore] = useState<{ changes: VersionFileChange[] | null; blocked: RestoreVersionResult | null; error: string; busy: boolean } | null>(null);
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -84,6 +89,33 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
       setError(String((err as Error).message || err));
     } finally {
       setBusy(false);
+    }
+  };
+
+  const openRestore = async () => {
+    if (!selected) return;
+    setRestore({ changes: null, blocked: null, error: '', busy: false });
+    try {
+      const res = await diffVersions(projectId, selected.id); // this version against the project as it is now
+      setRestore((prev) => prev && { ...prev, changes: res.files });
+    } catch (err) {
+      setRestore((prev) => prev && { ...prev, error: String((err as Error).message || err) });
+    }
+  };
+
+  const confirmRestore = async () => {
+    if (!selected) return;
+    setRestore((prev) => prev && { ...prev, busy: true, blocked: null, error: '' });
+    try {
+      const res = await onRestore(selected);
+      if (res.ok) {
+        setRestore(null);
+        void load();
+      } else {
+        setRestore((prev) => prev && { ...prev, busy: false, blocked: res });
+      }
+    } catch (err) {
+      setRestore((prev) => prev && { ...prev, busy: false, error: String((err as Error).message || err) });
     }
   };
 
@@ -160,6 +192,16 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
               {viewing ? t('Back to current build') : t('Open PDF')}
             </Button>
           </div>
+          <div className="row">
+            <Button variant="secondary" size="sm" icon="diff" data-testid="version-compare" onClick={() => setComparing(true)}>
+              {t('Compare')}
+            </Button>
+            {canWrite && (
+              <Button variant="secondary" size="sm" icon="rotate-ccw" data-testid="version-restore" onClick={() => void openRestore()}>
+                {t('Restore this version')}
+              </Button>
+            )}
+          </div>
           {canWrite && (
             <>
               <div className="op-field">
@@ -217,6 +259,63 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
             </>
           )}
         </div>
+      )}
+      {comparing && selected && (
+        <VersionCompareModal projectId={projectId} versions={versions} initialFrom={selected} onClose={() => setComparing(false)} />
+      )}
+      {restore && selected && (
+        <Modal
+          title={t('Restore version #{{n}}?', { n: selected.number })}
+          onClose={() => !restore.busy && setRestore(null)}
+          closeLabel={t('Close')}
+          footer={
+            <>
+              <Button variant="ghost" onClick={() => setRestore(null)} disabled={restore.busy}>{t('Cancel')}</Button>
+              <Button
+                variant="primary"
+                data-testid="version-restore-confirm"
+                onClick={() => void confirmRestore()}
+                loading={restore.busy}
+                disabled={restore.changes === null || restore.changes.length === 0}
+              >
+                {restore.blocked ? t('Try again') : t('Restore')}
+              </Button>
+            </>
+          }
+        >
+          <div className="version-restore" data-testid="version-restore-modal">
+            {restore.changes === null && !restore.error && <div className="muted" role="status">{t('Loading…')}</div>}
+            {restore.changes !== null && restore.changes.length === 0 && <div className="muted">{t('The project already matches this version.')}</div>}
+            {restore.changes !== null && restore.changes.length > 0 && (
+              <>
+                <p>
+                  {t('This replaces the project files with the ones in this version:')}
+                </p>
+                <ul>
+                  {(['removed', 'modified', 'added'] as const).map((status) => {
+                    const count = restore.changes?.filter((c) => c.status === status && c.kind !== 'dir').length ?? 0;
+                    if (!count) return null;
+                    // The diff runs from the version to now: "removed" files exist only in the version, "added" only now.
+                    const text = status === 'removed' ? t('Deleted files that come back: {{count}}', { count })
+                      : status === 'modified' ? t('Files that go back to this version: {{count}}', { count })
+                        : t('Files added since that are deleted: {{count}}', { count });
+                    return <li key={status}>{text}</li>;
+                  })}
+                </ul>
+                <p className="muted">{t('The restore is saved as a new version, so nothing is lost and you can restore again.')}</p>
+              </>
+            )}
+            {restore.blocked && (
+              <div className="version-restore-blocked" role="alert" data-testid="version-restore-blocked">
+                <FieldError message={restore.blocked.error} />
+                {restore.blocked.files && restore.blocked.files.length > 0 && (
+                  <ul>{restore.blocked.files.map((f) => <li key={f}><code>{f}</code></li>)}</ul>
+                )}
+              </div>
+            )}
+            <FieldError message={restore.error} />
+          </div>
+        </Modal>
       )}
     </div>
   );
