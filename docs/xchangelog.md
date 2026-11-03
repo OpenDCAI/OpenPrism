@@ -57,3 +57,6 @@
 - [x] #23 **Name/pin, delete and retention.** `PATCH`/`DELETE` on a version (write access; named versions must be
       unnamed before deleting), shared blob cleanup, and the daily `versions.tasks.prune_versions` that keeps the newest
       50 unnamed versions per project (`VERSION_KEEP_UNNAMED`).
+- [x] #24 **Restore API.** `POST …/versions/:vid/restore` makes the files exactly the version's through one atomic
+      `files.apply_changes`, records a new version, and answers 409 (nothing written) while someone is connected to an
+      affected file; idle rooms are evicted first (new `KIND_EVICT` collab control message).

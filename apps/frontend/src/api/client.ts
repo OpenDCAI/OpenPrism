@@ -872,3 +872,29 @@ export function renameVersion(projectId: string, versionId: string, name: string
 export function deleteVersion(projectId: string, versionId: string) {
   return request<{ ok: boolean }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
 }
+
+export interface RestoreVersionResult {
+  ok: boolean;
+  error?: string;
+  /** Present on a 409: files someone has open live. */
+  files?: string[];
+  restored?: boolean;
+  message?: string;
+  versionId?: string;
+  versionNumber?: number;
+  changed?: { written: number; removed: number };
+}
+/**
+ * Make the project's files exactly this version's (recorded as a new version). A 409 (someone has an affected file
+ * open, or live edits could not be saved) comes back as a normal result with `ok: false`, not as a thrown error.
+ * Leave the editor's own collaboration rooms first.
+ */
+export async function restoreVersion(projectId: string, versionId: string): Promise<RestoreVersionResult> {
+  const res = await apiFetch(`${API_BASE}${versionsBase(projectId)}/${encodeURIComponent(versionId)}/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}'
+  });
+  if (res.ok || res.status === 409) return (await res.json()) as RestoreVersionResult;
+  throw new Error(await errorMessage(res));
+}

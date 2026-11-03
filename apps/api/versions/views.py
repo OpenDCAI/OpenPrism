@@ -2,19 +2,22 @@
 import hashlib
 
 from django.core.exceptions import ValidationError
+from django.db import transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.exceptions import NotFound, ParseError
 from rest_framework.response import Response
 
 from collab.auth import IsUserOrGuest
+from collab.views import evict_idle_room, flush_room, live_room
+from projects import files as pfiles
 from projects import storage
 from projects.access import QueryTokenJWTAuthentication, get_project
 from projects.models import ProjectFile
 from projects.paths import InvalidPath, safe_path
 from projects.views import BLOB_TYPES, INERT_TYPES, iso
 
-from . import retention
+from . import retention, snapshot
 from .models import ProjectVersion, VersionBlob
 
 PAGE_MAX = 100
@@ -188,3 +191,58 @@ def versions_diff(request, pk):
     else:
         new = {m['path']: m for m in get_version(project, target).manifest}
     return Response({'ok': True, 'files': diff_manifests(old, new, include_unchanged=request.query_params.get('all') == '1')})
+
+
+@api_view(['POST'])
+@permission_classes([IsUserOrGuest])
+def version_restore(request, pk, version_id):
+    """Make the project's files exactly this version's and record that as a new version (history is never rewritten).
+
+    Refused with 409, changing nothing, while someone is connected to a file the restore would change: a write behind a
+    live room is overwritten by its next save. The editor leaves its own rooms before calling."""
+    project = get_project(request, pk, write=True)
+    version = get_version(project, version_id)
+    wanted = {m['path']: m for m in version.manifest}
+
+    # Bring the database up to date with live edits, and drop rooms nobody is using (they would keep their old text).
+    text_paths = {row.path for row in project.files.filter(kind=ProjectFile.TEXT)} | {p for p, m in wanted.items() if m['kind'] == 'text'}
+    unsaved = [p for p in sorted(text_paths) if live_room(project, p) and not flush_room(project, p)]
+    if unsaved:
+        return fail('Live edits could not be saved first. Try again in a moment.', 409)
+    for path in sorted(text_paths):
+        evict_idle_room(project, path)
+
+    current = current_manifest(project)
+    changes = diff_manifests(wanted, current)  # old = the version, new = now: 'added' means present now only
+    to_remove = [c['path'] for c in changes if c['status'] == 'added']
+    to_write = [c['path'] for c in changes if c['status'] in ('removed', 'modified')]
+    if not changes:
+        return Response({'ok': True, 'restored': False, 'message': 'The project already matches this version.'})
+    busy = [p for p in sorted({*to_remove, *to_write}) if live_room(project, p)]
+    if busy:
+        return Response({'ok': False, 'error': 'Someone has files open that this restore would change. Ask them to close '
+                         'them, then try again.', 'files': busy}, status=409)
+
+    blobs = {b.sha256: b for b in VersionBlob.objects.filter(project=project, sha256__in={wanted[p]['sha256'] for p in to_write if wanted[p]['kind'] != 'dir'})}
+    writes = []
+    for path in to_write:
+        entry = wanted[path]
+        if entry['kind'] == 'dir':
+            writes.append({'path': path, 'kind': 'dir'})
+            continue
+        blob = blobs.get(entry['sha256'])
+        if blob is None:
+            return fail('Some of this version\'s files are no longer stored, so it cannot be restored.', 409)
+        writes.append({'path': path, 'kind': entry['kind'], 'text': blob.text, 'source_key': blob.s3_key,
+                       'size': entry['size'], 'content_type': blob.content_type})
+    applied = None
+    try:
+        with transaction.atomic():
+            applied = pfiles.apply_changes(project, writes, to_remove)
+            created = snapshot.record_restore(project, version, user=None if getattr(request.user, 'is_guest', False) else request.user)
+    except Exception as exc:
+        if applied:
+            applied.rollback()
+        return fail(f'Restore failed, nothing was changed: {exc}', 500)
+    return Response({'ok': True, 'restored': True, 'versionId': str(created.id), 'versionNumber': created.number,
+                     'changed': {'written': len(to_write), 'removed': len(to_remove)}})
