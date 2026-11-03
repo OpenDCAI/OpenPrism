@@ -76,3 +76,24 @@ def record(project, entries, pdf, main_file, engine, job=None, user=None):
         if stored_pdf:
             storage.delete_keys([key])
         raise
+
+
+def record_restore(project, source, user=None):
+    """Record the version a restore produced: the same manifest as `source`, with its own copy of the PDF (so deleting
+    either version never takes the other's PDF with it). The blobs already exist. Returns the new version."""
+    version_id = uuid.uuid4()
+    key = pdf_key(project.id, version_id) if source.pdf_key else ''
+    if key:
+        storage.copy(source.pdf_key, key)
+    try:
+        with transaction.atomic():
+            Project.objects.select_for_update().get(pk=project.pk)
+            latest = project.versions.first()
+            return ProjectVersion.objects.create(
+                id=version_id, project=project, number=(latest.number + 1 if latest else 1), created_by=user,
+                main_file=source.main_file, engine=source.engine, manifest=source.manifest,
+                manifest_hash=source.manifest_hash, pdf_key=key, pdf_size=source.pdf_size, restored_from=source)
+    except Exception:
+        if key:
+            storage.delete_keys([key])
+        raise

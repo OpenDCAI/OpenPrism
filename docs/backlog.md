@@ -123,10 +123,11 @@ file is open live). Left for later:
 - [ ] **`common.tests.VersionTests` rejects four-part versions** (`^\d+\.\d+\.\d+$`), so it fails while `apps/api/VERSION` is a
       patch release such as 0.0.3.1 (the project tags `vX.Y.Z.W` patches). Accept an optional fourth part. Found when
       the API suite ran on `main` after v0.0.3.1.
-- [ ] **Intermittent failures in the full API suite**, a different test each run and always green when run alone
-      (seen: `integrations ConnectionTests.test_users_are_isolated_and_login_is_required` with a missing `connected`
-      key, and `transfer TransferApiTests.test_legacy_transfer_with_compile_fix`). Find the shared state (rate
-      limits, cache, Redis, the live dev workers sharing the broker) before it hides a real failure.
+- [ ] **Random 401s ("Token is invalid") make the full test suites flaky.** Cause found: in the devcontainer (WSL2)
+      the wall clock steps backwards by about a second several times a minute, so a token minted just before a step
+      has an `iat` in the future and SimpleJWT rejects it. Different unrelated tests fail each run and pass alone;
+      with `SIMPLE_JWT['LEEWAY'] = 5` the API suite (301) and worker-tex suite (130) pass every time. Add a small
+      leeway under the test settings (not production) or fix the clock sync, and note it in CLAUDE.md.
 - [ ] **`design/reference/` is untracked** (and `design/README.md` already links to it).
 
 ## v0.0.10 - Operations
