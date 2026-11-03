@@ -60,3 +60,5 @@
 - [x] #24 **Restore API.** `POST …/versions/:vid/restore` makes the files exactly the version's through one atomic
       `files.apply_changes`, records a new version, and answers 409 (nothing written) while someone is connected to an
       affected file; idle rooms are evicted first (new `KIND_EVICT` collab control message).
+- [x] #25 **Editor panel.** Versions rail tool: list, open an older PDF (labelled, with a way back), name/unname and
+      delete; viewers see no controls; "Saved as version #N" after a compile; `e2e/versions.spec.ts`.

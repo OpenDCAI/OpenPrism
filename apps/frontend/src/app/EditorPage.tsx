@@ -28,6 +28,7 @@ import {
   getCollabServer,
   getFile,
   getProjectTree,
+  fetchVersionPdf,
   getWorkspaceLlm,
   getCollabToken,
   blobUrl,
@@ -53,6 +54,7 @@ import { Awareness } from 'y-protocols/awareness';
 import { yCollab } from 'y-codemirror.next';
 import { CollabProvider } from '../collab/provider';
 import ZoteroPanel from './ZoteroPanel';
+import VersionsPanel from './VersionsPanel';
 import {
   AppTopBar,
   Avatar,
@@ -134,7 +136,7 @@ const RIGHT_VIEW_OPTIONS = (t: (key: string) => string) => [
 ];
 
 type LeftView = 'files' | 'outline' | 'search';
-type RightTool = 'agent' | 'vision' | 'search' | 'zotero' | 'websearch' | 'plot' | 'review' | 'collab';
+type RightTool = 'agent' | 'vision' | 'search' | 'zotero' | 'versions' | 'websearch' | 'plot' | 'review' | 'collab';
 type ViewMode = 'editor' | 'split' | 'pdf';
 
 const EDITOR_LAYOUT_KEY = 'openprism-editor-layout-v1';
@@ -1517,6 +1519,9 @@ export default function EditorPage() {
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
   const [compileLog, setCompileLog] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
+  /** An older version's PDF shown in place of the current build; `backUrl` is the build to return to. */
+  const [versionView, setVersionView] = useState<{ id: string; number: number; url: string; backUrl: string } | null>(null);
+  const [versionsRefresh, setVersionsRefresh] = useState(0);
   const [pdfScale, setPdfScale] = useState(1);
   const [pdfFitWidth, setPdfFitWidth] = useState(true);
   const [pdfFitScale, setPdfFitScale] = useState<number | null>(null);
@@ -1861,6 +1866,33 @@ export default function EditorPage() {
       setStatus(t('复制失败: {{error}}', { error: String(err) }));
     }
   }, [collabInviteLink, t]);
+
+  const showingVersion = versionView && versionView.url === pdfUrl ? versionView : null;
+  useEffect(() => {
+    // Anything else replacing the preview (a compile, another file's build) ends the version view.
+    if (versionView && pdfUrl !== versionView.url) {
+      URL.revokeObjectURL(versionView.url);
+      setVersionView(null);
+    }
+  }, [pdfUrl, versionView]);
+
+  const viewVersionPdf = async (version: { id: string; number: number } | null) => {
+    if (!version) {
+      if (showingVersion) setPdfUrl(showingVersion.backUrl);
+      return;
+    }
+    try {
+      const blob = await fetchVersionPdf(projectId, version.id);
+      const url = URL.createObjectURL(blob);
+      const backUrl = showingVersion ? showingVersion.backUrl : pdfUrl;
+      if (showingVersion) URL.revokeObjectURL(showingVersion.url);
+      setVersionView({ id: version.id, number: version.number, url, backUrl });
+      setPdfUrl(url);
+      setRightView('pdf');
+    } catch (err) {
+      setStatus(t('Could not open version #{{n}}: {{error}}', { n: version.number, error: String((err as Error).message || err) }));
+    }
+  };
 
   const refreshTree = async (keepActive = true) => {
     if (!projectId) return;
@@ -3675,7 +3707,9 @@ export default function EditorPage() {
         setPdfUrl(nextUrl);
         setRightView('pdf');
       }
-      setStatus(t('编译完成 ({{engine}})', { engine: result.engine }));
+      const saved = res.versionCreated && res.versionNumber ? ` · ${t('Saved as version #{{n}}', { n: res.versionNumber })}` : '';
+      setStatus(`${t('编译完成 ({{engine}})', { engine: result.engine })}${saved}`);
+      setVersionsRefresh((n) => n + 1);
     } catch (err) {
       console.error('Compilation error:', err);
       const log = t('编译错误: {{error}}', { error: String(err) });
@@ -4280,6 +4314,7 @@ export default function EditorPage() {
     { id: 'review', label: t('Review'), icon: 'review' },
     { id: 'search', label: t('论文检索'), icon: 'book-open' },
     { id: 'zotero', label: t('Zotero'), icon: 'quote' },
+    { id: 'versions', label: t('Versions'), icon: 'history' },
     { id: 'websearch', label: t('Websearch'), icon: 'globe' },
     { id: 'vision', label: t('图像识别'), icon: 'scan' },
     { id: 'plot', label: t('绘图'), icon: 'bar-chart' },
@@ -4795,6 +4830,15 @@ export default function EditorPage() {
                           </button>
                         </div>
                       </div>
+                      {showingVersion && (
+                        <div className="version-banner" role="status" data-testid="version-banner">
+                          <Icon name="history" />
+                          <span>{t('Version #{{n}}, not the current build', { n: showingVersion.number })}</span>
+                          <Button size="sm" variant="secondary" data-testid="version-back" onClick={() => void viewVersionPdf(null)}>
+                            {t('Back to current build')}
+                          </Button>
+                        </div>
+                      )}
                       {pdfUrl ? (
                         <PdfPreview
                           pdfUrl={pdfUrl}
@@ -5464,6 +5508,23 @@ export default function EditorPage() {
                       onFileChanged={(file) => {
                         void refreshTree();
                         if (file === activePath) void openFile(file);
+                      }}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : activeSidebar === 'versions' ? (
+              <>
+                <PanelHeader title={t('Versions')} side="right" onCollapse={() => setRightOpen(false)} collapseLabel={t('Collapse panel')} />
+                <div className="ed-panel-body">
+                  <div className="tools-body">
+                    <VersionsPanel
+                      projectId={projectId}
+                      refreshKey={versionsRefresh}
+                      viewingId={showingVersion?.id ?? null}
+                      onViewPdf={(version) => void viewVersionPdf(version)}
+                      onDeleted={(id) => {
+                        if (showingVersion?.id === id) void viewVersionPdf(null);
                       }}
                     />
                   </div>

@@ -284,12 +284,20 @@ export interface PdfFocus {
   y: number;
 }
 
-type CompileResult = { ok: boolean; pdf?: string; log?: string; status?: number; engine?: string; error?: string; focus?: PdfFocus | null };
+type CompileResult = {
+  ok: boolean; pdf?: string; log?: string; status?: number; engine?: string; error?: string; focus?: PdfFocus | null;
+  /** The project version this compile saved (or the unchanged latest one, `versionCreated: false`). */
+  versionNumber?: number | null;
+  versionCreated?: boolean | null;
+};
 type JobStatus = {
   status: 'queued' | 'running' | 'waiting_images' | 'success' | 'failed';
   progressLog: string[];
   error: string;
-  result?: { log: string; status: number | null; engine: string; mainFile: string; pdfUrl: string | null; focus?: PdfFocus | null };
+  result?: {
+    log: string; status: number | null; engine: string; mainFile: string; pdfUrl: string | null; focus?: PdfFocus | null;
+    versionNumber?: number | null; versionCreated?: boolean | null;
+  };
 };
 
 const COMPILE_POLL_INTERVAL_MS = 1000;
@@ -347,7 +355,9 @@ export async function compileProject(
         log: job.result?.log,
         status: job.result?.status ?? 0,
         engine: job.result?.engine,
-        focus: job.result?.focus ?? null
+        focus: job.result?.focus ?? null,
+        versionNumber: job.result?.versionNumber ?? null,
+        versionCreated: job.result?.versionCreated ?? null
       };
     }
     if (Date.now() > deadline) return { ok: false, error: 'Compilation timed out.' };
@@ -828,7 +838,7 @@ export function listVersions(projectId: string, opts: { limit?: number; before?:
   if (opts.limit) params.set('limit', String(opts.limit));
   if (opts.before) params.set('before', String(opts.before));
   const query = params.toString();
-  return request<{ ok: boolean; versions: ProjectVersionMeta[]; hasMore: boolean }>(
+  return request<{ ok: boolean; versions: ProjectVersionMeta[]; hasMore: boolean; canWrite: boolean }>(
     `${versionsBase(projectId)}${query ? `?${query}` : ''}`
   );
 }
@@ -848,6 +858,12 @@ export function diffVersions(projectId: string, from: string, to?: string, all =
   if (to) params.set('to', to);
   if (all) params.set('all', '1');
   return request<{ ok: boolean; files: VersionFileChange[] }>(`${versionsBase(projectId)}/diff?${params.toString()}`);
+}
+/** A version's PDF as a Blob, fetched with the normal Authorization header (no token in a URL). */
+export async function fetchVersionPdf(projectId: string, versionId: string): Promise<Blob> {
+  const res = await apiFetch(`${API_BASE}${versionsBase(projectId)}/${encodeURIComponent(versionId)}/pdf`);
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return res.blob();
 }
 /** URLs for <object>/<img>, which cannot send an Authorization header. */
 export function versionPdfUrl(projectId: string, versionId: string) {

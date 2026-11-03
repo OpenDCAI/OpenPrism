@@ -84,6 +84,16 @@ class CompileApiTests(ApiBase):
         job.save()
         self.assertIsNone(self.c.get(f'/api/jobs/{job.id}').data['result']['focus'])
 
+    def test_finished_job_reports_the_saved_version(self):
+        job = Job.objects.create(type='compile', user=self.user, project=Project.objects.get(pk=self.pid), status='success',
+                                 result={'pdfKey': 'k', 'versionId': 'abc', 'versionNumber': 4, 'versionCreated': True})
+        result = self.c.get(f'/api/jobs/{job.id}').data['result']
+        self.assertEqual((result['versionId'], result['versionNumber'], result['versionCreated']), ('abc', 4, True))
+        job.result = {'pdfKey': 'k'}  # no version (snapshot failed or a job from before versions)
+        job.save()
+        result = self.c.get(f'/api/jobs/{job.id}').data['result']
+        self.assertEqual((result['versionId'], result['versionNumber'], result['versionCreated']), (None, None, None))
+
     def test_other_users_project_is_404(self):
         other = client_for(make_user('other@example.com'))
         self.assertEqual(other.post('/api/compile', {'projectId': self.pid}, format='json').status_code, 404)
@@ -106,6 +116,7 @@ class CompileApiTests(ApiBase):
         data = self.c.get(f'/api/jobs/{job.id}').data
         self.assertEqual(data['status'], 'success')
         self.assertEqual(data['result'], {'log': 'LOG', 'status': 0, 'engine': 'pdflatex', 'mainFile': 'main.tex', 'focus': None,
+                                          'versionId': None, 'versionNumber': None, 'versionCreated': None,
                                           'pdfUrl': f'/api/jobs/{job.id}/pdf'})
         pdf = self.c.get(f'/api/jobs/{job.id}/pdf')
         self.assertEqual((pdf.content, pdf['Content-Type']), (b'%PDF-test', 'application/pdf'))

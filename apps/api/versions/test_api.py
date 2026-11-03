@@ -55,6 +55,14 @@ class ListAndDetailTests(VersionApiBase):
         self.assertNotIn('manifest', top)
         self.assertNotEqual(top['id'], str(v1.id))
 
+    def test_the_list_says_whether_the_caller_may_change_versions(self):
+        viewer = make_user('viewer@example.com')
+        Membership.objects.create(workspace=self.project.workspace, user=viewer, role=Membership.VIEWER)
+        self.assertTrue(self.c.get(self.url()).data['canWrite'])
+        self.assertFalse(client_for(viewer).get(self.url()).data['canWrite'])
+        self.assertTrue(self.guest('editor').get(self.url()).data['canWrite'])
+        self.assertFalse(self.guest('viewer').get(self.url()).data['canWrite'])
+
     def test_paging(self):
         for i in range(3):
             files.write_text(self.project, 'main.tex', f'v{i}')
