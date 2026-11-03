@@ -255,3 +255,19 @@ body.ed-resizing iframe, body.ed-resizing canvas { pointer-events: none; }
   .ed-center-bar .op-seg > button > .op-truncate { display: none; }
   .ed-status-text { display: none; }
 }
+
+/* Version history panel and the banner shown while an older version's PDF is in the preview */
+.ed-app .version-list { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 320px; overflow: auto; }
+.ed-app .version-row {
+  display: flex; flex-direction: column; gap: var(--sp-1); align-items: flex-start; text-align: left; width: 100%;
+  padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); color: var(--text); font: inherit; cursor: pointer;
+}
+.ed-app .version-row:hover { border-color: var(--border-strong); }
+.ed-app .version-row[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
+.ed-app .version-row-head { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.ed-app .version-detail { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.ed-app .version-banner {
+  display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; padding: var(--sp-2) var(--sp-3);
+  background: var(--accent-soft); border-bottom: 1px solid var(--border); color: var(--text); font-size: var(--fs-sm);
+}

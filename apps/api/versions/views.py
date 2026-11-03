@@ -5,7 +5,7 @@ from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import HttpResponse
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
-from rest_framework.exceptions import NotFound, ParseError
+from rest_framework.exceptions import NotFound, ParseError, PermissionDenied
 from rest_framework.response import Response
 
 from collab.auth import IsUserOrGuest
@@ -41,6 +41,15 @@ def version_json(v, detail=False):
     return out
 
 
+def _can_write(request, project):
+    """Whether the caller may name, delete and restore versions (the UI hides those controls otherwise)."""
+    try:
+        get_project(request, project.id, write=True)
+    except PermissionDenied:
+        return False
+    return True
+
+
 def get_version(project, version_id):
     try:
         return project.versions.select_related('created_by', 'restored_from').get(pk=version_id)
@@ -62,7 +71,8 @@ def versions_collection(request, pk):
     if before:
         rows = rows.filter(number__lt=before)
     rows = list(rows[:limit + 1])
-    return Response({'ok': True, 'versions': [version_json(v) for v in rows[:limit]], 'hasMore': len(rows) > limit})
+    return Response({'ok': True, 'versions': [version_json(v) for v in rows[:limit]], 'hasMore': len(rows) > limit,
+                     'canWrite': _can_write(request, project)})
 
 
 NAME_MAX = 100

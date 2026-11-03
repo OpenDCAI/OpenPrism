@@ -1,0 +1,223 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { deleteVersion, listVersions, renameVersion } from '../api/client';
+import type { ProjectVersionMeta } from '../api/client';
+import { Badge, Button, EmptyState, FieldError } from '@design';
+
+interface VersionsPanelProps {
+  projectId: string;
+  /** Bumped by the editor after every compile so the list picks up the version it saved. */
+  refreshKey: number;
+  /** The version whose PDF the preview is showing, if any. */
+  viewingId: string | null;
+  /** Show this version's PDF in the preview, or null to go back to the current build. */
+  onViewPdf: (version: ProjectVersionMeta | null) => void;
+  /** A version was deleted: the preview must not keep showing its PDF. */
+  onDeleted: (versionId: string) => void;
+}
+
+const PAGE = 30;
+
+export default function VersionsPanel({ projectId, refreshKey, viewingId, onViewPdf, onDeleted }: VersionsPanelProps) {
+  const { t } = useTranslation();
+  const [versions, setVersions] = useState<ProjectVersionMeta[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [canWrite, setCanWrite] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const seq = useRef(0);
+
+  const load = useCallback(async () => {
+    const mine = ++seq.current;
+    try {
+      const res = await listVersions(projectId, { limit: PAGE });
+      if (mine !== seq.current) return;
+      setVersions(res.versions);
+      setHasMore(res.hasMore);
+      setCanWrite(Boolean(res.canWrite));
+      setError('');
+    } catch (err) {
+      if (mine === seq.current) setError(String((err as Error).message || err));
+    } finally {
+      if (mine === seq.current) setLoaded(true);
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void load();
+  }, [load, refreshKey]);
+
+  const loadMore = async () => {
+    const oldest = versions[versions.length - 1];
+    if (!oldest) return;
+    setBusy(true);
+    try {
+      const res = await listVersions(projectId, { limit: PAGE, before: oldest.number });
+      setVersions((prev) => [...prev, ...res.versions]);
+      setHasMore(res.hasMore);
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const selected = versions.find((v) => v.id === selectedId) || null;
+  useEffect(() => {
+    setNameDraft(selected?.name ?? '');
+    setConfirmDelete(false);
+  }, [selected?.id, selected?.name]);
+
+  const saveName = async (name: string) => {
+    if (!selected) return;
+    setBusy(true);
+    setError('');
+    try {
+      const res = await renameVersion(projectId, selected.id, name);
+      if (!res.ok) throw new Error(res.error || t('Could not save the name.'));
+      setVersions((prev) => prev.map((v) => (v.id === selected.id ? { ...v, name: res.version?.name ?? name.trim() } : v)));
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async () => {
+    if (!selected) return;
+    setBusy(true);
+    setError('');
+    try {
+      await deleteVersion(projectId, selected.id);
+      setVersions((prev) => prev.filter((v) => v.id !== selected.id));
+      onDeleted(selected.id);
+      setSelectedId(null);
+    } catch (err) {
+      setError(String((err as Error).message || err));
+    } finally {
+      setBusy(false);
+      setConfirmDelete(false);
+    }
+  };
+
+  if (!loaded) return <div className="muted" role="status">{t('Loading…')}</div>;
+  if (versions.length === 0) {
+    return (
+      <div data-testid="versions-panel">
+        <FieldError message={error} />
+        <EmptyState icon="history" title={t('No versions yet')}>
+          {t('A version is saved every time a compile succeeds, so you can look back at an earlier PDF.')}
+        </EmptyState>
+      </div>
+    );
+  }
+
+  const viewing = selected !== null && viewingId === selected.id;
+  return (
+    <div className="tool-section" data-testid="versions-panel">
+      <div className="version-list" data-testid="version-list">
+        {versions.map((v) => (
+          <button
+            key={v.id}
+            type="button"
+            className="version-row"
+            aria-pressed={v.id === selectedId}
+            data-number={v.number}
+            onClick={() => setSelectedId(v.id === selectedId ? null : v.id)}
+          >
+            <span className="version-row-head">
+              <strong>#{v.number}</strong>
+              {v.name && <Badge tone="accent" icon="star">{v.name}</Badge>}
+              {v.restoredFrom !== null && <Badge>{t('restored from #{{n}}', { n: v.restoredFrom })}</Badge>}
+              {v.id === viewingId && <Badge tone="info">{t('Viewing')}</Badge>}
+            </span>
+            <span className="muted">
+              {new Date(v.createdAt).toLocaleString()}
+              {v.createdBy ? ` · ${v.createdBy.name}` : ''}
+            </span>
+            <span className="muted">{`${v.mainFile} · ${v.engine}`}</span>
+          </button>
+        ))}
+      </div>
+      {hasMore && <Button variant="secondary" size="sm" onClick={() => void loadMore()} disabled={busy}>{t('Load more')}</Button>}
+      <FieldError message={error} />
+      {selected && (
+        <div className="version-detail" data-testid="version-detail">
+          <div className="tool-title">{t('Version #{{n}}', { n: selected.number })}</div>
+          <div className="muted">{selected.fileCount === 1 ? t('1 file') : t('{{count}} files', { count: selected.fileCount })}</div>
+          <div className="row">
+            <Button
+              variant="primary"
+              size="sm"
+              icon="file-text"
+              data-testid="version-open-pdf"
+              onClick={() => onViewPdf(viewing ? null : selected)}
+            >
+              {viewing ? t('Back to current build') : t('Open PDF')}
+            </Button>
+          </div>
+          {canWrite && (
+            <>
+              <div className="op-field">
+                <label className="op-field-label" htmlFor="version-name">{t('Name')}</label>
+                <input
+                  id="version-name"
+                  className="op-input"
+                  data-testid="version-name-input"
+                  value={nameDraft}
+                  maxLength={100}
+                  placeholder={t('e.g. submitted to ACL')}
+                  onChange={(e) => setNameDraft(e.target.value)}
+                />
+                <span className="muted">{t('A named version is kept forever. Unnamed versions beyond the newest 50 are removed.')}</span>
+              </div>
+              <div className="row">
+                <Button
+                  variant="secondary"
+                  size="sm"
+                  data-testid="version-save-name"
+                  onClick={() => void saveName(nameDraft)}
+                  disabled={busy || nameDraft.trim() === selected.name}
+                >
+                  {t('Save name')}
+                </Button>
+                {selected.name && (
+                  <Button variant="ghost" size="sm" data-testid="version-clear-name" onClick={() => void saveName('')} disabled={busy}>
+                    {t('Remove name')}
+                  </Button>
+                )}
+              </div>
+              <div className="row">
+                {confirmDelete ? (
+                  <>
+                    <span className="muted">{t('Delete version #{{n}}?', { n: selected.number })}</span>
+                    <Button variant="danger" size="sm" data-testid="version-delete-confirm" onClick={() => void remove()} disabled={busy}>
+                      {t('Delete')}
+                    </Button>
+                    <Button variant="ghost" size="sm" onClick={() => setConfirmDelete(false)}>{t('Cancel')}</Button>
+                  </>
+                ) : (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    icon="trash"
+                    data-testid="version-delete"
+                    onClick={() => setConfirmDelete(true)}
+                    disabled={busy || Boolean(selected.name)}
+                    title={selected.name ? t('Remove the name first') : undefined}
+                  >
+                    {t('Delete version')}
+                  </Button>
+                )}
+              </div>
+            </>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
