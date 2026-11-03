@@ -54,3 +54,6 @@
 - [x] #22 **Read API.** List (paged), detail with manifest, PDF and file of a version, and a manifest diff between two
       versions or against the current project; read access for any member and invite guests; typed functions in
       `client.ts`.
+- [x] #23 **Name/pin, delete and retention.** `PATCH`/`DELETE` on a version (write access; named versions must be
+      unnamed before deleting), shared blob cleanup, and the daily `versions.tasks.prune_versions` that keeps the newest
+      50 unnamed versions per project (`VERSION_KEEP_UNNAMED`).

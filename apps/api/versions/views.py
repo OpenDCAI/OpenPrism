@@ -14,6 +14,7 @@ from projects.models import ProjectFile
 from projects.paths import InvalidPath, safe_path
 from projects.views import BLOB_TYPES, INERT_TYPES, iso
 
+from . import retention
 from .models import ProjectVersion, VersionBlob
 
 PAGE_MAX = 100
@@ -61,11 +62,30 @@ def versions_collection(request, pk):
     return Response({'ok': True, 'versions': [version_json(v) for v in rows[:limit]], 'hasMore': len(rows) > limit})
 
 
-@api_view(['GET'])
+NAME_MAX = 100
+
+
+@api_view(['GET', 'PATCH', 'DELETE'])
 @permission_classes([IsUserOrGuest])
 def version_detail(request, pk, version_id):
-    project = get_project(request, pk)
-    return Response({'ok': True, 'version': version_json(get_version(project, version_id), detail=True)})
+    """GET the version with its manifest; PATCH {name} names/unnames it; DELETE removes an unnamed one (write access)."""
+    project = get_project(request, pk, write=request.method != 'GET')
+    version = get_version(project, version_id)
+    if request.method == 'PATCH':
+        name = request.data.get('name')
+        if not isinstance(name, str):
+            return fail('name must be a string.')
+        name = name.strip()
+        if len(name) > NAME_MAX:
+            return fail(f'A version name can have at most {NAME_MAX} characters.')
+        version.name = name
+        version.save(update_fields=['name'])
+    elif request.method == 'DELETE':
+        if version.name:
+            return fail('This version is named. Remove its name before deleting it.', 400)
+        retention.delete_versions(project, [version])
+        return Response({'ok': True})
+    return Response({'ok': True, 'version': version_json(version, detail=True)})
 
 
 @api_view(['GET'])
