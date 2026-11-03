@@ -257,17 +257,31 @@ body.ed-resizing iframe, body.ed-resizing canvas { pointer-events: none; }
 }
 
 /* Version history panel and the banner shown while an older version's PDF is in the preview */
-.ed-app .version-list { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 320px; overflow: auto; }
-.ed-app .version-row {
+.version-list { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 320px; overflow: auto; }
+.version-row {
   display: flex; flex-direction: column; gap: var(--sp-1); align-items: flex-start; text-align: left; width: 100%;
   padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface); color: var(--text); font: inherit; cursor: pointer;
 }
-.ed-app .version-row:hover { border-color: var(--border-strong); }
-.ed-app .version-row[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
-.ed-app .version-row-head { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
-.ed-app .version-detail { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
-.ed-app .version-banner {
+.version-row:hover { border-color: var(--border-strong); }
+.version-row[aria-pressed='true'] { border-color: var(--accent); background: var(--accent-soft); }
+.version-row-head { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; }
+.version-detail { display: flex; flex-direction: column; gap: var(--sp-3); padding-top: var(--sp-3); border-top: 1px solid var(--border); }
+.version-banner {
   display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; padding: var(--sp-2) var(--sp-3);
   background: var(--accent-soft); border-bottom: 1px solid var(--border); color: var(--text); font-size: var(--fs-sm);
 }
+.version-compare { display: flex; flex-direction: column; gap: var(--sp-3); min-height: 60vh; }
+.version-compare-pickers { display: flex; flex-wrap: wrap; gap: var(--sp-3); align-items: flex-end; }
+.version-compare-pickers .op-field { min-width: 160px; flex: 1 1 160px; }
+.version-compare-body { display: grid; grid-template-columns: minmax(180px, 260px) minmax(0, 1fr); gap: var(--sp-3); min-height: 0; flex: 1; }
+.version-compare-files { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 60vh; overflow: auto; }
+.version-compare-path { overflow-wrap: anywhere; font-size: var(--fs-sm); }
+.version-compare-diff { min-width: 0; max-height: 60vh; overflow: auto; }
+.version-restore ul { margin: var(--sp-2) 0; padding-left: var(--sp-5); }
+.version-restore-blocked { margin-top: var(--sp-3); }
+@media (max-width: 640px) {
+  .version-compare-body { grid-template-columns: minmax(0, 1fr); }
+  .version-compare-files { max-height: 160px; }
+}
+.version-compare-diff .split-column { max-height: 56vh; } /* the compare dialog has room for more than the 240px a patch preview gets */

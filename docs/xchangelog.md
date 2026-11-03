@@ -62,3 +62,6 @@
       affected file; idle rooms are evicted first (new `KIND_EVICT` collab control message).
 - [x] #25 **Editor panel.** Versions rail tool: list, open an older PDF (labelled, with a way back), name/unname and
       delete; viewers see no controls; "Saved as version #N" after a compile; `e2e/versions.spec.ts`.
+- [x] #26 **Compare and restore in the UI.** Compare dialog (any two versions or the current project, split line
+      diff, swap), restore with a confirmation that lists what changes, a 409 explanation when someone has a file open,
+      and a shared `SplitDiff` component; Playwright specs incl. a second live browser.

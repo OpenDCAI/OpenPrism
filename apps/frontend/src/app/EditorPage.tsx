@@ -29,6 +29,7 @@ import {
   getFile,
   getProjectTree,
   fetchVersionPdf,
+  restoreVersion,
   getWorkspaceLlm,
   getCollabToken,
   blobUrl,
@@ -45,9 +46,10 @@ import {
   flushCollabFile,
   setCollabServer
 } from '../api/client';
-import type { ArxivPaper, PdfFocus } from '../api/client';
+import type { ArxivPaper, PdfFocus, RestoreVersionResult } from '../api/client';
 import { tokenForUrl } from '../api/auth';
-import { createTwoFilesPatch, diffLines } from 'diff';
+import { createTwoFilesPatch } from 'diff';
+import { SplitDiffView, buildSplitDiff } from './SplitDiff';
 import type { CompileOutcome } from '../latex/engine';
 import * as Y from 'yjs';
 import { Awareness } from 'y-protocols/awareness';
@@ -1059,43 +1061,6 @@ const latexHighlight = HighlightStyle.define([
   { tag: hlTags.bracket, color: 'var(--text-3)' }
 ]);
 
-function buildSplitDiff(original: string, proposed: string) {
-  const parts = diffLines(original, proposed);
-  let leftLine = 1;
-  let rightLine = 1;
-  const rows: {
-    left?: string;
-    right?: string;
-    leftNo?: number;
-    rightNo?: number;
-    type: 'context' | 'added' | 'removed';
-  }[] = [];
-
-  parts.forEach((part) => {
-    const lines = part.value.split('\n');
-    if (lines[lines.length - 1] === '') {
-      lines.pop();
-    }
-    lines.forEach((line) => {
-      if (part.added) {
-        rows.push({ right: line, rightNo: rightLine++, type: 'added' });
-      } else if (part.removed) {
-        rows.push({ left: line, leftNo: leftLine++, type: 'removed' });
-      } else {
-        rows.push({
-          left: line,
-          right: line,
-          leftNo: leftLine++,
-          rightNo: rightLine++,
-          type: 'context'
-        });
-      }
-    });
-  });
-
-  return rows;
-}
-
 type CompileError = {
   message: string;
   line?: number;
@@ -1161,54 +1126,6 @@ function findLineOffset(text: string, line: number) {
 
 function replaceSelection(source: string, start: number, end: number, replacement: string) {
   return source.slice(0, start) + replacement + source.slice(end);
-}
-
-function SplitDiffView({ rows }: { rows: ReturnType<typeof buildSplitDiff> }) {
-  const { t } = useTranslation();
-  const leftRef = useRef<HTMLDivElement | null>(null);
-  const rightRef = useRef<HTMLDivElement | null>(null);
-  const lockRef = useRef(false);
-
-  const syncScroll = (source: HTMLDivElement | null, target: HTMLDivElement | null) => {
-    if (!source || !target || lockRef.current) return;
-    lockRef.current = true;
-    target.scrollTop = source.scrollTop;
-    target.scrollLeft = source.scrollLeft;
-    requestAnimationFrame(() => {
-      lockRef.current = false;
-    });
-  };
-
-  return (
-    <div className="split-diff">
-      <div
-        className="split-column"
-        ref={leftRef}
-        onScroll={() => syncScroll(leftRef.current, rightRef.current)}
-      >
-        <div className="split-header">{t('Before')}</div>
-        {rows.map((row, idx) => (
-          <div key={`l-${idx}`} className={`split-row ${row.type}`}>
-            <div className="line-no">{row.leftNo ?? ''}</div>
-            <div className="line-text">{row.left ?? ''}</div>
-          </div>
-        ))}
-      </div>
-      <div
-        className="split-column"
-        ref={rightRef}
-        onScroll={() => syncScroll(rightRef.current, leftRef.current)}
-      >
-        <div className="split-header">{t('After')}</div>
-        {rows.map((row, idx) => (
-          <div key={`r-${idx}`} className={`split-row ${row.type}`}>
-            <div className="line-no">{row.rightNo ?? ''}</div>
-            <div className="line-text">{row.right ?? ''}</div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
 }
 
 function PdfPreview({
@@ -1894,8 +1811,36 @@ export default function EditorPage() {
     }
   };
 
-  const refreshTree = async (keepActive = true) => {
-    if (!projectId) return;
+  /**
+   * Restore a version. A REST write behind an open live room is overwritten by the room's next save, so this tab leaves
+   * its own room first (the server drops idle rooms); other people's open files make the server answer 409. Afterwards
+   * the editor reloads from the server and rejoins.
+   */
+  const restoreVersionInEditor = async (version: { id: string; number: number }): Promise<RestoreVersionResult> => {
+    const wasLive = collabEnabled && collabActiveRef.current;
+    if (wasLive) {
+      await flushCollabFile(projectId, activePath).catch(() => undefined);
+      setCollabEnabled(false);
+      await new Promise((resolve) => setTimeout(resolve, 500)); // let the socket close reach the server
+    }
+    try {
+      const res = await restoreVersion(projectId, version.id);
+      if (res.ok && res.restored) {
+        if (showingVersion) setPdfUrl(showingVersion.backUrl);
+        setFiles({});
+        const items = await refreshTree(true, true); // opens the main file itself if the open one no longer exists
+        if (activePath && items.some((item) => item.path === activePath)) await openFile(activePath, true).catch(() => undefined);
+        setVersionsRefresh((n) => n + 1);
+        setStatus(t('Restored version #{{from}} as version #{{n}}', { from: version.number, n: res.versionNumber }));
+      }
+      return res;
+    } finally {
+      if (wasLive) setCollabEnabled(true);
+    }
+  };
+
+  const refreshTree = async (keepActive = true, fresh = false) => {
+    if (!projectId) return [];
     const res = await getProjectTree(projectId);
     setTree(res.items);
     setFileOrder(res.fileOrder || {});
@@ -1903,9 +1848,10 @@ export default function EditorPage() {
       const main = res.items.find((item) => item.path.endsWith('main.tex'))?.path;
       const next = main || res.items.find((item) => item.type === 'file')?.path || '';
       if (next) {
-        await openFile(next);
+        await openFile(next, fresh);
       }
     }
+    return res.items;
   };
 
   /** Re-read every text file so \ref/\cite completion and checks see labels and bib keys from the whole project. */
@@ -2090,7 +2036,8 @@ export default function EditorPage() {
     };
   }, []);
 
-  const openFile = async (filePath: string) => {
+  /** `fresh` skips the in-memory copy (after the server changed files behind the editor's back, e.g. a restore). */
+  const openFile = async (filePath: string, fresh = false) => {
     setActivePath(filePath);
     activePathRef.current = filePath;
     setSelectedPath(filePath);
@@ -2106,7 +2053,7 @@ export default function EditorPage() {
         return next;
       });
     }
-    if (Object.prototype.hasOwnProperty.call(files, filePath)) {
+    if (!fresh && Object.prototype.hasOwnProperty.call(files, filePath)) {
       const cached = files[filePath] ?? '';
       const collabTextFile = collabEnabled && isTextPath(filePath);
       setEditorValue(collabTextFile ? '' : cached);
@@ -5526,6 +5473,7 @@ export default function EditorPage() {
                       onDeleted={(id) => {
                         if (showingVersion?.id === id) void viewVersionPdf(null);
                       }}
+                      onRestore={restoreVersionInEditor}
                     />
                   </div>
                 </div>
