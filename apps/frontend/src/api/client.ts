@@ -795,3 +795,68 @@ export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: stri
 export function removeWorkspaceLlm(workspaceId: string) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, { method: 'DELETE' });
 }
+
+// ─── Version history ───
+
+export interface ProjectVersionMeta {
+  id: string;
+  number: number;
+  createdAt: string;
+  createdBy: { name: string } | null;
+  mainFile: string;
+  engine: string;
+  /** A non-empty name pins the version: retention never deletes it. */
+  name: string;
+  fileCount: number;
+  pdfSize: number;
+  /** Number of the version this one was restored from. */
+  restoredFrom: number | null;
+}
+export interface ProjectVersionDetail extends ProjectVersionMeta {
+  manifest: Array<{ path: string; kind: 'text' | 'binary' | 'dir'; size: number; sha256: string }>;
+}
+export interface VersionFileChange {
+  path: string;
+  status: 'added' | 'removed' | 'modified' | 'unchanged';
+  kind: 'text' | 'binary' | 'dir';
+}
+
+const versionsBase = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/versions`;
+
+export function listVersions(projectId: string, opts: { limit?: number; before?: number } = {}) {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.before) params.set('before', String(opts.before));
+  const query = params.toString();
+  return request<{ ok: boolean; versions: ProjectVersionMeta[]; hasMore: boolean }>(
+    `${versionsBase(projectId)}${query ? `?${query}` : ''}`
+  );
+}
+export function getVersion(projectId: string, versionId: string) {
+  return request<{ ok: boolean; version: ProjectVersionDetail }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}`);
+}
+/** A text file as it was in a version. Binaries are fetched with `versionFileUrl`. */
+export function getVersionFile(projectId: string, versionId: string, path: string) {
+  const params = new URLSearchParams({ path });
+  return request<{ ok: boolean; kind: 'text'; path: string; content: string }>(
+    `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/file?${params.toString()}`
+  );
+}
+/** Changed files between a version and another version, or the project as it is now (`to` omitted). */
+export function diffVersions(projectId: string, from: string, to?: string, all = false) {
+  const params = new URLSearchParams({ from });
+  if (to) params.set('to', to);
+  if (all) params.set('all', '1');
+  return request<{ ok: boolean; files: VersionFileChange[] }>(`${versionsBase(projectId)}/diff?${params.toString()}`);
+}
+/** URLs for <object>/<img>, which cannot send an Authorization header. */
+export function versionPdfUrl(projectId: string, versionId: string) {
+  const token = tokenForUrl();
+  return `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+}
+export function versionFileUrl(projectId: string, versionId: string, path: string) {
+  const params = new URLSearchParams({ path });
+  const token = tokenForUrl();
+  if (token) params.set('token', token);
+  return `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/file?${params.toString()}`;
+}

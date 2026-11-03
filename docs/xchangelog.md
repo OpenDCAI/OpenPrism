@@ -51,3 +51,6 @@
 - [x] #21 **Snapshot every successful compile.** `versions` app: `ProjectVersion` (manifest + PDF) and per-project
       content-addressed `VersionBlob`s; the snapshot is taken from the same read the compiler used, unchanged
       projects create no new version, a failed snapshot never fails the compile, project delete removes it all.
+- [x] #22 **Read API.** List (paged), detail with manifest, PDF and file of a version, and a manifest diff between two
+      versions or against the current project; read access for any member and invite guests; typed functions in
+      `client.ts`.
