@@ -163,11 +163,13 @@ CELERY_TASK_ROUTES = {
     'jobs.tasks.reap_stale_jobs': {'queue': 'import'},
     'jobs.tasks.cleanup_old_jobs': {'queue': 'import'},
     'collab.tasks.*': {'queue': 'import'},
+    'versions.tasks.*': {'queue': 'import'},
 }
 CELERY_BEAT_SCHEDULE = {
     'reap-stale-jobs': {'task': 'jobs.tasks.reap_stale_jobs', 'schedule': 60.0},
     'cleanup-old-jobs': {'task': 'jobs.tasks.cleanup_old_jobs', 'schedule': 3600.0},
     'cleanup-expired-invites': {'task': 'collab.tasks.cleanup_expired_invites', 'schedule': 3600.0},
+    'prune-versions': {'task': 'versions.tasks.prune_versions', 'schedule': 86400.0},
 }
 
 LLM_TIMEOUT_SECONDS = int(env('LLM_TIMEOUT_SECONDS', '180'))
@@ -189,6 +191,7 @@ COMPILE_MAX_FILE_BYTES = int(env('COMPILE_MAX_FILE_BYTES', str(200 * 1024 * 1024
 JOB_RUNNING_STALE_MINUTES = int(env('JOB_RUNNING_STALE_MINUTES', '10'))
 JOB_QUEUED_STALE_MINUTES = int(env('JOB_QUEUED_STALE_MINUTES', '30'))
 JOB_RETENTION_HOURS = int(env('JOB_RETENTION_HOURS', '24'))
+VERSION_KEEP_UNNAMED = int(env('VERSION_KEEP_UNNAMED', '50'))  # unnamed versions kept per project; named ones are kept forever
 
 # The AWS_* names are what the deploy platform's object-storage Secret provides (boto3 / django-storages style).
 S3_ENDPOINT_URL = env('S3_ENDPOINT_URL', env('AWS_ENDPOINT_URL_S3', env('AWS_S3_ENDPOINT_URL', 'http://localhost:3900')))

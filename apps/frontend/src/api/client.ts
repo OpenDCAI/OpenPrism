@@ -860,3 +860,15 @@ export function versionFileUrl(projectId: string, versionId: string, path: strin
   if (token) params.set('token', token);
   return `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/file?${params.toString()}`;
 }
+
+/** Name a version (pins it) or clear its name with ''. Needs write access. */
+export function renameVersion(projectId: string, versionId: string, name: string) {
+  return request<{ ok: boolean; error?: string; version?: ProjectVersionDetail }>(
+    `${versionsBase(projectId)}/${encodeURIComponent(versionId)}`,
+    { method: 'PATCH', body: JSON.stringify({ name }) }
+  );
+}
+/** Delete an unnamed version (a named one must be unnamed first). Needs write access. */
+export function deleteVersion(projectId: string, versionId: string) {
+  return request<{ ok: boolean }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
+}
