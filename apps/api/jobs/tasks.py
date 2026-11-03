@@ -9,6 +9,8 @@ from django.utils import timezone
 from common import secrets as job_secrets
 from projects import storage
 
+from versions import snapshot
+
 from . import compile as tex
 from .models import Job
 
@@ -57,7 +59,21 @@ def compile_project(job_id):
         return finish(job, Job.FAILED, 'No PDF generated.', result)
     key = f'jobs/{job.id}/output.pdf'
     storage.put_bytes(key, out['pdf'], 'application/pdf')
-    finish(job, Job.SUCCESS, '', {**result, 'pdfKey': key, 'pdfSize': len(out['pdf'])})
+    result.update(pdfKey=key, pdfSize=len(out['pdf']), **save_version(job, out, params))
+    finish(job, Job.SUCCESS, '', result)
+
+
+def save_version(job, out, params):
+    """Record the project version this compile produced. Never fails the compile: no version is better than no PDF."""
+    if not out.get('snapshot'):
+        return {}
+    try:
+        version, created = snapshot.record(job.project, out['snapshot'], out['pdf'], params['mainFile'], params['engine'],
+                                           job=job, user=job.user)
+    except Exception:
+        log.exception('could not save a version for compile job %s', job.id)
+        return {}
+    return {'versionId': str(version.id), 'versionNumber': version.number, 'versionCreated': created}
 
 
 @shared_task(name='jobs.tasks.reap_stale_jobs')

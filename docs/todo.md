@@ -2,7 +2,6 @@
 
 ## v0.0.4 - Version history with diff
 
-- [ ] **#21 Snapshot every successful compile** (model, content-addressed blobs, dedupe, PDF copy).
 - [ ] **#22 Read API:** list, PDF, files, diff between versions.
 - [ ] **#23 Name/pin, delete and retention** (newest 50 unnamed kept, named forever).
 - [ ] **#24 Restore API:** atomic, records a new version, 409 while an affected file is open live.

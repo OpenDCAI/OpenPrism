@@ -55,6 +55,7 @@ INSTALLED_APPS = [
     'transfer',
     'collab',
     'integrations',
+    'versions',
     'common',
 ]
 

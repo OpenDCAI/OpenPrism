@@ -120,6 +120,13 @@ file is open live). Left for later:
       overlays on push.
 - [ ] **Split test-only dependencies.** `daphne` is in `requirements.txt` only because `channels.testing` imports it;
       the production API image does not need it (nor the test code).
+- [ ] **`common.tests.VersionTests` rejects four-part versions** (`^\d+\.\d+\.\d+$`), so it fails while `apps/api/VERSION` is a
+      patch release such as 0.0.3.1 (the project tags `vX.Y.Z.W` patches). Accept an optional fourth part. Found when
+      the API suite ran on `main` after v0.0.3.1.
+- [ ] **Intermittent failures in the full API suite**, a different test each run and always green when run alone
+      (seen: `integrations ConnectionTests.test_users_are_isolated_and_login_is_required` with a missing `connected`
+      key, and `transfer TransferApiTests.test_legacy_transfer_with_compile_fix`). Find the shared state (rate
+      limits, cache, Redis, the live dev workers sharing the broker) before it hides a real failure.
 - [ ] **`design/reference/` is untracked** (and `design/README.md` already links to it).
 
 ## v0.0.10 - Operations

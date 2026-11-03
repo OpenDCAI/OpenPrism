@@ -178,3 +178,4 @@ def copy_project_files(src_project, dst_project):
 def delete_project_files(project):
     """Remove all S3 objects for a project (call before deleting the Project row)."""
     storage.delete_prefix(f'projects/{project.id}/')
+    storage.delete_prefix(f'versions/{project.id}/')  # version blobs and PDFs
