@@ -40,3 +40,8 @@
       members see a read-only status.
 - [x] #19 **Editor notice and `projectId` for `/api/llm`.**
 
+
+## v0.0.3.1 - Build fixes
+
+- [x] #20 **Web image build.** `.dockerignore` hid `apps/api/VERSION`, so `docker compose build web` failed; the file is
+      now let through (nothing else from `apps/api` enters the context).
