@@ -414,6 +414,8 @@ export function plotFromTable(payload: {
 export function callLLM(payload: {
   messages: { role: 'system' | 'user' | 'assistant'; content: string }[];
   model?: string;
+  /** lets the server use the project's workspace AI provider */
+  projectId?: string;
   llmConfig?: Partial<LLMConfig>;
 }) {
   return request<{ ok: boolean; content?: string; error?: string }>('/api/llm', {
@@ -762,4 +764,34 @@ export function zoteroAdd(projectId: string, payload: { library: string; keys: s
     method: 'POST',
     body: JSON.stringify(payload)
   });
+}
+
+// ---- Workspace LLM provider ----------------------------------------------------------------------------------------
+
+export interface WorkspaceLlmStatus {
+  ok: boolean;
+  error?: string;
+  configured?: boolean;
+  canManage?: boolean;
+  /** true when the signed-in member's AI requests use the workspace provider (a write role) */
+  canUse?: boolean;
+  endpoint?: string;
+  model?: string;
+  /** only for owners and admins */
+  lastFour?: string;
+  updatedAt?: string;
+  updatedBy?: string;
+}
+
+export function getWorkspaceLlm(workspaceId: string) {
+  return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`);
+}
+export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: string; model?: string; apiKey?: string }) {
+  return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, {
+    method: 'PUT',
+    body: JSON.stringify(payload)
+  });
+}
+export function removeWorkspaceLlm(workspaceId: string) {
+  return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, { method: 'DELETE' });
 }

@@ -29,3 +29,14 @@
 - [x] #15 **Editor panel to search and insert citations.** Connect screen, Zotero panel, `\cite{}` insertion,
       Playwright spec against a fake Zotero (`integrations.devserver`).
 
+## v0.0.3 - Workspace LLM Keys
+
+- [x] #16 **Encrypted storage and management API.** `WorkspaceLlmConfig`, `GET/PUT/DELETE /api/workspaces/:id/llm`,
+      masking, SSRF check on the endpoint.
+- [x] #17 **Use it for the AI endpoints and template transfer.** Workspace provider first (write roles), then the
+      browser's key, then the server default; `/api/llm` takes `projectId`; the key only travels as a task argument /
+      Redis job secret.
+- [x] #18 **Admin settings in the workspace.** AI provider block under Settings: configure, rotate, remove; other
+      members see a read-only status.
+- [x] #19 **Editor notice and `projectId` for `/api/llm`.**
+

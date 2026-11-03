@@ -449,6 +449,27 @@ class TransferApiTests(ApiBase):
 
 # ---- arXiv import ----
 
+
+    def test_transfer_uses_the_workspace_key_and_stores_it_only_in_redis(self):
+        from integrations import llmconfig
+        ws = self.fake(*([{'content': json.dumps(PLAN)}] + [GOOD] * 3))
+        llmconfig.save(self.source.workspace, self.user, ws.url, 'ws-model', 'sk-workspace-SECRET-7')
+        body = {'sourceProjectId': self.source_id, 'sourceMainFile': 'main.tex', 'targetTemplateId': 'tpl',
+                'targetMainFile': 'main.tex', 'llmConfig': {'endpoint': 'http://127.0.0.1:1/v1', 'apiKey': KEY, 'model': 'b'}}
+        res = self.c.post('/api/transfer/start', body, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        job = Job.objects.get(pk=res.data['jobId'])
+        self.assertEqual(job.params['llmConfig'], {'endpoint': ws.url + '/chat/completions', 'model': 'ws-model'})
+        self.assertEqual(job_secrets.get(str(job.id)), {'apiKey': 'sk-workspace-SECRET-7'})
+        for _ in range(8):
+            if self.step(res.data['jobId'])['status'] in ('success', 'failed'):
+                break
+        self.assertTrue(ws.requests)
+        self.assertEqual({r['auth'] for r in ws.requests}, {'Bearer sk-workspace-SECRET-7'})
+        for j in Job.objects.all():
+            self.assertNotIn('sk-workspace-SECRET-7', json.dumps([j.params, j.result, j.progress_log, j.error]))
+
+
 def make_tar(entries, gz=True):
     buf = io.BytesIO()
     with tarfile.open(fileobj=buf, mode='w:gz' if gz else 'w') as tar:

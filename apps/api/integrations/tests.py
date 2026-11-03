@@ -219,7 +219,7 @@ class BrowseTests(ZoteroBase):
 
 
 from projects import files
-from projects.models import Membership, Project
+from projects.models import Membership, Project, Workspace
 
 from . import bibtex
 
@@ -400,3 +400,112 @@ class CompileWithZoteroEntriesTests(AddFixture):
         out = tex.compile_project(self.project, 'main.tex', 'pdflatex')
         self.assertTrue(out['pdf'], out['log'][-800:])
         self.assertNotIn("Citation `lovelace_notes_1843' undefined", out['log'].split('This is pdfTeX')[-1])
+
+
+from .models import WorkspaceLlmConfig
+from . import llmconfig
+
+LLM_KEY = 'sk-workspace-SECRET-9876'
+
+
+class WorkspaceLlmTests(ApiBase):
+    def setUp(self):
+        super().setUp()
+        self.ws = self.c.post('/api/workspaces', {'name': 'Lab'}, format='json').data['workspace']['id']
+        self.url = f'/api/workspaces/{self.ws}/llm'
+        pub = mock.patch('integrations.llmconfig.assert_public_url')  # no DNS in tests; the guard has its own tests
+        pub.start()
+        self.addCleanup(pub.stop)
+
+    def member(self, email, role):
+        user = make_user(email)
+        Membership.objects.create(workspace_id=self.ws, user=user, role=role)
+        return user, client_for(user)
+
+    def put(self, client=None, **body):
+        return (client or self.c).put(self.url, body, format='json')
+
+    def test_admin_sets_changes_rotates_and_removes(self):
+        self.assertEqual(self.c.get(self.url).json(), {'ok': True, 'configured': False, 'canManage': True, 'canUse': False})
+        res = self.put(endpoint='https://llm.example.com/v1', model='gpt-x', apiKey=LLM_KEY).json()
+        self.assertTrue(res['configured'])
+        self.assertEqual((res['endpoint'], res['model'], res['lastFour']), ('https://llm.example.com/v1/chat/completions', 'gpt-x', '9876'))
+        self.assertEqual(res['updatedBy'], 'owner@example.com')
+        # change the model only: the key is kept
+        self.assertEqual(self.put(model='gpt-y').json()['model'], 'gpt-y')
+        self.assertEqual(llmconfig.workspace_llm_for(Workspace.objects.get(pk=self.ws), self.user)[1], {'apiKey': LLM_KEY})
+        # rotate
+        self.assertEqual(self.put(apiKey='sk-new-key-0001').json()['lastFour'], '0001')
+        self.assertEqual(llmconfig.workspace_llm_for(Workspace.objects.get(pk=self.ws), self.user)[1], {'apiKey': 'sk-new-key-0001'})
+        # remove
+        self.assertFalse(self.c.delete(self.url).json()['configured'])
+        self.assertFalse(WorkspaceLlmConfig.objects.exists())
+
+    def test_first_save_needs_a_key_and_long_keys_are_refused(self):
+        self.assertEqual(self.put(model='m').json(), {'ok': False, 'error': 'Enter an API key.'})
+        self.assertFalse(self.put(apiKey='x' * 501).json()['ok'])
+        self.assertFalse(WorkspaceLlmConfig.objects.exists())
+
+    def test_private_endpoints_are_refused(self):
+        mock.patch.stopall()
+        with override_settings(LLM_ALLOW_PRIVATE_ENDPOINTS=False):
+            for bad in ('http://127.0.0.1:8000/v1', 'http://169.254.169.254/', 'http://localhost/v1', 'file:///etc/passwd'):
+                res = self.put(endpoint=bad, apiKey=LLM_KEY).json()
+                self.assertFalse(res['ok'], bad)
+        self.assertFalse(WorkspaceLlmConfig.objects.exists())
+
+    def test_roles(self):
+        self.put(model='m', apiKey=LLM_KEY)
+        admin_c = self.member('admin@example.com', Membership.ADMIN)[1]
+        self.assertEqual(self.put(admin_c, model='by-admin').json()['model'], 'by-admin')
+        for role in (Membership.EDITOR, Membership.COMMENTER, Membership.VIEWER):
+            _, c = self.member(f'{role}@example.com', role)
+            seen = c.get(self.url).json()
+            self.assertTrue(seen['configured'], role)
+            self.assertFalse(seen['canManage'])
+            self.assertEqual(seen['canUse'], role == Membership.EDITOR)
+            self.assertNotIn('lastFour', seen)
+            self.assertEqual(self.put(c, model='x', apiKey='k').status_code, 403, role)
+            self.assertEqual(c.delete(self.url).status_code, 403, role)
+        self.assertEqual(WorkspaceLlmConfig.objects.get().model, 'by-admin')
+
+    def test_outsiders_and_anonymous(self):
+        self.put(model='m', apiKey=LLM_KEY)
+        stranger = client_for(make_user('stranger@example.com'))
+        self.assertEqual(stranger.get(self.url).status_code, 404)
+        self.assertEqual(stranger.put(self.url, {'apiKey': 'k'}, format='json').status_code, 404)
+        from rest_framework.test import APIClient
+        self.assertEqual(APIClient().get(self.url).status_code, 401)
+
+    def test_key_is_encrypted_and_never_leaks(self):
+        res = self.put(model='m', apiKey=LLM_KEY)
+        self.assertNotIn(LLM_KEY, res.content.decode())
+        self.assertNotIn(LLM_KEY, self.c.get(self.url).content.decode())
+        with connection.cursor() as cur:
+            cur.execute('SELECT api_key_encrypted FROM integrations_workspacellmconfig')
+            raw = bytes(cur.fetchone()[0])
+        self.assertNotIn(LLM_KEY.encode(), raw)
+        self.assertEqual(crypto.decrypt(raw), LLM_KEY)
+        with self.assertLogs(level=logging.DEBUG) as logs:
+            logging.getLogger('probe').debug('start')
+            self.put(apiKey='sk-other-5555')
+            self.put(endpoint='http://127.0.0.1/', apiKey='sk-bad-6666')
+        self.assertNotIn('sk-other', '\n'.join(logs.output))
+
+    def test_helper_only_serves_users_who_can_write(self):
+        self.put(endpoint='https://llm.example.com/v1/chat/completions', model='m', apiKey=LLM_KEY)
+        ws = Workspace.objects.get(pk=self.ws)
+        public, secrets = llmconfig.workspace_llm_for(ws, self.user)
+        self.assertEqual(public, {'endpoint': 'https://llm.example.com/v1/chat/completions', 'model': 'm'})
+        editor, _ = self.member('ed@example.com', Membership.EDITOR)
+        self.assertIsNotNone(llmconfig.workspace_llm_for(ws, editor))
+        for role in (Membership.COMMENTER, Membership.VIEWER):
+            u, _ = self.member(f'{role}2@example.com', role)
+            self.assertIsNone(llmconfig.workspace_llm_for(ws, u), role)
+        self.assertIsNone(llmconfig.workspace_llm_for(ws, make_user('out@example.com')))
+        self.assertIsNone(llmconfig.workspace_llm_for(None, self.user))
+
+    def test_deleting_the_workspace_deletes_the_config(self):
+        self.put(model='m', apiKey=LLM_KEY)
+        Workspace.objects.filter(pk=self.ws).delete()
+        self.assertFalse(WorkspaceLlmConfig.objects.exists())

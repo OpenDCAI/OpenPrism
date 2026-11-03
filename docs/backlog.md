@@ -15,23 +15,7 @@ Moved to `docs/todo.md` (issues #12-#15).
 
 ## v0.0.3 - Workspace LLM Keys
 
-- [ ] **LLM keys per workspace.** Let a workspace owner or admin configure the LLM provider for the whole workspace
-      (endpoint, model, API key) so members use it without pasting their own key, and so a team's AI spend is billed to
-      the team. Today a key is either typed into each browser (kept in localStorage, sent with every request) or is the
-      single server-wide default. Notes for whoever picks it up:
-      - *Storage is the main decision.* The current rule is that user keys are never persisted (they live in Redis for a
-        job's duration). A workspace key must be stored, so it needs encryption at rest with a key held outside the
-        database (KMS or a sealed secret), masking in the UI and API (show the last four characters, never return the
-        key), and a way to rotate and delete it. The Zotero connector has the same decision; solve them together.
-      - Resolution order for a request: the workspace key (if the project's workspace has one), else the user's own
-        browser key, else the server default. Decide whether a workspace key can be made mandatory (no personal keys).
-      - Who may use it: probably any member who can edit, not commenters or viewers; invite-link guests should not (they
-        cannot use AI features today). Who may set it: owners and admins only.
-      - The worker must receive the key without it entering Postgres rows, logs or Celery results: reuse the per-job
-        Redis secret hand-off (`common/secrets.py`), looked up by the API when it queues the job.
-      - Per-workspace endpoint/model settings go through the same SSRF guard as user-supplied URLs.
-      - Pairs naturally with usage accounting and limits per workspace (see the rate-limit item under Security and abuse),
-        and with an audit trail of who changed the key.
+Moved to `docs/todo.md` (issues #16-#19).
 
 ## v0.0.4 - Version history with diff
 
@@ -107,6 +91,9 @@ Moved to `docs/todo.md` (issues #12-#15).
 
 ## v0.0.8 - Security issues
 
+- [ ] **No audit trail for stored credentials.** Workspace LLM keys and Zotero keys record only who last changed them.
+      Keep an event log (who set, rotated or removed, when) visible to workspace admins, and consider per-workspace
+      usage accounting and limits for LLM spend.
 - [ ] **No limits on the expensive endpoints.** Only the auth endpoints are rate limited. Any registered user can run
       unlimited LLM, vision, plot and compile-heavy work, and with `OPENPRISM_LLM_API_KEY` set server-side that spends
       the operator's money. Add per-user rate limits and/or quotas, and decide whether the server-side key should be

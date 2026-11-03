@@ -19,6 +19,7 @@ import {
 } from '../api/client';
 import type { ProjectMeta, TemplateMeta, TemplateCategory } from '../api/client';
 import TransferPanel from './TransferPanel';
+import WorkspaceAiBlock from './WorkspaceAiBlock';
 import {
   AppTopBar,
   Avatar,
@@ -453,6 +454,8 @@ function SettingsSection({
         </div>
         {!admin && <p>{t('Only owners and admins can change these settings.')}</p>}
       </form>
+
+      <WorkspaceAiBlock workspaceId={w.id} onStatus={onStatus} onConfirm={onConfirm} />
 
       {w.kind === 'Team' && role !== 'Owner' && (
         <div className="home-block is-danger">
