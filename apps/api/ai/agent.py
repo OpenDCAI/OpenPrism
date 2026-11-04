@@ -203,7 +203,18 @@ def edit_prompt(p, project, ctx):
         f"Active file around the caret:\n{_marked_window(active, int(cur.get('line', 1)), int(cur.get('col', 1)))}"] if x)
 
 
-def tools_mode(p, project, cfg, lang):
+def _describe(name, args):
+    """One line of progress for a tool call (shown in the editor while the request runs)."""
+    path = args.get('path') or args.get('dir') or '' if isinstance(args, dict) else ''
+    return {'read_file': f'Reading {path}', 'list_files': 'Listing files', 'propose_patch': f'Writing {path}',
+            'apply_patch': f'Editing {path or "a file"}'}.get(name, name.replace('_', ' ').capitalize())
+
+
+class Cancelled(Exception):
+    """The user cancelled the request: stop spending tokens and drop the result."""
+
+
+def tools_mode(p, project, cfg, lang, progress=None, cancelled=None):
     if project is None:
         return {'ok': False, 'reply': t(lang, 'missing_project_id_tools'), 'patches': []}
     if not llm.resolve_config(cfg)['api_key']:
@@ -219,7 +230,11 @@ def tools_mode(p, project, cfg, lang):
     if p.get('editContext'):
         system, user = SYSTEM_EDIT, edit_prompt(p, project, p['editContext'])
     messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
-    for _ in range(MAX_STEPS):
+    for step in range(MAX_STEPS):
+        if cancelled and cancelled():
+            raise Cancelled()
+        if progress:
+            progress('Thinking…' if step == 0 else 'Thinking again…')
         res = llm.chat_raw(messages, cfg, tools=TOOLS)
         if not res['ok']:
             return {'ok': False, 'reply': res['error'], 'patches': box.patches}
@@ -233,14 +248,16 @@ def tools_mode(p, project, cfg, lang):
                 args = json.loads(call['function'].get('arguments') or '{}')
             except ValueError:
                 args = None
+            if progress:
+                progress(_describe(call['function']['name'], args))
             result = box.call(call['function']['name'], args) if isinstance(args, dict) else 'Error: tool arguments were not valid JSON'
             messages.append({'role': 'tool', 'tool_call_id': call['id'], 'content': str(result)})
     return {'ok': True, 'reply': f'Stopped after {MAX_STEPS} steps without a final answer.', 'patches': box.patches}
 
 
-def run(p, project, cfg, lang):
+def run(p, project, cfg, lang, progress=None, cancelled=None):
     if (p.get('interaction') or 'agent') == 'chat':
         return chat_mode(p, cfg, lang)
     if p.get('mode') == 'tools':
-        return tools_mode(p, project, cfg, lang)
+        return tools_mode(p, project, cfg, lang, progress, cancelled)
     return direct_mode(p, cfg, lang)

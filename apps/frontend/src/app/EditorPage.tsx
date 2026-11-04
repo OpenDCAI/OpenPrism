@@ -27,6 +27,8 @@ import {
   getAllFiles,
   getCollabServer,
   getFile,
+  cancelJob,
+  jobProgress,
   getProjectTree,
   fetchVersionPdf,
   restoreVersion,
@@ -1457,6 +1459,7 @@ export default function EditorPage() {
   );
   const aiRunRef = useRef(0);
   const aiAbortRef = useRef<AbortController | null>(null);
+  const aiJobRef = useRef<{ id: string; timer: number } | null>(null);
   const openAiBarRef = useRef<() => boolean>(() => false);
   const [compileLog, setCompileLog] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
@@ -4072,15 +4075,29 @@ export default function EditorPage() {
     }
   };
 
+  useEffect(() => () => {
+    if (aiJobRef.current) window.clearInterval(aiJobRef.current.timer); // leaving the editor ends the progress polling
+  }, []);
+
   openAiBarRef.current = () => {
     if (!canWrite || getInviteToken() || !activePath) return false;
     setAiBar((bar) => ({ ...bar, open: true, error: '' }));
     return true;
   };
 
+  /** Stop following the running request and tell the server to stop working on it. */
+  const stopAiJob = (cancel: boolean) => {
+    const job = aiJobRef.current;
+    aiJobRef.current = null;
+    if (!job) return;
+    window.clearInterval(job.timer);
+    if (cancel) void cancelJob(job.id).catch(() => {}); // the request was aborted anyway; this stops the worker
+  };
+
   const closeAiBar = () => {
     aiRunRef.current += 1; // a request still running is abandoned
     aiAbortRef.current?.abort();
+    stopAiJob(true);
     setAiBar({ open: false, busy: false, progress: '', error: '', note: '' });
     cmViewRef.current?.focus();
   };
@@ -4088,6 +4105,7 @@ export default function EditorPage() {
   const cancelAiRun = () => {
     aiRunRef.current += 1;
     aiAbortRef.current?.abort();
+    stopAiJob(true);
     setAiBar((bar) => ({ ...bar, busy: false, progress: '', note: t('Cancelled.') }));
   };
 
@@ -4106,7 +4124,16 @@ export default function EditorPage() {
       const line = state.doc.lineAt(head);
       const sel = state.selection.main;
       setAiBar((bar) => ({ ...bar, progress: t('Asking the AI…') }));
+      const jobId = crypto.randomUUID();
+      const timer = window.setInterval(() => {
+        jobProgress(jobId).then((job) => {
+          const last = job.progressLog[job.progressLog.length - 1];
+          if (last && aiRunRef.current === run) setAiBar((bar) => (bar.busy ? { ...bar, progress: last } : bar));
+        }).catch(() => {}); // not created yet, or already gone
+      }, 1000);
+      aiJobRef.current = { id: jobId, timer };
       const res = await runAgent({
+        jobId,
         task: 'edit',
         prompt,
         selection: '',
@@ -4124,6 +4151,7 @@ export default function EditorPage() {
           content: state.doc.toString()
         }
       }, controller.signal);
+      stopAiJob(false);
       if (run !== aiRunRef.current) return; // cancelled or closed meanwhile: drop the late answer
       if (!res.ok && !res.reply && res.error) throw new Error(res.error);
       if (res.patches && res.patches.length > 0) {
@@ -4142,6 +4170,7 @@ export default function EditorPage() {
       }
     } catch (err) {
       if (run !== aiRunRef.current) return;
+      stopAiJob(false);
       setAiBar((bar) => ({ ...bar, busy: false, progress: '', error: err instanceof Error ? err.message : String(err) }));
     }
   };

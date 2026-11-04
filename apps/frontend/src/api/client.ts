@@ -270,6 +270,8 @@ export function runAgent(payload: {
   llmConfig?: Partial<LLMConfig>;
   interaction?: 'chat' | 'agent';
   history?: { role: 'user' | 'assistant'; content: string }[];
+  /** In-place edit: an id the editor chooses so it can follow the request's progress and cancel it. */
+  jobId?: string;
   /** In-place edit: where the user is in the editor. The server validates it and requires write access. */
   editContext?: {
     activeFile: string;
@@ -285,6 +287,16 @@ export function runAgent(payload: {
     body: JSON.stringify(payload),
     signal
   });
+}
+
+/** Progress lines of a running job (the in-place AI edit shows the latest). */
+export function jobProgress(jobId: string) {
+  return request<{ status: string; progressLog: string[] }>(`/api/jobs/${jobId}`);
+}
+
+/** Stop a running AI job: the waiting request returns and the worker stops before its next step. */
+export function cancelJob(jobId: string) {
+  return request<{ ok: boolean; status: string }>(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
 }
 
 /** Where a source line landed in the compiled PDF: page number and position in points from the page's top-left. */

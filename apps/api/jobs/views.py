@@ -45,6 +45,20 @@ def get_job(request, job_id):
     return job
 
 
+@api_view(['POST'])
+def job_cancel(request, pk):
+    """Stop an AI job its owner started: the waiting request returns at once and the worker stops before its next step."""
+    job = get_job(request, pk)
+    if job.user_id != request.user.id:
+        raise NotFound('Job not found')
+    if job.status in ACTIVE and job.type != Job.COMPILE:
+        body = {'ok': False, 'error': 'Cancelled.', 'cancelled': True}
+        job.status, job.error = Job.FAILED, 'Cancelled.'
+        job.result = {**job.result, 'cancelled': True, 'body': body}
+        job.save(update_fields=['status', 'error', 'result', 'updated_at'])
+    return Response({'ok': True, 'status': job.status})
+
+
 def job_json(job):
     out = {
         'ok': True, 'jobId': str(job.id), 'type': job.type, 'status': job.status,
