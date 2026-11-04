@@ -6,4 +6,4 @@ class VersionTests(SimpleTestCase):
     def test_healthz_reports_the_version_file(self):
         body = self.client.get('/healthz').json()
         self.assertEqual(body, {'ok': True, 'version': settings.VERSION})
-        self.assertRegex(settings.VERSION, r'^\d+\.\d+\.\d+$')
+        self.assertRegex(settings.VERSION, r'^\d+\.\d+\.\d+(\.\d+)?$')  # patch releases such as 0.0.4.1 have a fourth part

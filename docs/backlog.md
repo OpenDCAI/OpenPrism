@@ -49,17 +49,6 @@ in the browser by pixel diff.
 
 Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
 
-## v0.0.5.1 follow-ups (found while building in-place AI editing)
-
-- [ ] **Accepting a proposal writes other files by REST, even when someone has them open live** (known collaboration
-      limitation). A multi-file proposal only goes through the shared document for the active file.
-- [ ] **In-place AI undo in a live session** is the editor's own history; check that Ctrl+Z in a collaborative session undoes
-      only the local user's accept (y-codemirror's undo manager) and does not undo remote edits.
-- [ ] **No streaming.** The bar shows step names, not the model's text; long tasks look idle between steps.
-- [ ] **Cite and bibliography tasks** ("cite the Attention paper") need the Zotero/arXiv tools in edit mode and a recorded task.
-- [ ] **A configurable shortcut** (Ctrl/Cmd+K is fixed; browsers bind Ctrl+K to the address bar when the editor is not focused).
-- [ ] **A cancelled request can still finish its current model call** (the worker checks between calls), and a cancel sent
-      before the job row exists is lost.
 
 ## v0.0.6 - Better account management
 
@@ -67,7 +56,7 @@ Moved to `docs/todo.md` (issues #32-#39). Decided: SMTP via environment variable
 still added to a workspace at once (now with an email), pending invites need a verified address, and commenting is built
 in this release.
 
-## v0.0.6.1 follow-ups (found while building account management and comments)
+## v0.1.6 follow-ups (found while building account management and comments)
 
 - [ ] **No way to change the account's email address** (it would need re-verification and must not orphan invitations).
 - [ ] **Comment notifications.** Nobody is told about a new comment or reply (mail digest, @mentions, an unread count).
@@ -85,7 +74,8 @@ no internet in Kubernetes); delete a failed transfer's unfinished target project
 
 ## v0.0.8 - Security issues
 
-- [ ] **No audit trail for stored credentials.** Workspace LLM keys and Zotero keys record only who last changed them.
+- [ ] **No 2.
+audit trail for stored credentials.** Workspace LLM keys and Zotero keys record only who last changed them.
       Keep an event log (who set, rotated or removed, when) visible to workspace admins, and consider per-workspace
       usage accounting and limits for LLM spend.
 - [ ] **No limits on the expensive endpoints.** Only the auth endpoints are rate limited. Any registered user can run
@@ -126,9 +116,6 @@ no internet in Kubernetes); delete a failed transfer's unfinished target project
       overlays on push.
 - [ ] **Split test-only dependencies.** `daphne` is in `requirements.txt` only because `channels.testing` imports it;
       the production API image does not need it (nor the test code).
-- [ ] **`common.tests.VersionTests` rejects four-part versions** (`^\d+\.\d+\.\d+$`), so it fails while `apps/api/VERSION` is a
-      patch release such as 0.0.3.1 (the project tags `vX.Y.Z.W` patches). Accept an optional fourth part. Found when
-      the API suite ran on `main` after v0.0.3.1.
 - [ ] **Random 401s ("Token is invalid") make the full test suites flaky.** Cause found: in the devcontainer (WSL2)
       the wall clock steps backwards by about a second several times a minute, so a token minted just before a step
       has an `iat` in the future and SimpleJWT rejects it. Different unrelated tests fail each run and pass alone;
