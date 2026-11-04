@@ -473,3 +473,59 @@ class RestTests(CollabTestBase):
         self.assertEqual(sorted(CollabDoc.objects.values_list('path', flat=True)), ['dir/b.tex'])
         files.delete(self.project, 'dir')
         self.assertEqual(CollabDoc.objects.count(), 0)
+
+
+class InviteLinkTests(CollabTestBase):
+    def api(self, user=None):
+        from projects.test_api import client_for
+        return client_for(user or self.user)
+
+    async def wait_closed(self, client, timeout=5):
+        deadline = asyncio.get_event_loop().time() + timeout
+        while asyncio.get_event_loop().time() < deadline:
+            try:
+                out = await client.comm.receive_output(timeout=0.5)
+            except asyncio.TimeoutError:
+                continue
+            if out['type'] == 'websocket.close':
+                return out['code']
+        return None
+
+    def test_list_shows_links_without_their_tokens(self):
+        res = self.api().get(f'/api/projects/{self.pid}/collab/invites')
+        self.assertEqual(sorted(i['role'] for i in res.data['invites']), ['editor', 'viewer'])
+        self.assertTrue(all(set(i) == {'id', 'role', 'createdBy', 'createdAt', 'expiresAt'} for i in res.data['invites']))
+        self.assertNotIn('op2.', json.dumps(res.data))
+        viewer = make_user('v@example.com')
+        Membership.objects.create(workspace=self.workspace, user=viewer, role=Membership.VIEWER)
+        self.assertEqual(self.api(viewer).get(f'/api/projects/{self.pid}/collab/invites').status_code, 403)
+        guest = APIClient()
+        guest.credentials(HTTP_AUTHORIZATION=f'Bearer {self.editor_token}')
+        self.assertEqual(guest.get(f'/api/projects/{self.pid}/collab/invites').status_code, 403)  # guests never manage links
+
+    def test_revoked_link_stops_working_for_rest(self):
+        invite = tokens.lookup(self.editor_token)
+        guest = APIClient()
+        guest.credentials(HTTP_AUTHORIZATION=f'Bearer {self.editor_token}')
+        self.assertEqual(guest.get(f'/api/projects/{self.pid}/tree').status_code, 200)
+        self.assertTrue(self.api().delete(f'/api/projects/{self.pid}/collab/invites/{invite.id}').data['ok'])
+        self.assertEqual(guest.get(f'/api/projects/{self.pid}/tree').status_code, 401)
+        self.assertEqual(self.api().delete(f'/api/projects/{self.pid}/collab/invites/{invite.id}').status_code, 404)
+
+    async def test_revoking_closes_that_links_live_connections_on_every_replica(self):
+        ma, mb = self.manager(), self.manager()
+        revoked = await self.join(ma, name='guest-a')                                  # editor link, replica A
+        also_revoked = await self.join(mb, name='guest-b')                             # same link, replica B
+        member = await self.join(mb, token=await self.jwt(self.user), name='owner')    # an account: unaffected
+        viewer = await self.join(ma, token=self.viewer_token, name='viewer')            # another link: unaffected
+        await settle(revoked, also_revoked, member, viewer)
+        invite = await self.db(tokens.lookup, self.editor_token)
+        res = await self.db(lambda: self.api().delete(f'/api/projects/{self.pid}/collab/invites/{invite.id}'))
+        self.assertTrue(res.data['ok'])
+        self.assertEqual(await self.wait_closed(revoked), 1008)
+        self.assertEqual(await self.wait_closed(also_revoked), 1008)
+        member.insert(0, 'still here')
+        await settle(member, viewer)
+        self.assertEqual(str(viewer.text), 'still here')
+        await member.disconnect()
+        await viewer.disconnect()

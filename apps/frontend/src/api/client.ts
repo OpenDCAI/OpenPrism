@@ -232,11 +232,31 @@ export async function uploadFiles(projectId: string, files: File[], basePath?: s
   return res.json() as Promise<{ ok: boolean; files?: string[] }>;
 }
 
-export function createCollabInvite(id: string, role: 'editor' | 'viewer' = 'editor') {
+export type InviteRole = 'editor' | 'viewer';
+
+export function createCollabInvite(id: string, role: InviteRole = 'editor', ttlSeconds?: number) {
   return request<{ ok: boolean; token: string; role?: string; expiresAt?: string }>(`/api/projects/${id}/collab/invite`, {
     method: 'POST',
-    body: JSON.stringify({ role })
+    body: JSON.stringify({ role, ...(ttlSeconds ? { ttlSeconds } : {}) })
   });
+}
+
+export interface CollabInviteMeta {
+  id: string;
+  role: string;
+  createdBy: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Outstanding invite links (never their tokens). Write access only. */
+export async function listCollabInvites(id: string) {
+  return (await request<{ invites: CollabInviteMeta[] }>(`/api/projects/${id}/collab/invites`)).invites;
+}
+
+/** Revoke an invite link: it stops working and anyone connected with it is disconnected. */
+export async function revokeCollabInvite(id: string, inviteId: string) {
+  await request<{ ok: boolean }>(`/api/projects/${id}/collab/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' });
 }
 
 export function resolveCollabToken(token: string) {

@@ -56,8 +56,10 @@ def awareness_client_ids(update):
 class Conn:
     """One websocket client. Outgoing messages are queued so Yjs callbacks (synchronous) never block."""
 
-    def __init__(self, send, can_write):
+    def __init__(self, send, can_write, invite_id=None, on_revoke=None):
         self.send, self.can_write = send, can_write
+        self.invite_id = invite_id  # set when the client joined with an invite link (it can be revoked)
+        self.on_revoke = on_revoke
         self.awareness_ids = set()
         self.outbox = asyncio.Queue(OUTBOX_LIMIT)
         self.closed = False
@@ -113,7 +115,7 @@ class Room:
         self.awareness.observe(self._on_awareness)
         redis = self.manager.redis
         self._pubsub = redis.pubsub()
-        await self._pubsub.subscribe(coord.channel(self.key))
+        await self._pubsub.subscribe(coord.channel(self.key), coord.project_channel(self.project_id))
         # Edits and cursors that only live in another replica's memory (not flushed yet, or announced before we
         # subscribed) never reach us on their own: ask the replicas that already hold this room to catch us up.
         self._publish(coord.KIND_SYNC, self.ydoc.get_state())
@@ -248,12 +250,22 @@ class Room:
                     elif kind == coord.KIND_FLUSH:
                         await self.flush()
                         await self.manager.redis.rpush(payload.decode(), self.manager.instance_hex)
+                    elif kind == coord.KIND_REVOKE:
+                        self._drop_invite(payload.decode())
                     elif kind == coord.KIND_EVICT and not self.conns and not self._closing:
                         asyncio.ensure_future(self.shutdown())  # idle room: flush, leave, and forget this file's text
                 except Exception:
                     log.exception('bad collab message for %s', self.key)
         except asyncio.CancelledError:
             raise
+
+    def _drop_invite(self, invite_id):
+        """Close every connection that joined with a now-revoked invite link."""
+        for conn in list(self.conns):
+            if conn.invite_id == invite_id:
+                if conn.on_revoke:
+                    asyncio.ensure_future(conn.on_revoke())
+                self.remove_conn(conn)
 
     def _answer_sync(self, their_state):
         """A replica just opened this room: send it what it lacks, and every cursor we know about."""
