@@ -14,6 +14,7 @@ spec:
         app.kubernetes.io/name: worker-ai
         openprism.io/data: "true"
         openprism.io/internet: "true"   # calls LLM providers / MinerU / arXiv
+        openprism.io/smtp: "true"       # sends account mail (queue `import`)
     spec:
       serviceAccountName: openprism-app
       # SIGTERM starts a warm shutdown: Celery finishes the running task. Allow longer than the task's hard time limit

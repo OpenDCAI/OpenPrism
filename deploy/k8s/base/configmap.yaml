@@ -21,3 +21,8 @@ data:
   COMPILE_TIMEOUT_SECONDS: "120"
   AI_WAIT_SECONDS: "300"
   TEX_CACHE_DIR: "/tmp/openprism-tex-cache"
+  APP_BASE_URL: "https://openprism.example.com"      # overlay: the URL people open; used for links in emails
+  EMAIL_HOST: "smtp.example.com"                     # overlay: your SMTP relay (credentials go in openprism-core)
+  EMAIL_PORT: "587"
+  EMAIL_USE_TLS: "1"
+  DEFAULT_FROM_EMAIL: "OpenPrism <no-reply@openprism.example.com>"

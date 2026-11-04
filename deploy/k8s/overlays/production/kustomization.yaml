@@ -22,6 +22,9 @@ patches:
       - {op: replace, path: /data/S3_PUBLIC_ENDPOINT_URL, value: "https://s3.example.com"}     # CHANGE ME
       - {op: replace, path: /data/S3_REGION, value: "us-east-1"}                                # CHANGE ME
       - {op: replace, path: /data/S3_BUCKET, value: "openprism-prod"}                           # CHANGE ME
+      - {op: replace, path: /data/APP_BASE_URL, value: "https://openprism.example.com"}         # CHANGE ME
+      - {op: replace, path: /data/EMAIL_HOST, value: "smtp.example.com"}                        # CHANGE ME
+      - {op: replace, path: /data/DEFAULT_FROM_EMAIL, value: "OpenPrism <no-reply@openprism.example.com>"}  # CHANGE ME
   - target: {kind: Ingress, name: openprism}
     patch: |-
       - {op: replace, path: /spec/rules/0/host, value: openprism.example.com}                   # CHANGE ME

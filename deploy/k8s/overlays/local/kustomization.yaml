@@ -38,6 +38,8 @@ patches:
     patch: |-
       - {op: replace, path: /data/DJANGO_ALLOWED_HOSTS, value: "localhost,127.0.0.1,api"}
       - {op: replace, path: /data/DJANGO_BEHIND_TLS_PROXY, value: "0"}    # plain http locally
+      - {op: replace, path: /data/APP_BASE_URL, value: "http://localhost:8088"}
+      - {op: add, path: /data/EMAIL_BACKEND, value: "django.core.mail.backends.console.EmailBackend"}  # mail goes to the worker log
   - target: {kind: Ingress, name: openprism}
     patch: |-
       - {op: replace, path: /spec/rules/0/host, value: localhost}
