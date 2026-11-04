@@ -13,6 +13,7 @@ release sign-off, a look at a real deployment, and anything a spec cannot judge 
 | v0.0.4 | [v0.0.4-version-history.md](v0.0.4-version-history.md) | Version history: save, view, name, delete, compare, restore |
 | v0.0.5 | [v0.0.5-ask-ai.md](v0.0.5-ask-ai.md) | Ask AI in place (Ctrl/Cmd+K) |
 | v0.0.6 | [v0.0.6-accounts-and-comments.md](v0.0.6-accounts-and-comments.md) | Mail, password reset/change, delete account, email verification, invitation mail, invite-link roles, comments |
+| v0.0.7 | [v0.0.7-tectonic-and-transfer-cleanup.md](v0.0.7-tectonic-and-transfer-cleanup.md) | Tectonic compiles offline; a failed template transfer removes its project |
 
 ## Before you start
 
