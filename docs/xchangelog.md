@@ -70,6 +70,7 @@
 
 - [x] #42 **Restore a single file** from an old version (API + Compare dialog). No new version is recorded.
 - [x] #43 **Save failed compiles as versions**, with their log; newest 10 unnamed failed versions kept separately.
+- [x] #44 **Versions panel shows failed versions** (Failed badge, Open log).
 
 ## v0.0.5 - AI assistance for LaTeX tasks
 
