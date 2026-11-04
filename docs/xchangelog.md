@@ -72,6 +72,7 @@
 - [x] #43 **Save failed compiles as versions**, with their log; newest 10 unnamed failed versions kept separately.
 - [x] #44 **Versions panel shows failed versions** (Failed badge, Open log).
 - [x] #45 **Workspace storage report and time-based retention** (optional per-workspace days; newest version always kept).
+- [x] #46 **Visual PDF comparison** between two versions (side by side and highlighted pixel differences).
 
 ## v0.0.5 - AI assistance for LaTeX tasks
 
