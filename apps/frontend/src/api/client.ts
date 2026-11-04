@@ -384,7 +384,11 @@ export async function compileProject(
       onProgress(job.progressLog[reported - 1]);
     }
     if (job.status === 'failed') {
-      return { ok: false, error: job.error, log: job.result?.log, status: job.result?.status ?? undefined, engine: job.result?.engine };
+      return {
+        ok: false, error: job.error, log: job.result?.log, status: job.result?.status ?? undefined, engine: job.result?.engine,
+        versionNumber: job.result?.versionNumber ?? null, // a failed compile is saved as a version too
+        versionCreated: job.result?.versionCreated ?? null
+      };
     }
     if (job.status === 'success') {
       const pdfUrl = job.result?.pdfUrl;
@@ -917,6 +921,10 @@ export interface ProjectVersionMeta {
   pdfSize: number;
   /** Number of the version this one was restored from. */
   restoredFrom: number | null;
+  /** A failed compile is kept as a version with no PDF, so users can see what broke it. */
+  status: 'success' | 'failed';
+  /** Whether the compile log was kept (versions from before v0.0.4.1 have none). */
+  hasLog: boolean;
 }
 export interface ProjectVersionDetail extends ProjectVersionMeta {
   manifest: Array<{ path: string; kind: 'text' | 'binary' | 'dir'; size: number; sha256: string }>;
@@ -954,6 +962,10 @@ export function diffVersions(projectId: string, from: string, to?: string, all =
   if (to) params.set('to', to);
   if (all) params.set('all', '1');
   return request<{ ok: boolean; files: VersionFileChange[] }>(`${versionsBase(projectId)}/diff?${params.toString()}`);
+}
+/** The compile log saved with a version. */
+export function getVersionLog(projectId: string, versionId: string) {
+  return request<{ ok: boolean; log: string }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}/log`);
 }
 /** A version's PDF as a Blob, fetched with the normal Authorization header (no token in a URL). */
 export async function fetchVersionPdf(projectId: string, versionId: string): Promise<Blob> {

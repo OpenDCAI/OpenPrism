@@ -166,6 +166,34 @@ test('a viewer can look at versions but not change them', async ({ page }) => {
   await expect(page.getByTestId('version-delete')).toHaveCount(0);
 });
 
+test('a failed compile is kept as a version whose log shows what broke it', async ({ page }) => {
+  const session = await newAccount('ver');
+  const id = await newProject(session, 'Paper', { 'main.tex': doc('Alphadoc') });
+  await compileViaApi(session, id);
+  await putFile(session, id, 'main.tex', doc('\\undefinedmacro')); // nothing else on the page, so no PDF
+  await openEditor(page, session, id);
+  await page.getByRole('banner').getByRole('button', { name: /^Compile PDF/ }).click();
+  await expect(page.locator('.log-panel')).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByText('Saved as version #2 (failed)')).toBeVisible();
+
+  await openVersions(page);
+  await expect(rows(page)).toHaveCount(2);
+  await expect(rows(page).first()).toContainText('#2');
+  await expect(rows(page).first()).toContainText('Failed');
+  await expect(rows(page).nth(1)).not.toContainText('Failed');
+  await rows(page).first().click();
+  await expect(page.getByTestId('version-open-pdf')).toHaveCount(0); // a failed compile has no PDF
+  await page.getByTestId('version-open-log').click();
+  await expect(page.getByTestId('version-log-errors')).toContainText('Undefined control sequence');
+  await page.getByRole('button', { name: 'Close' }).click();
+
+  await page.getByTestId('version-compare').click();
+  await pickOption(page, '#compare-from', /#1/);
+  await pickOption(page, '#compare-to', /#2/);
+  await page.locator('[data-testid="compare-file"][data-path="main.tex"]').click();
+  await expect(addedLine(page)).toContainText('undefinedmacro'); // the edit that broke it
+});
+
 test('the panel fits a phone without sideways scrolling', async ({ page }) => {
   const session = await newAccount('ver');
   const id = await newProject(session, 'Paper', { 'main.tex': doc('Alphadoc') });

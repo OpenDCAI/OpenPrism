@@ -278,6 +278,10 @@ body.ed-resizing iframe, body.ed-resizing canvas { pointer-events: none; }
 .version-compare-files { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 60vh; overflow: auto; }
 .version-compare-path { overflow-wrap: anywhere; font-size: var(--fs-sm); }
 .version-compare-diff { min-width: 0; max-height: 60vh; overflow: auto; }
+.version-log { display: flex; flex-direction: column; gap: var(--sp-2); min-width: 0; }
+.version-log-errors { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.version-log-errors li { display: flex; justify-content: space-between; gap: var(--sp-2); padding: 6px var(--sp-2); border-radius: var(--r-xs); background: var(--danger-soft); font-family: var(--font-mono); font-size: var(--fs-xs); overflow-wrap: anywhere; }
+.version-log-text { margin: 0; max-height: 50vh; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-family: var(--font-mono); font-size: var(--fs-xs); line-height: 1.6; color: var(--text-2); }
 .version-compare-restore { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .version-restore ul { margin: var(--sp-2) 0; padding-left: var(--sp-5); }
 .version-restore-blocked { margin-top: var(--sp-3); }
