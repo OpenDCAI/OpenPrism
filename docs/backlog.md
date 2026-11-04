@@ -125,6 +125,10 @@ in this release.
       has an `iat` in the future and SimpleJWT rejects it. Different unrelated tests fail each run and pass alone;
       with `SIMPLE_JWT['LEEWAY'] = 5` the API suite (301) and worker-tex suite (130) pass every time. Add a small
       leeway under the test settings (not production) or fix the clock sync, and note it in CLAUDE.md.
+      Browser runs show the same thing as 2-minute timeouts (a rejected token signs the page out before the editor
+      loads); a v0.0.6 run with a 5 s leeway had none. A second, separate cause of fast browser failures was the auth
+      rate limit (20/min per address) tripped by test registrations; `newAccount` and the accounts spec now wait out
+      429s (Retry-After), which fixed it.
 - [ ] **`design/reference/` is untracked** (and `design/README.md` already links to it).
 
 ## v0.0.10 - Operations

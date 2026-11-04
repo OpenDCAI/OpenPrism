@@ -21,7 +21,20 @@ async function api<T>(path: string, token: string | null, method = 'GET', body?:
 /** A fresh account (so tests never depend on each other's data). */
 export async function newAccount(prefix = 'e2e'): Promise<Session> {
   const email = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
-  return api<Session>('/api/auth/register', null, 'POST', { email, password: 'correct-horse-battery' });
+  // Registration is rate limited (AUTH_RATE_LIMIT, 20/min per address) and a full run creates far more accounts than
+  // that: wait as long as the server asks instead of failing the test.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const res = await fetch(baseUrl() + '/api/auth/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'correct-horse-battery' })
+    });
+    if (res.status !== 429) {
+      if (!res.ok) throw new Error(`POST /api/auth/register -> ${res.status}: ${await res.text()}`);
+      return res.json() as Promise<Session>;
+    }
+    const wait = Number(res.headers.get('retry-after') || '10');
+    await new Promise((r) => setTimeout(r, Math.min(wait, 60) * 1000 + 250));
+  }
+  throw new Error('registration stayed rate limited');
 }
 
 export async function newProject(session: Session, name: string, files: Record<string, string> = {}, template?: string): Promise<string> {

@@ -4,6 +4,7 @@ import { inviteMember, latestMail, mailLink, newAccount, newProject, newWorkspac
 // Password reset by email (read from Mailpit), and changing the password on the account page.
 
 const PASSWORD = 'correct-horse-battery';
+const base = () => process.env.E2E_BASE_URL || 'http://localhost:5173';
 
 async function signInWith(page: import('@playwright/test').Page, email: string, password: string) {
   await page.goto('/login');
@@ -69,17 +70,21 @@ test('change password from the account page', async ({ page }) => {
   await expect(page.getByRole('heading', { name: 'Account settings' })).toBeVisible();
   await expect.poll(async () => (await latestMail(session.user.email, { subject: /password was changed/ })).subject).toContain('changed');
 
-  const login = (password: string) => fetch(`${process.env.E2E_BASE_URL || 'http://localhost:5173'}/api/auth/login`, {
-    method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email: session.user.email, password })
-  });
-  expect((await login('brand-new-horse-42')).status).toBe(200);
-  expect((await login(PASSWORD)).status).toBe(401);
+  expect(await loginStatus(session.user.email, 'brand-new-horse-42')).toBe(200);
+  expect(await loginStatus(session.user.email, PASSWORD)).toBe(401);
 });
 
-const base = () => process.env.E2E_BASE_URL || 'http://localhost:5173';
-const loginStatus = async (email: string, password = PASSWORD) => (await fetch(`${base()}/api/auth/login`, {
-  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password })
-})).status;
+/** 200 or 401 for a login attempt; waits out the auth rate limit (429) like newAccount does. */
+async function loginStatus(email: string, password = PASSWORD) {
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const res = await fetch(`${base()}/api/auth/login`, {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password })
+    });
+    if (res.status !== 429) return res.status;
+    await new Promise((r) => setTimeout(r, Math.min(Number(res.headers.get('retry-after') || '10'), 60) * 1000 + 250));
+  }
+  return 429;
+}
 
 async function openDeleteDialog(page: import('@playwright/test').Page) {
   await page.goto('/account');
