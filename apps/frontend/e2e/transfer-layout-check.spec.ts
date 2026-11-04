@@ -71,3 +71,16 @@ test('if the PDF cannot be rendered the layout check is skipped, with a warning,
   await expect(page.locator('.tp-status').filter({ hasText: 'success' })).toBeVisible({ timeout: 30_000 });
   expect(stub.submitted?.images).toEqual([]);
 });
+
+test('a failed transfer says so and that its unfinished project was removed', async ({ page }) => {
+  await startTransfer(page);
+  await page.route('**/api/transfer/**', async (route) => {
+    const url = route.request().url();
+    if (/\/start$/.test(url)) return json(route, { ok: true, jobId: 'job1', newProjectId: 'p1' });
+    return json(route, { status: 'failed', progressLog: ['[error] LLM call failed: invalid api key', 'The unfinished project was removed.'],
+      error: 'LLM call failed: invalid api key', targetDeleted: true });
+  });
+  await openPanelAndStart(page);
+  await expect(page.getByRole('alert')).toContainText('LLM call failed: invalid api key');
+  await expect(page.getByRole('alert')).toContainText('The unfinished project was removed.');
+});

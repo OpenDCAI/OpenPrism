@@ -23,7 +23,7 @@ import { renderPdfPages } from './pageImages';
 
 interface TransferPanelProps {
   projectId: string;
-  onJobUpdate?: (job: { jobId: string; status: string; progressLog: string[]; error?: string }) => void;
+  onJobUpdate?: (job: { jobId: string; status: string; progressLog: string[]; error?: string; targetDeleted?: boolean }) => void;
 }
 
 type TransferMode = 'legacy' | 'mineru';
@@ -211,7 +211,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
         const res = await transferStep(jid);
         setProgressLog(res.progressLog || []);
         setStatus(res.status);
-        onJobUpdate?.({ jobId: jid, status: res.status, progressLog: res.progressLog || [], error: res.error });
+        onJobUpdate?.({ jobId: jid, status: res.status, progressLog: res.progressLog || [], error: res.error, targetDeleted: res.targetDeleted });
 
         if (res.status === 'waiting_images') {
           // The server paused to look at the compiled PDF: render its pages here and send them back.
@@ -230,7 +230,12 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
           await new Promise(r => setTimeout(r, 1000));
           continue;
         }
-        if (res.status === 'success' || res.status === 'failed') { setRunning(false); return; }
+        if (res.status === 'failed') {
+          setError([res.error || t('The transfer failed.'), res.targetDeleted ? t('The unfinished project was removed.') : ''].filter(Boolean).join(' '));
+          setRunning(false);
+          return;
+        }
+        if (res.status === 'success') { setRunning(false); return; }
         if (res.error) { setError(res.error); setRunning(false); return; }
 
         // Brief pause before next poll

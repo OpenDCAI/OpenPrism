@@ -574,6 +574,8 @@ export interface TransferStepResult {
   status: string;
   progressLog: string[];
   error?: string;
+  /** A failed transfer's unfinished target project was deleted. */
+  targetDeleted?: boolean;
 }
 
 export interface PageImage {
