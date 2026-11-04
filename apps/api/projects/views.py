@@ -193,13 +193,21 @@ def project_trash(request, pk):
     return Response({'ok': True, 'project': project_meta(project)})
 
 
+def _may_write(request, project):
+    try:
+        get_project(request, project.id, write=True)
+    except PermissionDenied:
+        return False
+    return True
+
+
 # ---- files ------------------------------------------------------------------------------------
 
 @api_view(['GET'])
 @permission_classes([IsUserOrGuest])
 def tree(request, pk):
     project = get_project(request, pk)
-    return Response({'items': pfiles.list_tree(project), 'fileOrder': project.file_order})
+    return Response({'items': pfiles.list_tree(project), 'fileOrder': project.file_order, 'canWrite': _may_write(request, project)})
 
 
 @api_view(['POST'])

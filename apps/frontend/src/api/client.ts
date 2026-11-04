@@ -162,7 +162,7 @@ export function trashProject(id: string, trashed: boolean) {
 }
 
 export function getProjectTree(id: string) {
-  return request<{ items: FileItem[]; fileOrder?: FileOrderMap }>(`/api/projects/${id}/tree`);
+  return request<{ items: FileItem[]; fileOrder?: FileOrderMap; canWrite?: boolean }>(`/api/projects/${id}/tree`);
 }
 
 export function getFile(id: string, filePath: string) {
@@ -270,10 +270,20 @@ export function runAgent(payload: {
   llmConfig?: Partial<LLMConfig>;
   interaction?: 'chat' | 'agent';
   history?: { role: 'user' | 'assistant'; content: string }[];
-}) {
-  return request<{ ok: boolean; reply: string; suggestion: string; patches?: { path: string; diff: string; content: string }[] }>(`/api/agent/run`, {
+  /** In-place edit: where the user is in the editor. The server validates it and requires write access. */
+  editContext?: {
+    activeFile: string;
+    mainFile?: string;
+    cursor: { line: number; col: number };
+    selection?: { text: string } | null;
+    /** The editor's current text, which may be newer than the saved file. */
+    content?: string;
+  };
+}, signal?: AbortSignal) {
+  return request<{ ok: boolean; error?: string; reply: string; suggestion: string; patches?: { path: string; diff: string; content: string; original?: string }[] }>(`/api/agent/run`, {
     method: 'POST',
-    body: JSON.stringify(payload)
+    body: JSON.stringify(payload),
+    signal
   });
 }
 
