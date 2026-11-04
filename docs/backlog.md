@@ -23,31 +23,15 @@ Moved to `docs/todo.md` (issue #20).
 
 ## v0.0.4 - Version history with diff
 
-- [ ] **Version history: a saved version per compile, and a diff to compare versions.** Every compile records what was
-      compiled, so a user can see how the paper changed between two PDFs, open an old version, and restore it. Notes for
-      whoever picks it up:
-      - *What a version is:* a manifest of the project's files at compile time (path, kind, and a content hash or blob
-        reference), plus the engine, main file and the resulting PDF. Today a compile materialises the files into a temp
-        directory and keeps nothing; the PDF is deleted with its job after 24 hours (`jobs.tasks.cleanup_old_jobs`), so
-        versions need their own retention.
-      - *Storage:* text files live in Postgres and binaries in object storage under random keys, so a naive full copy per
-        compile grows fast. Prefer content-addressed blobs (store each distinct file once, versions just point at them),
-        skip a version when nothing changed since the last one, and decide a retention policy (keep the last N, keep
-        pinned/named versions forever, expire the rest) and per-workspace storage accounting.
-      - *Consistency:* the snapshot must match what was compiled, including edits still in a live collaborative room.
-        The compile endpoint reads the database, so flush the room first (`POST .../collab/flush` already waits for every
-        replica) and snapshot from that same read.
-      - *Which compiles:* decide whether failed compiles are saved (useful for "what broke it"), and whether the
-        transfer pipeline's internal compiles create versions (probably not).
-      - *Diff:* per-file text diffs between any two versions (the editor already renders diffs for AI patches, so reuse
-        that component); show added/removed/changed files, and binaries as changed-or-not. Optionally a visual PDF
-        comparison later.
-      - *Restore:* writing an old version back must go through the collaboration layer, because a REST write to an open
-        file is overwritten by the next live save (see the Collaboration section); restoring while others are editing
-        needs a clear rule. Restore should itself create a new version rather than rewrite history.
-      - *Permissions:* any member (and invite guests) can view and diff; restoring or deleting a version needs write
-        access. Allow naming/pinning a version ("submitted to ACL").
-      - Don't confuse this with the Yjs document history, which is not kept and is not a user-facing version log.
+Moved to `docs/todo.md` (issues #21-#26). Decided: only successful compiles are saved, unnamed versions keep the newest
+50, named versions are kept forever, restore replaces the files and records a new version (blocked while an affected
+file is open live). Left for later:
+
+- [ ] **Visual PDF comparison** between two versions (page-by-page overlay or side by side with highlighted changes).
+- [ ] **Save failed compiles as versions** ("what broke it"), shown with their log instead of a PDF.
+- [ ] **Per-workspace storage accounting and a time-based retention option** for versions (blobs are deduplicated per
+      project, so a workspace total needs its own query and a limit policy).
+- [ ] **Restore a single file** from an old version.
 
 ## v0.0.5 - AI Assistance for LaTeX tasks
 
@@ -136,6 +120,14 @@ Moved to `docs/todo.md` (issue #20).
       overlays on push.
 - [ ] **Split test-only dependencies.** `daphne` is in `requirements.txt` only because `channels.testing` imports it;
       the production API image does not need it (nor the test code).
+- [ ] **`common.tests.VersionTests` rejects four-part versions** (`^\d+\.\d+\.\d+$`), so it fails while `apps/api/VERSION` is a
+      patch release such as 0.0.3.1 (the project tags `vX.Y.Z.W` patches). Accept an optional fourth part. Found when
+      the API suite ran on `main` after v0.0.3.1.
+- [ ] **Random 401s ("Token is invalid") make the full test suites flaky.** Cause found: in the devcontainer (WSL2)
+      the wall clock steps backwards by about a second several times a minute, so a token minted just before a step
+      has an `iat` in the future and SimpleJWT rejects it. Different unrelated tests fail each run and pass alone;
+      with `SIMPLE_JWT['LEEWAY'] = 5` the API suite (301) and worker-tex suite (130) pass every time. Add a small
+      leeway under the test settings (not production) or fix the clock sync, and note it in CLAUDE.md.
 - [ ] **`design/reference/` is untracked** (and `design/README.md` already links to it).
 
 ## v0.0.10 - Operations

@@ -284,12 +284,20 @@ export interface PdfFocus {
   y: number;
 }
 
-type CompileResult = { ok: boolean; pdf?: string; log?: string; status?: number; engine?: string; error?: string; focus?: PdfFocus | null };
+type CompileResult = {
+  ok: boolean; pdf?: string; log?: string; status?: number; engine?: string; error?: string; focus?: PdfFocus | null;
+  /** The project version this compile saved (or the unchanged latest one, `versionCreated: false`). */
+  versionNumber?: number | null;
+  versionCreated?: boolean | null;
+};
 type JobStatus = {
   status: 'queued' | 'running' | 'waiting_images' | 'success' | 'failed';
   progressLog: string[];
   error: string;
-  result?: { log: string; status: number | null; engine: string; mainFile: string; pdfUrl: string | null; focus?: PdfFocus | null };
+  result?: {
+    log: string; status: number | null; engine: string; mainFile: string; pdfUrl: string | null; focus?: PdfFocus | null;
+    versionNumber?: number | null; versionCreated?: boolean | null;
+  };
 };
 
 const COMPILE_POLL_INTERVAL_MS = 1000;
@@ -347,7 +355,9 @@ export async function compileProject(
         log: job.result?.log,
         status: job.result?.status ?? 0,
         engine: job.result?.engine,
-        focus: job.result?.focus ?? null
+        focus: job.result?.focus ?? null,
+        versionNumber: job.result?.versionNumber ?? null,
+        versionCreated: job.result?.versionCreated ?? null
       };
     }
     if (Date.now() > deadline) return { ok: false, error: 'Compilation timed out.' };
@@ -794,4 +804,113 @@ export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: stri
 }
 export function removeWorkspaceLlm(workspaceId: string) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, { method: 'DELETE' });
+}
+
+// ─── Version history ───
+
+export interface ProjectVersionMeta {
+  id: string;
+  number: number;
+  createdAt: string;
+  createdBy: { name: string } | null;
+  mainFile: string;
+  engine: string;
+  /** A non-empty name pins the version: retention never deletes it. */
+  name: string;
+  fileCount: number;
+  pdfSize: number;
+  /** Number of the version this one was restored from. */
+  restoredFrom: number | null;
+}
+export interface ProjectVersionDetail extends ProjectVersionMeta {
+  manifest: Array<{ path: string; kind: 'text' | 'binary' | 'dir'; size: number; sha256: string }>;
+}
+export interface VersionFileChange {
+  path: string;
+  status: 'added' | 'removed' | 'modified' | 'unchanged';
+  kind: 'text' | 'binary' | 'dir';
+}
+
+const versionsBase = (projectId: string) => `/api/projects/${encodeURIComponent(projectId)}/versions`;
+
+export function listVersions(projectId: string, opts: { limit?: number; before?: number } = {}) {
+  const params = new URLSearchParams();
+  if (opts.limit) params.set('limit', String(opts.limit));
+  if (opts.before) params.set('before', String(opts.before));
+  const query = params.toString();
+  return request<{ ok: boolean; versions: ProjectVersionMeta[]; hasMore: boolean; canWrite: boolean }>(
+    `${versionsBase(projectId)}${query ? `?${query}` : ''}`
+  );
+}
+export function getVersion(projectId: string, versionId: string) {
+  return request<{ ok: boolean; version: ProjectVersionDetail }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}`);
+}
+/** A text file as it was in a version. Binaries are fetched with `versionFileUrl`. */
+export function getVersionFile(projectId: string, versionId: string, path: string) {
+  const params = new URLSearchParams({ path });
+  return request<{ ok: boolean; kind: 'text'; path: string; content: string }>(
+    `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/file?${params.toString()}`
+  );
+}
+/** Changed files between a version and another version, or the project as it is now (`to` omitted). */
+export function diffVersions(projectId: string, from: string, to?: string, all = false) {
+  const params = new URLSearchParams({ from });
+  if (to) params.set('to', to);
+  if (all) params.set('all', '1');
+  return request<{ ok: boolean; files: VersionFileChange[] }>(`${versionsBase(projectId)}/diff?${params.toString()}`);
+}
+/** A version's PDF as a Blob, fetched with the normal Authorization header (no token in a URL). */
+export async function fetchVersionPdf(projectId: string, versionId: string): Promise<Blob> {
+  const res = await apiFetch(`${API_BASE}${versionsBase(projectId)}/${encodeURIComponent(versionId)}/pdf`);
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return res.blob();
+}
+/** URLs for <object>/<img>, which cannot send an Authorization header. */
+export function versionPdfUrl(projectId: string, versionId: string) {
+  const token = tokenForUrl();
+  return `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`;
+}
+export function versionFileUrl(projectId: string, versionId: string, path: string) {
+  const params = new URLSearchParams({ path });
+  const token = tokenForUrl();
+  if (token) params.set('token', token);
+  return `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/file?${params.toString()}`;
+}
+
+/** Name a version (pins it) or clear its name with ''. Needs write access. */
+export function renameVersion(projectId: string, versionId: string, name: string) {
+  return request<{ ok: boolean; error?: string; version?: ProjectVersionDetail }>(
+    `${versionsBase(projectId)}/${encodeURIComponent(versionId)}`,
+    { method: 'PATCH', body: JSON.stringify({ name }) }
+  );
+}
+/** Delete an unnamed version (a named one must be unnamed first). Needs write access. */
+export function deleteVersion(projectId: string, versionId: string) {
+  return request<{ ok: boolean }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
+}
+
+export interface RestoreVersionResult {
+  ok: boolean;
+  error?: string;
+  /** Present on a 409: files someone has open live. */
+  files?: string[];
+  restored?: boolean;
+  message?: string;
+  versionId?: string;
+  versionNumber?: number;
+  changed?: { written: number; removed: number };
+}
+/**
+ * Make the project's files exactly this version's (recorded as a new version). A 409 (someone has an affected file
+ * open, or live edits could not be saved) comes back as a normal result with `ok: false`, not as a thrown error.
+ * Leave the editor's own collaboration rooms first.
+ */
+export async function restoreVersion(projectId: string, versionId: string): Promise<RestoreVersionResult> {
+  const res = await apiFetch(`${API_BASE}${versionsBase(projectId)}/${encodeURIComponent(versionId)}/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: '{}'
+  });
+  if (res.ok || res.status === 409) return (await res.json()) as RestoreVersionResult;
+  throw new Error(await errorMessage(res));
 }

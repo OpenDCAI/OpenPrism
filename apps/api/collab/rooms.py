@@ -248,6 +248,8 @@ class Room:
                     elif kind == coord.KIND_FLUSH:
                         await self.flush()
                         await self.manager.redis.rpush(payload.decode(), self.manager.instance_hex)
+                    elif kind == coord.KIND_EVICT and not self.conns and not self._closing:
+                        asyncio.ensure_future(self.shutdown())  # idle room: flush, leave, and forget this file's text
                 except Exception:
                     log.exception('bad collab message for %s', self.key)
         except asyncio.CancelledError:

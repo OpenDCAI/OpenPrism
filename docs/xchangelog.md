@@ -45,3 +45,23 @@
 
 - [x] #20 **Web image build.** `.dockerignore` hid `apps/api/VERSION`, so `docker compose build web` failed; the file is
       now let through (nothing else from `apps/api` enters the context).
+
+## v0.0.4 - Version history with diff
+
+- [x] #21 **Snapshot every successful compile.** `versions` app: `ProjectVersion` (manifest + PDF) and per-project
+      content-addressed `VersionBlob`s; the snapshot is taken from the same read the compiler used, unchanged
+      projects create no new version, a failed snapshot never fails the compile, project delete removes it all.
+- [x] #22 **Read API.** List (paged), detail with manifest, PDF and file of a version, and a manifest diff between two
+      versions or against the current project; read access for any member and invite guests; typed functions in
+      `client.ts`.
+- [x] #23 **Name/pin, delete and retention.** `PATCH`/`DELETE` on a version (write access; named versions must be
+      unnamed before deleting), shared blob cleanup, and the daily `versions.tasks.prune_versions` that keeps the newest
+      50 unnamed versions per project (`VERSION_KEEP_UNNAMED`).
+- [x] #24 **Restore API.** `POST …/versions/:vid/restore` makes the files exactly the version's through one atomic
+      `files.apply_changes`, records a new version, and answers 409 (nothing written) while someone is connected to an
+      affected file; idle rooms are evicted first (new `KIND_EVICT` collab control message).
+- [x] #25 **Editor panel.** Versions rail tool: list, open an older PDF (labelled, with a way back), name/unname and
+      delete; viewers see no controls; "Saved as version #N" after a compile; `e2e/versions.spec.ts`.
+- [x] #26 **Compare and restore in the UI.** Compare dialog (any two versions or the current project, split line
+      diff, swap), restore with a confirmation that lists what changes, a 409 explanation when someone has a file open,
+      and a shared `SplitDiff` component; Playwright specs incl. a second live browser.

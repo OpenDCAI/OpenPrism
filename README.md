@@ -144,6 +144,10 @@ Everything is environment variables in `.env` (see `.env.sample` for the full li
 
 Owners and admins can set an AI provider for a whole workspace under **Settings → AI provider** (endpoint, model, API key). Members who can edit then use it for AI features in that workspace's projects instead of their own key. The key is stored encrypted on the server (see `CREDENTIAL_ENCRYPTION_KEY`) and is never shown again, only its last four characters to admins. Order of precedence: workspace provider, then the key in your browser settings, then the server default.
 
+### Version history
+
+Every successful compile saves a **version** of the project (the files as compiled, plus the PDF). Open **Versions** in the editor's right rail to see them, open an older PDF (the preview is labelled and has a way back), **Compare** it with the current project or another version, **name** it ("submitted to ACL"), delete it, or **Restore** it. Restoring replaces the project files with that version's and is itself saved as a new version, so nothing is lost. It is refused while someone else has an affected file open live (they close it, you try again). A compile of an unchanged project saves nothing. Unnamed versions beyond the newest 50 per project are removed nightly (`VERSION_KEEP_UNNAMED`); named ones are kept forever.
+
 ### Zotero
 
 In the editor's right rail choose **Zotero**, paste an API key created at https://www.zotero.org/settings/keys/new (library access, plus group read access if needed), then search your library and **Insert \cite{}** or **Add to bibliography**. Entries are appended to the project's `.bib` (`references.bib` if there is none); existing text is never rewritten.

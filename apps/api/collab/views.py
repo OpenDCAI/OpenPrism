@@ -15,6 +15,7 @@ from . import coord, store, tokens
 from .auth import IsUserOrGuest
 
 FLUSH_WAIT_SECONDS = 5
+EVICT_WAIT_SECONDS = 3
 
 
 def _redis():
@@ -48,6 +49,23 @@ def live_room(project, path):
     """True when some replica currently holds a live room for this file (REST writes to it would be overwritten)."""
     key = coord.room_key(project.id, path)
     return bool(_redis().zrangebyscore(coord.holders_key(key), coord.fresh_since(), '+inf'))
+
+
+def evict_idle_room(project, path, wait=EVICT_WAIT_SECONDS):
+    """Ask every replica holding this file's room to drop it if nobody is connected (it flushes first). A room with no
+    clients lingers COLLAB_ROOM_EVICT_SECONDS and would keep serving its old text, so a write behind its back (restore)
+    needs it gone. True when no room remains; False when someone is still connected."""
+    key = coord.room_key(project.id, path)
+    r = _redis()
+    if not r.zrangebyscore(coord.holders_key(key), coord.fresh_since(), '+inf'):
+        return True
+    r.publish(coord.channel(key), coord.pack(coord.KIND_EVICT, b'\x00' * coord.ORIGIN_LEN))
+    deadline = time.monotonic() + wait
+    while time.monotonic() < deadline:
+        if not live_room(project, path):
+            return True
+        time.sleep(0.1)
+    return False
 
 
 def flush_room(project, path):

@@ -178,3 +178,68 @@ def copy_project_files(src_project, dst_project):
 def delete_project_files(project):
     """Remove all S3 objects for a project (call before deleting the Project row)."""
     storage.delete_prefix(f'projects/{project.id}/')
+    storage.delete_prefix(f'versions/{project.id}/')  # version blobs and PDFs
+
+
+class Applied:
+    """What `apply_changes` staged in S3, so a caller whose own transaction fails afterwards can discard it."""
+
+    def __init__(self, staged_keys):
+        self.staged_keys = staged_keys
+
+    def rollback(self):
+        storage.delete_keys(self.staged_keys)
+
+
+def apply_changes(project, writes, removals):
+    """Make a set of file changes all at once (version restore). Either every change lands or none does.
+
+    `writes`: dicts {path, kind 'text'|'binary'|'dir', text, source_key, size, content_type}; a binary's bytes are
+    copied server-side from `source_key` into a new random key. `removals`: exact paths of rows to delete. Removals run
+    first, then folders, then files, so a path can turn from file to folder and back. Binaries are staged in S3 before
+    the database transaction and the replaced objects are deleted only after it commits (`transaction.on_commit`, so
+    also after any outer transaction), so a failure leaves the project, and its old bytes, untouched."""
+    staged = {}  # path -> new key
+    try:
+        for w in writes:
+            if w['kind'] == 'binary':
+                staged[w['path']] = f'projects/{project.id}/{uuid.uuid4().hex}'
+                storage.copy(w['source_key'], staged[w['path']])
+        old_keys = []
+        with transaction.atomic():
+            for path in removals:
+                path = safe_path(path)
+                old_keys += project.files.filter(path=path).exclude(s3_key='').values_list('s3_key', flat=True)
+                project.files.filter(path=path).delete()
+                _drop_collab_state(project, path)
+            for w in sorted(writes, key=lambda w: (w['kind'] != 'dir', w['path'])):
+                path = safe_path(w['path'])
+                existing = project.files.filter(path=path).first()
+                if existing and existing.s3_key:
+                    old_keys.append(existing.s3_key)
+                if w['kind'] == 'dir':
+                    if existing and existing.kind == ProjectFile.DIR:
+                        continue
+                    parts = path.split('/')
+                    parents = ['/'.join(parts[:i]) for i in range(1, len(parts))]
+                    if parents and project.files.filter(path__in=parents).exclude(kind=ProjectFile.DIR).exists():
+                        raise IsADirectoryError(f'A parent of {path} is a file')
+                    defaults = {'kind': ProjectFile.DIR, 'content': '', 's3_key': '', 'size': 0, 'content_type': ''}
+                else:
+                    if existing and existing.kind == ProjectFile.DIR and project.files.filter(path__startswith=path + '/').exists():
+                        raise IsADirectoryError(f'{path} is a directory')
+                    if not existing:
+                        _assert_can_create(project, path)
+                    if w['kind'] == 'text':
+                        defaults = {'kind': ProjectFile.TEXT, 'content': w['text'], 's3_key': '',
+                                    'size': len(w['text'].encode('utf-8')), 'content_type': 'text/plain'}
+                    else:
+                        defaults = {'kind': ProjectFile.BINARY, 'content': '', 's3_key': staged[path], 'size': w['size'],
+                                    'content_type': w.get('content_type') or 'application/octet-stream'}
+                project.files.update_or_create(path=path, defaults=defaults)
+            _touch(project)
+            transaction.on_commit(lambda: storage.delete_keys(old_keys))
+    except Exception:
+        storage.delete_keys(staged.values())
+        raise
+    return Applied(list(staged.values()))
