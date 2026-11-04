@@ -37,7 +37,7 @@ def authorize(token, project_param, raw_path):
     if invite is not None:
         if project_param and str(invite.project_id) != project_param:
             raise Reject(1008, 'Project mismatch')
-        project_id, can_write = str(invite.project_id), invite.role in ('editor', 'admin')
+        project_id, can_write, invite_id = str(invite.project_id), invite.role in ('editor', 'admin'), str(invite.id)
     else:
         try:
             user_id = AccessToken(token)['user_id']
@@ -54,12 +54,12 @@ def authorize(token, project_param, raw_path):
             raise Reject(1008, 'Project not found')  # same answer as a missing project
         if settings.REQUIRE_EMAIL_VERIFICATION and membership.user.email_verified_at is None:
             raise Reject(1008, 'Unauthorized')  # like every other API until the address is verified
-        project_id, can_write = str(project.id), membership.role in Membership.WRITE_ROLES
+        project_id, can_write, invite_id = str(project.id), membership.role in Membership.WRITE_ROLES, None
     if not Project.objects.filter(pk=project_id).exists():
         raise Reject(1008, 'Project not found')
     if not is_text_file(path):
         raise Reject(1003, 'Binary file')
-    return project_id, path, can_write
+    return project_id, path, can_write, invite_id
 
 
 class CollabConsumer(AsyncWebsocketConsumer):
@@ -70,7 +70,7 @@ class CollabConsumer(AsyncWebsocketConsumer):
         self.manager = self.scope.get('collab_manager') or default_manager
         await self.accept()  # accept first so the browser sees a real close code instead of a failed handshake
         try:
-            project_id, path, can_write = await authorize(first('token'), first('projectId'), first('file'))
+            project_id, path, can_write, invite_id = await authorize(first('token'), first('projectId'), first('file'))
             self.room = await self.manager.get_room(project_id, path)
         except Reject as exc:
             await self.close(code=exc.code, reason=exc.reason)
@@ -79,7 +79,8 @@ class CollabConsumer(AsyncWebsocketConsumer):
             log.exception('collab connect failed')
             await self.close(code=1011, reason='Server error')
             return
-        self.conn = Conn(lambda data: self.send(bytes_data=data), can_write)
+        self.conn = Conn(lambda data: self.send(bytes_data=data), can_write, invite_id,
+                         on_revoke=lambda: self.close(code=1008, reason='Invite revoked'))
         self.room.add_conn(self.conn)
 
     async def receive(self, text_data=None, bytes_data=None):

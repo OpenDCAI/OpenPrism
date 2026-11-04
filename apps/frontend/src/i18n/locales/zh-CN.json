@@ -837,5 +837,19 @@
   "Email not sent": "邮件未发送",
   "Sent {{when}}": "发送于 {{when}}",
   "Invitation sent again to {{email}}": "已重新向 {{email}} 发送邀请",
-  "Create your account with the invited address. You join the workspace once you confirm it from the email we send.": "请用受邀的邮箱创建账户。确认我们发送的邮件后即加入工作区。"
+  "Create your account with the invited address. You join the workspace once you confirm it from the email we send.": "请用受邀的邮箱创建账户。确认我们发送的邮件后即加入工作区。",
+  "Link revoked. Anyone using it was disconnected.": "链接已撤销，正在使用它的人已断开。",
+  "Role for people who open the link": "打开链接的人的角色",
+  "Can edit": "可编辑",
+  "Can view": "可查看",
+  "Link expires after": "链接有效期",
+  "1 day": "1 天",
+  "3 days": "3 天",
+  "7 days": "7 天",
+  "Invite link": "邀请链接",
+  "Active invite links": "有效的邀请链接",
+  "by {{who}}, expires {{when}}": "由 {{who}} 创建，{{when}} 过期",
+  "someone": "某人",
+  "Revoke link": "撤销链接",
+  "Refresh": "刷新"
 }

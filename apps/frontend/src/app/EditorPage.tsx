@@ -22,7 +22,6 @@ import {
   arxivBibtex,
   arxivSearch,
   createFolder as createFolderApi,
-  createCollabInvite,
   compileProject,
   getAllFiles,
   getCollabServer,
@@ -61,6 +60,7 @@ import { CollabProvider } from '../collab/provider';
 import ZoteroPanel from './ZoteroPanel';
 import VersionsPanel from './VersionsPanel';
 import AiCommandBar from './AiCommandBar';
+import InviteLinks from './InviteLinks';
 import {
   AppTopBar,
   Avatar,
@@ -1555,8 +1555,6 @@ export default function EditorPage() {
   const [websearchSelectedAll, setWebsearchSelectedAll] = useState(false);
   const [collabEnabled, setCollabEnabled] = useState(() => Boolean(getCollabToken()));
   const [collabStatus, setCollabStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
-  const [collabInviteBusy, setCollabInviteBusy] = useState(false);
-  const [collabInviteLink, setCollabInviteLink] = useState('');
   const [collabServer, setCollabServerState] = useState(() => getCollabServer() || (typeof window === 'undefined' ? '' : window.location.origin));
   const [collabName, setCollabName] = useState(() => loadCollabName() || 'Guest');
   const [collabToken] = useState(() => getCollabToken());
@@ -1598,6 +1596,8 @@ export default function EditorPage() {
   const collabActiveRef = useRef(false);
   const collabColorRef = useRef<string>(pickCollabColor(collabName));
   const collabCompartment = useMemo(() => new Compartment(), []);
+  const readOnlyCompartment = useMemo(() => new Compartment(), []);
+  const canWriteRef = useRef(false); // read when the editor view is (re)created
 
   const {
     llmEndpoint,
@@ -1777,39 +1777,6 @@ export default function EditorPage() {
       setCollabPeers([]);
     };
   }, [activePath, collabCompartment, collabEnabled, collabName, collabServer, collabToken, projectId, t]);
-
-  const handleCreateInvite = useCallback(async () => {
-    if (!projectId) return;
-    setCollabInviteBusy(true);
-    try {
-      const res = await createCollabInvite(projectId);
-      if (!res.ok || !res.token) {
-        throw new Error(t('邀请生成失败'));
-      }
-      const baseInput = normalizeServerUrl(collabServer) || (typeof window === 'undefined' ? '' : window.location.origin);
-      const base = baseInput.replace(/\/$/, '');
-      const link = `${base}/collab?token=${encodeURIComponent(res.token)}`;
-      setCollabInviteLink(link);
-      if (!collabEnabled) {
-        setCollabEnabled(true);
-      }
-      setStatus(t('邀请链接已生成'));
-    } catch (err) {
-      setStatus(t('生成邀请失败: {{error}}', { error: String(err) }));
-    } finally {
-      setCollabInviteBusy(false);
-    }
-  }, [collabServer, projectId, t]);
-
-  const copyInviteLink = useCallback(async () => {
-    if (!collabInviteLink) return;
-    try {
-      await navigator.clipboard.writeText(collabInviteLink);
-      setStatus(t('邀请链接已复制'));
-    } catch (err) {
-      setStatus(t('复制失败: {{error}}', { error: String(err) }));
-    }
-  }, [collabInviteLink, t]);
 
   const showingVersion = versionView && versionView.url === pdfUrl ? versionView : null;
   useEffect(() => {
@@ -2023,6 +1990,7 @@ export default function EditorPage() {
         editorTheme,
         syntaxHighlighting(latexHighlight),
         collabCompartment.of([]),
+        readOnlyCompartment.of(canWriteRef.current ? [] : [EditorState.readOnly.of(true), EditorView.editable.of(false)]),
         ghostField,
         search(),
         autocompletion({
@@ -4079,6 +4047,14 @@ export default function EditorPage() {
     if (aiJobRef.current) window.clearInterval(aiJobRef.current.timer); // leaving the editor ends the progress polling
   }, []);
 
+  // People who cannot write (viewers, viewer links) get a read-only editor; the server drops their edits anyway.
+  useEffect(() => {
+    canWriteRef.current = canWrite;
+    cmViewRef.current?.dispatch({
+      effects: readOnlyCompartment.reconfigure(canWrite ? [] : [EditorState.readOnly.of(true), EditorView.editable.of(false)])
+    });
+  }, [canWrite, readOnlyCompartment]);
+
   openAiBarRef.current = () => {
     if (!canWrite || getInviteToken() || !activePath) return false;
     setAiBar((bar) => ({ ...bar, open: true, error: '' }));
@@ -5238,30 +5214,14 @@ export default function EditorPage() {
                         {collabEnabled ? t('断开') : t('连接')}
                       </button>
                     </div>
-                    <div className="collab-row">
-                      <button
-                        className="op-btn op-btn-primary"
-                        onClick={() => handleCreateInvite()}
-                        disabled={collabInviteBusy || !projectId}
-                      >
-                        {collabInviteBusy ? t('生成中...') : t('生成邀请链接')}
-                      </button>
-                      <button
-                        className="op-btn op-btn-secondary"
-                        onClick={() => copyInviteLink()}
-                        disabled={!collabInviteLink}
-                      >
-                        {t('复制')}
-                      </button>
-                    </div>
-                    <div className="collab-row">
-                      <input
-                        className="op-input"
-                        readOnly
-                        value={collabInviteLink || ''}
-                        placeholder={t('尚未生成邀请链接')}
+                    {canWrite && !getInviteToken() && projectId && (
+                      <InviteLinks
+                        projectId={projectId}
+                        linkFor={(token) => `${(normalizeServerUrl(collabServer) || window.location.origin).replace(/\/$/, '')}/collab?token=${encodeURIComponent(token)}`}
+                        onCreated={() => setCollabEnabled(true)}
+                        onStatus={setStatus}
                       />
-                    </div>
+                    )}
                     <div className="collab-row">
                       <div className="muted">
                         {activePath ? t('当前文件: {{path}}', { path: activePath }) : t('未选择文件')}
