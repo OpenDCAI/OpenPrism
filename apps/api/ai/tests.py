@@ -191,6 +191,59 @@ class AiApiTests(ApiBase):
         self.assertEqual(len(fake.requests[0]['body']['tools']), 7)
         self.assert_key_not_persisted()
 
+    def test_edit_context_prompt_and_multi_file_patches(self):
+        pid = self.new_project()
+        project = Project.objects.get(pk=pid)
+        main = '\\documentclass[11pt]{article}\n\\usepackage{acl}\n\\begin{document}\n\\input{intro}\n\\end{document}\n'
+        files.write_text(project, 'main.tex', main)
+        files.write_text(project, 'intro.tex', 'Hello world.\nSecond line.\n')
+        fake = self.fake(
+            tool_call('propose_patch', {'path': 'related.tex', 'content': '\\section{Related Work}\n'}, 'a'),
+            tool_call('apply_patch', {'patch': make_patch('main.tex', main, main.replace('\\input{intro}', '\\input{intro}\n\\input{related}'))}, 'b'),
+            {'content': 'Added a section.'})
+        ctx = {'activeFile': 'intro.tex', 'mainFile': 'main.tex', 'cursor': {'line': 2, 'col': 8},
+               'selection': {'text': 'Second'}}
+        res = self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'add a related work section', 'editContext': ctx,
+                                             'llmConfig': self.cfg(fake)}, format='json').data
+        self.assertTrue(res['ok'], res)
+        self.assertEqual({p['path'] for p in res['patches']}, {'related.tex', 'main.tex'})
+        system, user = [m['content'] for m in fake.requests[0]['body']['messages']]
+        self.assertIn('in-place editing assistant', system)
+        self.assertIn('add a related work section', user)
+        self.assertIn('\\documentclass[11pt]{article}', user)
+        self.assertIn('Main file: main.tex', user)
+        self.assertIn('Second <<CURSOR>>line.', user)  # caret at column 8
+        self.assertIn('Selection:\nSecond', user)
+        self.assertEqual(files.read_text(project, 'intro.tex'), 'Hello world.\nSecond line.\n')  # proposals only
+        self.assert_key_not_persisted()
+
+    def test_edit_context_prefers_the_editor_text(self):
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'a.tex', 'saved\n')
+        fake = self.fake({'content': 'ok'})
+        self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': {
+            'activeFile': 'a.tex', 'cursor': {'line': 1, 'col': 1}, 'content': 'unsaved edit\n'}}, format='json')
+        self.assertIn('<<CURSOR>>unsaved edit', fake.requests[0]['body']['messages'][1]['content'])
+
+    def test_edit_context_is_validated_and_needs_write_access(self):
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'a.tex', 'x\n')
+        fake = self.fake()
+        def post(ctx, **extra):
+            return self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake),
+                                                  'editContext': ctx, **extra}, format='json')
+        ok = {'activeFile': 'a.tex', 'cursor': {'line': 1, 'col': 1}}
+        for bad in ({**ok, 'activeFile': 'nope.tex'}, {**ok, 'activeFile': '../x'}, {**ok, 'cursor': {'line': 'a'}},
+                    {**ok, 'selection': {'text': 'x' * 20001}}, {**ok, 'content': 5}, 'text'):
+            res = post(bad).data
+            self.assertFalse(res['ok'], bad)
+            self.assertIn('error', res)
+        self.assertEqual(fake.requests, [])  # nothing reached the model
+        self.assertFalse(self.c.post('/api/agent/run', {'prompt': 'x', 'editContext': ok}, format='json').data['ok'])
+        viewer = make_user('v@example.com')
+        Membership.objects.create(workspace=Project.objects.get(pk=pid).workspace, user=viewer, role=Membership.VIEWER)
+        self.assertEqual(client_for(viewer).post('/api/agent/run', {'projectId': pid, 'editContext': ok}, format='json').status_code, 403)
+
     def test_agent_tools_mode_guards(self):
         fake = self.fake()
         no_project = self.c.post('/api/agent/run', {'mode': 'tools', 'llmConfig': self.cfg(fake)}, format='json').data

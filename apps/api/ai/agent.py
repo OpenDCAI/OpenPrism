@@ -16,6 +16,8 @@ from .patches import PatchError, apply_patch, extract_path, make_patch
 
 MAX_STEPS = 15
 READ_LIMIT = 20000
+CONTEXT_LINES = 40  # lines of the active file shown on each side of the caret
+CURSOR = '<<CURSOR>>'
 
 SYSTEM_TOOLS = ' '.join([
     'You are a LaTeX paper assistant for OpenPrism.',
@@ -25,6 +27,15 @@ SYSTEM_TOOLS = ' '.join([
     'Never assume writes are applied; use propose_patch and wait for user confirmation.',
     'Use apply_patch for localized edits; use propose_patch for full-file rewrites.',
     'Be concise. Provide a short summary in the final response.'])
+
+SYSTEM_EDIT = ' '.join([
+    'You are an in-place editing assistant inside a LaTeX editor. The user typed one short request; do exactly that task.',
+    'You are given the active file around the caret (marked %s), the selection if any, and the main file.' % CURSOR,
+    'Read other files with read_file before editing them. Front matter (title, authors, affiliations) is written differently',
+    'in each conference template: read the preamble of the main file and follow the markup this template uses.',
+    'A task may need several files (for example a new section is a new file plus an \\input in the main file): propose all of them.',
+    'Prefer apply_patch with small hunks; use propose_patch only for new files or full rewrites. Never assume writes are applied.',
+    'Keep changes minimal and do not touch unrelated text. Finish with a one or two sentence summary.'])
 
 TOOL_SPECS = [
     ('read_file', 'Read a UTF-8 file from the project. Input: { path } (relative to project root).',
@@ -155,6 +166,43 @@ class ToolBox:
         return arxiv.build_bibtex(entry)
 
 
+def _marked_window(text, line, col):
+    """The lines around the caret with CURSOR inserted at (line, col); both 1-based, clamped to the text."""
+    lines = text.split('\n')
+    line = min(max(line, 1), len(lines))
+    row = lines[line - 1]
+    col = min(max(col, 1), len(row) + 1)
+    lines[line - 1] = row[:col - 1] + CURSOR + row[col - 1:]
+    first, last = max(line - 1 - CONTEXT_LINES, 0), min(line + CONTEXT_LINES, len(lines))
+    head = f'(lines {first + 1}-{last} of {len(lines)})\n'
+    return head + '\n'.join(lines[first:last])
+
+
+def edit_prompt(p, project, ctx):
+    """The user message for an in-place edit. `ctx` was validated by the view."""
+    try:
+        main_text = pfiles.read_text(project, ctx['mainFile']) if ctx.get('mainFile') else ''
+    except pfiles.FileNotFound:
+        main_text = ''
+    docclass = next((ln.strip() for ln in main_text.splitlines() if ln.lstrip().startswith('\\documentclass')), '')
+    active = ctx.get('content')
+    if active is None:
+        try:
+            active = pfiles.read_text(project, ctx['activeFile'])
+        except pfiles.FileNotFound:
+            active = ''
+    cur = ctx.get('cursor') or {}
+    sel = (ctx.get('selection') or {}).get('text') or ''
+    return '\n\n'.join(x for x in [
+        f"Request: {p.get('prompt') or ''}",
+        f"Project: {project.name}",
+        f"Main file: {ctx['mainFile']}" if ctx.get('mainFile') else '',
+        f'Template / document class: {docclass}' if docclass else '',
+        f"Active file: {ctx['activeFile']} (caret at line {cur.get('line', 1)}, column {cur.get('col', 1)})",
+        f'Selection:\n{sel}' if sel else 'No selection; the change goes at the caret unless the task says otherwise.',
+        f"Active file around the caret:\n{_marked_window(active, int(cur.get('line', 1)), int(cur.get('col', 1)))}"] if x)
+
+
 def tools_mode(p, project, cfg, lang):
     if project is None:
         return {'ok': False, 'reply': t(lang, 'missing_project_id_tools'), 'patches': []}
@@ -167,7 +215,10 @@ def tools_mode(p, project, cfg, lang):
         f"User prompt: {p['prompt']}" if p.get('prompt') else '',
         f"Selection:\n{p['selection']}" if p.get('selection') else '',
         f"Compile log:\n{p['compileLog']}" if p.get('compileLog') else ''] if x)
-    messages = [{'role': 'system', 'content': SYSTEM_TOOLS}, {'role': 'user', 'content': user}]
+    system = SYSTEM_TOOLS
+    if p.get('editContext'):
+        system, user = SYSTEM_EDIT, edit_prompt(p, project, p['editContext'])
+    messages = [{'role': 'system', 'content': system}, {'role': 'user', 'content': user}]
     for _ in range(MAX_STEPS):
         res = llm.chat_raw(messages, cfg, tools=TOOLS)
         if not res['ok']:

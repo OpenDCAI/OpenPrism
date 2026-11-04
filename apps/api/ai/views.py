@@ -63,15 +63,56 @@ def llm_endpoint(request):
     return run_job(request, Job.LLM, {'messages': b.get('messages') or [], 'llmConfig': public}, secrets)
 
 
+MAX_SELECTION = 20000
+MAX_EDIT_CONTENT = 400000
+
+
+def clean_edit_context(project, raw):
+    """Validate the editor context of an in-place edit; returns (context, error)."""
+    from projects import files as pfiles
+    if not isinstance(raw, dict):
+        return None, 'editContext must be an object.'
+    active, main = raw.get('activeFile'), raw.get('mainFile') or ''
+    try:
+        active, main = safe_path(active), (safe_path(main) if main else '')
+    except (InvalidPath, TypeError, AttributeError):
+        return None, 'editContext has an invalid file path.'
+    try:
+        pfiles.read_text(project, active)
+    except pfiles.FileNotFound:
+        return None, f'File not found: {active}'
+    cursor, selection = raw.get('cursor') or {}, raw.get('selection')
+    try:
+        cursor = {'line': max(int(cursor.get('line', 1)), 1), 'col': max(int(cursor.get('col', 1)), 1)}
+    except (TypeError, ValueError, AttributeError):
+        return None, 'editContext.cursor needs numeric line and col.'
+    sel = selection.get('text') if isinstance(selection, dict) else None
+    if sel is not None and (not isinstance(sel, str) or len(sel) > MAX_SELECTION):
+        return None, f'The selection is too large (limit {MAX_SELECTION} characters).'
+    content = raw.get('content')
+    if content is not None and (not isinstance(content, str) or len(content) > MAX_EDIT_CONTENT):
+        return None, 'The file text sent with the request is too large.'
+    return {'activeFile': active, 'mainFile': main, 'cursor': cursor, 'content': content,
+            'selection': {'text': sel} if sel else None}, None
+
+
 @api_view(['POST'])
 def agent_run(request):
     b = _body(request)
     public, secrets = split_llm_config(b.get('llmConfig'))
-    project = get_project(request, b['projectId']) if b.get('projectId') else None
+    edit = b.get('editContext') is not None
+    project = get_project(request, b['projectId'], write=edit) if b.get('projectId') else None
+    if edit:  # an in-place edit needs tools mode and a project the user may change
+        if project is None:
+            return Response({'ok': False, 'error': 'editContext needs a projectId.'})
+        b['editContext'], error = clean_edit_context(project, b['editContext'])
+        if error:
+            return Response({'ok': False, 'error': error})
+        b['mode'] = 'tools'
     if project:
         public, secrets = workspace_first(request, project.workspace, public, secrets)
     params = {k: b.get(k) for k in ('task', 'prompt', 'selection', 'content', 'mode', 'activePath', 'compileLog',
-                                    'interaction', 'history')}
+                                    'interaction', 'history', 'editContext')}
     params.update({'llmConfig': public, 'lang': get_lang(request.headers.get('x-lang'))})
     return run_job(request, Job.AGENT, params, secrets, project)
 
