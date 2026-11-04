@@ -45,6 +45,7 @@ export const ICON_PATHS = {
   'zoom-in': "<circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-4-4\"/><path d=\"M11 8v6\"/><path d=\"M8 11h6\"/>",
   'zoom-out': "<circle cx=\"11\" cy=\"11\" r=\"7\"/><path d=\"m20 20-4-4\"/><path d=\"M8 11h6\"/>",
   'terminal': "<path d=\"m4 17 6-6-6-6\"/><path d=\"M12 19h8\"/>",
+  'wand': "<path d=\"m15 4 5 5L9 20l-5-5z\"/><path d=\"m13 6 5 5\"/><path d=\"M5 3v3\"/><path d=\"M3.5 4.5h3\"/><path d=\"M20 17v3\"/><path d=\"M18.5 18.5h3\"/>",
   'sparkles': "<path d=\"M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z\"/><path d=\"M19 15l.7 1.8 1.8.7-1.8.7L19 20l-.7-1.8-1.8-.7 1.8-.7z\"/>",
   'chat': "<path d=\"M21 11.5a8.4 8.4 0 0 1-12.6 7.3L3 21l2.2-5.4A8.5 8.5 0 1 1 21 11.5z\"/>",
   'bot': "<rect x=\"4\" y=\"8\" width=\"16\" height=\"12\" rx=\"2\"/><path d=\"M12 8V4H8\"/><path d=\"M2 14h2\"/><path d=\"M20 14h2\"/><path d=\"M9 13v2\"/><path d=\"M15 13v2\"/>",

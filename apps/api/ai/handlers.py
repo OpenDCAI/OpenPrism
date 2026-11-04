@@ -31,7 +31,11 @@ def handle_llm(job, secrets):
 
 
 def handle_agent(job, secrets):
-    return agent.run(job.params, job.project, llm_config(job, secrets), job.params.get('lang') or 'en-US')
+    from jobs.models import Job
+    from jobs.tasks import add_progress
+    return agent.run(job.params, job.project, llm_config(job, secrets), job.params.get('lang') or 'en-US',
+                     progress=lambda message: add_progress(job, message),
+                     cancelled=lambda: Job.objects.filter(pk=job.pk, result__cancelled=True).exists())
 
 
 def handle_vision(job, secrets):

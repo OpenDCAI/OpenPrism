@@ -7,6 +7,7 @@ from jobs.models import Job
 from jobs.tasks import ACTIVE, finish
 from projects import storage
 
+from .agent import Cancelled
 from .handlers import HANDLERS
 
 log = logging.getLogger(__name__)
@@ -26,6 +27,8 @@ def run_ai_job(job_id, secrets=None):
     job.save(update_fields=['status', 'updated_at'])
     try:
         body = HANDLERS[job.type](job, secrets or {})
+    except Cancelled:
+        return  # the cancel endpoint already ended the job
     except SoftTimeLimitExceeded:
         return finish(job, Job.FAILED, 'The AI request timed out.', {'body': {'ok': False, 'error': 'The AI request timed out.'}})
     except Exception as exc:
@@ -34,5 +37,8 @@ def run_ai_job(job_id, secrets=None):
     finally:
         if job.params.get('imageKey'):
             storage.delete_keys([job.params['imageKey']])
+    job.refresh_from_db(fields=['result'])
+    if job.result.get('cancelled'):
+        return  # cancelled while the last call ran: keep the cancelled outcome
     finish(job, Job.SUCCESS if body.get('ok') else Job.FAILED, '' if body.get('ok') else str(body.get('error') or body.get('reply') or ''),
            {'body': body})

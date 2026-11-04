@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import uuid
 from unittest import mock, skipUnless
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -13,7 +14,7 @@ from projects import files, storage
 from projects.models import Membership, Project
 from projects.test_api import ApiBase, client_for, make_user
 
-from . import arxiv, llm, plot
+from . import agent, arxiv, llm, plot
 from . import tasks as ai_tasks
 from .i18n import get_lang, t
 from .patches import PatchError, apply_patch, extract_path, make_patch
@@ -188,8 +189,149 @@ class AiApiTests(ApiBase):
         # the failed read_file was reported back to the model rather than aborting the run
         tool_msgs = [m['content'] for m in fake.requests[1]['body']['messages'] if m['role'] == 'tool']
         self.assertEqual(tool_msgs, ['Error: File not found: missing.tex'])
-        self.assertEqual(len(fake.requests[0]['body']['tools']), 7)
+        self.assertEqual(len(fake.requests[0]['body']['tools']), 8)
         self.assert_key_not_persisted()
+
+    def test_edit_context_prompt_and_multi_file_patches(self):
+        pid = self.new_project()
+        project = Project.objects.get(pk=pid)
+        main = '\\documentclass[11pt]{article}\n\\usepackage{acl}\n\\begin{document}\n\\input{intro}\n\\end{document}\n'
+        files.write_text(project, 'main.tex', main)
+        files.write_text(project, 'intro.tex', 'Hello world.\nSecond line.\n')
+        fake = self.fake(
+            tool_call('propose_patch', {'path': 'related.tex', 'content': '\\section{Related Work}\n'}, 'a'),
+            tool_call('apply_patch', {'patch': make_patch('main.tex', main, main.replace('\\input{intro}', '\\input{intro}\n\\input{related}'))}, 'b'),
+            {'content': 'Added a section.'})
+        ctx = {'activeFile': 'intro.tex', 'mainFile': 'main.tex', 'cursor': {'line': 2, 'col': 8},
+               'selection': {'text': 'Second'}}
+        res = self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'add a related work section', 'editContext': ctx,
+                                             'llmConfig': self.cfg(fake)}, format='json').data
+        self.assertTrue(res['ok'], res)
+        self.assertEqual({p['path'] for p in res['patches']}, {'related.tex', 'main.tex'})
+        system, user = [m['content'] for m in fake.requests[0]['body']['messages']]
+        self.assertIn('in-place editing assistant', system)
+        self.assertIn('add a related work section', user)
+        self.assertIn('\\documentclass[11pt]{article}', user)
+        self.assertIn('Main file: main.tex', user)
+        self.assertIn('Second <<CURSOR>>line.', user)  # caret at column 8
+        self.assertIn('Selection:\nSecond', user)
+        self.assertEqual(files.read_text(project, 'intro.tex'), 'Hello world.\nSecond line.\n')  # proposals only
+        self.assert_key_not_persisted()
+
+    def test_edit_context_prefers_the_editor_text(self):
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'a.tex', 'saved\n')
+        fake = self.fake({'content': 'ok'})
+        self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': {
+            'activeFile': 'a.tex', 'cursor': {'line': 1, 'col': 1}, 'content': 'unsaved edit\n'}}, format='json')
+        self.assertIn('<<CURSOR>>unsaved edit', fake.requests[0]['body']['messages'][1]['content'])
+
+    def test_edit_context_is_validated_and_needs_write_access(self):
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'a.tex', 'x\n')
+        fake = self.fake()
+        def post(ctx, **extra):
+            return self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake),
+                                                  'editContext': ctx, **extra}, format='json')
+        ok = {'activeFile': 'a.tex', 'cursor': {'line': 1, 'col': 1}}
+        for bad in ({**ok, 'activeFile': 'nope.tex'}, {**ok, 'activeFile': '../x'}, {**ok, 'cursor': {'line': 'a'}},
+                    {**ok, 'selection': {'text': 'x' * 20001}}, {**ok, 'content': 5}, 'text'):
+            res = post(bad).data
+            self.assertFalse(res['ok'], bad)
+            self.assertIn('error', res)
+        self.assertEqual(fake.requests, [])  # nothing reached the model
+        self.assertFalse(self.c.post('/api/agent/run', {'prompt': 'x', 'editContext': ok}, format='json').data['ok'])
+        viewer = make_user('v@example.com')
+        Membership.objects.create(workspace=Project.objects.get(pk=pid).workspace, user=viewer, role=Membership.VIEWER)
+        self.assertEqual(client_for(viewer).post('/api/agent/run', {'projectId': pid, 'editContext': ok}, format='json').status_code, 403)
+
+    def test_edit_progress_is_logged_and_the_client_picks_the_job_id(self):
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'main.tex', 'x\n')
+        fake = self.fake(tool_call('read_file', {'path': 'main.tex'}, 'a'), {'content': 'done'})
+        job_id = str(uuid.uuid4())
+        ctx = {'activeFile': 'main.tex', 'cursor': {'line': 1, 'col': 1}}
+        res = self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': ctx,
+                                             'jobId': job_id}, format='json').data
+        self.assertTrue(res['ok'])
+        job = Job.objects.get(pk=job_id)
+        self.assertEqual(job.progress_log, ['Thinking…', 'Reading main.tex', 'Thinking again…'])
+        bad = self.c.post('/api/agent/run', {'projectId': pid, 'llmConfig': self.cfg(fake), 'editContext': ctx, 'jobId': 'nope'}, format='json').data
+        self.assertFalse(bad['ok'])
+
+    def test_cancelling_stops_the_agent_before_its_next_step(self):
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'main.tex', 'x\n')
+        fake = self.fake(tool_call('read_file', {'path': 'main.tex'}, 'a'), {'content': 'should never be asked for'})
+        job_id = str(uuid.uuid4())
+        real_call = agent.ToolBox.call
+
+        def cancel_then_call(box, name, args):
+            self.assertEqual(self.c.post(f'/api/jobs/{job_id}/cancel').data, {'ok': True, 'status': 'failed'})
+            return real_call(box, name, args)
+
+        ctx = {'activeFile': 'main.tex', 'cursor': {'line': 1, 'col': 1}}
+        with mock.patch.object(agent.ToolBox, 'call', cancel_then_call):
+            res = self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': ctx,
+                                                 'jobId': job_id}, format='json').data
+        self.assertEqual(res, {'ok': False, 'error': 'Cancelled.', 'cancelled': True})
+        self.assertEqual(len(fake.requests), 1)  # the second model call never happened
+        job = Job.objects.get(pk=job_id)
+        self.assertEqual((job.status, job.error, job.result['cancelled']), ('failed', 'Cancelled.', True))
+
+    def test_cancel_is_for_the_owner_and_idempotent(self):
+        job = Job.objects.create(type=Job.AGENT, user=self.user, status=Job.RUNNING)
+        other = client_for(make_user('o2@example.com'))
+        self.assertEqual(other.post(f'/api/jobs/{job.id}/cancel').status_code, 404)
+        self.assertEqual(Job.objects.get(pk=job.id).status, 'running')
+        self.assertEqual(self.c.post(f'/api/jobs/{job.id}/cancel').data['status'], 'failed')
+        self.assertEqual(self.c.post(f'/api/jobs/{job.id}/cancel').data['status'], 'failed')
+        done = Job.objects.create(type=Job.AGENT, user=self.user, status=Job.SUCCESS, result={'body': {'ok': True}})
+        self.assertEqual(self.c.post(f'/api/jobs/{done.id}/cancel').data['status'], 'success')  # finished work is not rewritten
+
+    @override_settings(AI_EDIT_RATE_PER_MINUTE=2)
+    def test_edit_requests_are_rate_limited_per_user(self):
+        from django.core.cache import cache
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'main.tex', 'x\n')
+        cache.clear()
+        fake = self.fake({'content': 'a'}, {'content': 'b'}, {'content': 'c'})
+        ctx = {'activeFile': 'main.tex', 'cursor': {'line': 1, 'col': 1}}
+        post = lambda client: client.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': ctx}, format='json')
+        self.assertEqual([post(self.c).status_code for _ in range(2)], [200, 200])
+        limited = post(self.c)
+        self.assertEqual(limited.status_code, 429)
+        self.assertIn('Too many AI requests', limited.data['error'])
+        self.assertEqual(len(fake.requests), 2)  # the third never reached the model
+        # the plain assistant is not affected, and the limit is per user
+        self.assertEqual(self.c.post('/api/agent/run', {'prompt': 'hi', 'interaction': 'chat', 'llmConfig': self.cfg(fake)}, format='json').status_code, 200)
+        cache.clear()
+
+    def test_replace_text_stages_cumulative_exact_edits_and_edit_mode_refuses_rewrites(self):
+        pid = self.new_project()
+        project = Project.objects.get(pk=pid)
+        files.write_text(project, 'main.tex', 'one\ntwo\ntwo\nthree\n')
+        fake = self.fake(
+            tool_call('replace_text', {'path': 'main.tex', 'old_text': 'missing', 'new_text': 'x'}, 'a'),
+            tool_call('replace_text', {'path': 'main.tex', 'old_text': 'two', 'new_text': 'x'}, 'b'),      # occurs twice
+            tool_call('replace_text', {'path': 'main.tex', 'old_text': 'one', 'new_text': 'ONE'}, 'c'),
+            tool_call('replace_text', {'path': 'main.tex', 'old_text': 'three', 'new_text': 'THREE'}, 'd'),  # same file again
+            tool_call('propose_patch', {'path': 'main.tex', 'content': 'rewritten'}, 'e'),                 # refused in edit mode
+            tool_call('propose_patch', {'path': 'new.tex', 'content': 'fresh\n'}, 'f'),
+            {'content': 'ok'})
+        ctx = {'activeFile': 'main.tex', 'cursor': {'line': 1, 'col': 1}}
+        res = self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': ctx}, format='json').data
+        by_path = {p['path']: p for p in res['patches']}
+        self.assertEqual(set(by_path), {'main.tex', 'new.tex'})
+        self.assertEqual(by_path['main.tex']['content'], 'ONE\ntwo\ntwo\nTHREE\n')  # both edits are in the one patch
+        self.assertEqual(by_path['main.tex']['original'], 'one\ntwo\ntwo\nthree\n')  # relative to the stored text
+        self.assertIn('+ONE', by_path['main.tex']['diff'])
+        self.assertIn('+THREE', by_path['main.tex']['diff'])
+        results = [m['content'] for m in fake.requests[-1]['body']['messages'] if m['role'] == 'tool']
+        self.assertIn('not found', results[0])
+        self.assertIn('occurs 2 times', results[1])
+        self.assertIn('not a full rewrite', results[4])
+        self.assertEqual(files.read_text(project, 'main.tex'), 'one\ntwo\ntwo\nthree\n')  # still only proposals
 
     def test_agent_tools_mode_guards(self):
         fake = self.fake()

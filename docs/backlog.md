@@ -35,28 +35,19 @@ file is open live). Left for later:
 
 ## v0.0.5 - AI Assistance for LaTeX tasks
 
-- [ ] **A hotkey to ask the AI to do a task in place** ("add an author", "create a new section on related work", "turn
-      this list into a table"). Press a shortcut anywhere in the editor, type the request in a small command bar, and
-      get a reviewable change, without leaving the text for the Assistant panel. Notes for whoever picks it up:
-      - *Most of the machinery exists.* The agent's tools mode already reads files, lists files and proposes patches,
-        and the editor already shows proposed patches for accept/reject. The new work is the entry point and the
-        context it sends: active file, cursor position, selection, and the project's main file.
-      - *Never apply silently.* Show the result as a diff to accept or reject (the existing patch UI), and make accepting
-        one undoable step. In a collaborative session an accepted change must be applied through the live document (the
-        editor's `writeFileCompat` path already does this); a stale proposal (the file changed meanwhile) should be
-        rebased or rejected rather than overwrite other people's edits.
-      - *Tasks touch more than the cursor.* An author goes in the title block, and the right markup differs per
-        template (ACL, NeurIPS and CVPR each do it differently); a new section may also add a file and an `\input`.
-        Give the agent the template identity and let it read the preamble, and expect multi-file patches.
-      - *Shortcut conflicts.* Already taken: Alt+/ and Ctrl/Cmd+Space (inline completion), Ctrl/Cmd+/ (comment),
-        Ctrl/Cmd+F, Ctrl+S, Ctrl+Enter (compile), Ctrl+B and Ctrl+Alt+B (panels). Pick one that works on Mac, Windows
-        and Linux and with IME input, make it configurable, and also reach it from the editor menu and a toolbar button
-        so it is discoverable and keyboard-accessible.
-      - *Latency and cost.* The AI endpoints currently block for the whole run. Show progress, allow cancel, and apply
-        the AI rate limits/quotas and per-workspace key work listed elsewhere in this file.
-      - *Who can use it:* members who can edit; not viewers, commenters or invite-link guests.
-      - Keep recent requests so a user can repeat one, and test the prompts against a few real templates with the fake-LLM
-        harness plus a small set of recorded tasks.
+Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
+
+## v0.0.5 follow-ups (found while building in-place AI editing)
+
+- [ ] **Accepting a proposal writes other files by REST, even when someone has them open live** (known collaboration
+      limitation). A multi-file proposal only goes through the shared document for the active file.
+- [ ] **In-place AI undo in a live session** is the editor's own history; check that Ctrl+Z in a collaborative session undoes
+      only the local user's accept (y-codemirror's undo manager) and does not undo remote edits.
+- [ ] **No streaming.** The bar shows step names, not the model's text; long tasks look idle between steps.
+- [ ] **Cite and bibliography tasks** ("cite the Attention paper") need the Zotero/arXiv tools in edit mode and a recorded task.
+- [ ] **A configurable shortcut** (Ctrl/Cmd+K is fixed; browsers bind Ctrl+K to the address bar when the editor is not focused).
+- [ ] **A cancelled request can still finish its current model call** (the worker checks between calls), and a cancel sent
+      before the job row exists is lost.
 
 ## v0.0.6 - Better account management
 

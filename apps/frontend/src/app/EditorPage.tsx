@@ -27,6 +27,8 @@ import {
   getAllFiles,
   getCollabServer,
   getFile,
+  cancelJob,
+  jobProgress,
   getProjectTree,
   fetchVersionPdf,
   restoreVersion,
@@ -47,8 +49,9 @@ import {
   setCollabServer
 } from '../api/client';
 import type { ArxivPaper, PdfFocus, RestoreVersionResult } from '../api/client';
-import { tokenForUrl } from '../api/auth';
+import { getInviteToken, tokenForUrl } from '../api/auth';
 import { createTwoFilesPatch } from 'diff';
+import { merge3 } from './merge3';
 import { SplitDiffView, buildSplitDiff } from './SplitDiff';
 import type { CompileOutcome } from '../latex/engine';
 import * as Y from 'yjs';
@@ -57,6 +60,7 @@ import { yCollab } from 'y-codemirror.next';
 import { CollabProvider } from '../collab/provider';
 import ZoteroPanel from './ZoteroPanel';
 import VersionsPanel from './VersionsPanel';
+import AiCommandBar from './AiCommandBar';
 import {
   AppTopBar,
   Avatar,
@@ -64,6 +68,7 @@ import {
   Button,
   CrumbSep,
   EmptyState,
+  FieldError,
   Icon,
   IconButton,
   Menu,
@@ -98,6 +103,19 @@ interface PendingChange {
   original: string;
   proposed: string;
   diff: string;
+  /** Set when the file changed after this was proposed and the change no longer applies cleanly. */
+  stale?: boolean;
+}
+
+/** The smallest single replacement that turns `a` into `b` (common prefix and suffix kept), as one editor transaction. */
+function minimalChange(a: string, b: string) {
+  let start = 0;
+  const max = Math.min(a.length, b.length);
+  while (start < max && a.charCodeAt(start) === b.charCodeAt(start)) start++;
+  let endA = a.length;
+  let endB = b.length;
+  while (endA > start && endB > start && a.charCodeAt(endA - 1) === b.charCodeAt(endB - 1)) { endA--; endB--; }
+  return { from: start, to: endA, insert: b.slice(start, endB) };
 }
 
 type InlineEdit =
@@ -1434,6 +1452,15 @@ export default function EditorPage() {
   const [plotTypeDropdownOpen, setPlotTypeDropdownOpen] = useState(false);
   const [figureDropdownOpen, setFigureDropdownOpen] = useState(false);
   const [pendingChanges, setPendingChanges] = useState<PendingChange[]>([]);
+  /** Whether this user may change the project (the tree endpoint says so); the AI edit bar needs it, and a real account. */
+  const [canWrite, setCanWrite] = useState(false);
+  const [aiBar, setAiBar] = useState<{ open: boolean; busy: boolean; progress: string; error: string; note: string }>(
+    { open: false, busy: false, progress: '', error: '', note: '' }
+  );
+  const aiRunRef = useRef(0);
+  const aiAbortRef = useRef<AbortController | null>(null);
+  const aiJobRef = useRef<{ id: string; timer: number } | null>(null);
+  const openAiBarRef = useRef<() => boolean>(() => false);
   const [compileLog, setCompileLog] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   /** An older version's PDF shown in place of the current build; `backUrl` is the build to return to. */
@@ -1844,6 +1871,7 @@ export default function EditorPage() {
     const res = await getProjectTree(projectId);
     setTree(res.items);
     setFileOrder(res.fileOrder || {});
+    setCanWrite(res.canWrite !== false);
     if (!keepActive || !activePath || !res.items.find((item) => item.path === activePath)) {
       const main = res.items.find((item) => item.path.endsWith('main.tex'))?.path;
       const next = main || res.items.find((item) => item.type === 'file')?.path || '';
@@ -2009,7 +2037,10 @@ export default function EditorPage() {
         keymapExtension,
         // Ctrl/Cmd+Enter compiles. CodeMirror's default keymap (inside basicSetup, so ahead of keymapExtension) binds
         // the same key to "insert blank line", which is why this one is Prec.highest and handles the key itself.
-        Prec.highest(keymap.of([{ key: 'Mod-Enter', run: () => { void compileRef.current(); return true; } }]))
+        Prec.highest(keymap.of([
+          { key: 'Mod-Enter', run: () => { void compileRef.current(); return true; } },
+          { key: 'Mod-k', run: () => openAiBarRef.current() }
+        ]))
       ]
     });
 
@@ -3975,25 +4006,61 @@ export default function EditorPage() {
     }
   };
 
+  /** What a proposal would write now: as proposed when the file is unchanged since, rebased when the change still applies
+   * cleanly to the newer text, otherwise null (stale: never overwrite what changed meanwhile). */
+  const resolveProposal = async (item: PendingChange): Promise<{ current: string; text: string } | null> => {
+    let current = '';
+    const view = cmViewRef.current;
+    if (item.filePath === activePath && view) {
+      current = view.state.doc.toString();
+    } else {
+      try {
+        current = (await getFile(projectId, item.filePath)).content ?? '';
+      } catch {
+        current = ''; // a file the proposal creates
+      }
+    }
+    if (current === item.original) return { current, text: item.proposed };
+    const merged = merge3(item.original, current, item.proposed);
+    return merged === null ? null : { current, text: merged };
+  };
+
   const applyPending = async (change?: PendingChange) => {
     const list = change ? [change] : pendingChanges;
+    const done = new Set<string>();
+    const stale = new Set<string>();
+    let wroteOtherFile = false;
     for (const item of list) {
-      await writeFileCompat(item.filePath, item.proposed);
-      setFiles((prev) => ({ ...prev, [item.filePath]: item.proposed }));
-      if (activePath === item.filePath && !collabActiveRef.current) {
-        setEditorDoc(item.proposed);
+      const resolved = await resolveProposal(item);
+      if (!resolved) {
+        stale.add(item.filePath);
+        continue;
       }
+      const view = cmViewRef.current;
+      if (item.filePath === activePath && view) {
+        // One transaction through the editor: a single Undo reverts it, and in a live session it travels through the
+        // shared document instead of replacing the file underneath other people.
+        const edit = minimalChange(resolved.current, resolved.text);
+        if (edit.from !== edit.to || edit.insert) {
+          view.dispatch({ changes: edit, userEvent: 'input.ai', scrollIntoView: true });
+        }
+      } else {
+        await writeFile(projectId, item.filePath, resolved.text);
+        wroteOtherFile = true;
+      }
+      setFiles((prev) => ({ ...prev, [item.filePath]: resolved.text }));
+      done.add(item.filePath);
     }
-    if (change) {
-      setPendingChanges((prev) => prev.filter((item) => item.filePath !== change.filePath));
-      if (diffFocus?.filePath === change.filePath) {
-        setDiffFocus(null);
-      }
+    if (wroteOtherFile) await refreshTree(true);
+    setPendingChanges((prev) =>
+      prev.filter((item) => !done.has(item.filePath)).map((item) => (stale.has(item.filePath) ? { ...item, stale: true } : item))
+    );
+    if (diffFocus && done.has(diffFocus.filePath)) setDiffFocus(null);
+    if (stale.size > 0) {
+      setStatus(t('{{count}} change(s) no longer apply because the file changed. Ask again.', { count: stale.size }));
     } else {
-      setPendingChanges([]);
-      setDiffFocus(null);
+      setStatus(t('已应用修改'));
     }
-    setStatus(t('已应用修改'));
   };
 
   const discardPending = (change?: PendingChange) => {
@@ -4005,6 +4072,106 @@ export default function EditorPage() {
     } else {
       setPendingChanges([]);
       setDiffFocus(null);
+    }
+  };
+
+  useEffect(() => () => {
+    if (aiJobRef.current) window.clearInterval(aiJobRef.current.timer); // leaving the editor ends the progress polling
+  }, []);
+
+  openAiBarRef.current = () => {
+    if (!canWrite || getInviteToken() || !activePath) return false;
+    setAiBar((bar) => ({ ...bar, open: true, error: '' }));
+    return true;
+  };
+
+  /** Stop following the running request and tell the server to stop working on it. */
+  const stopAiJob = (cancel: boolean) => {
+    const job = aiJobRef.current;
+    aiJobRef.current = null;
+    if (!job) return;
+    window.clearInterval(job.timer);
+    if (cancel) void cancelJob(job.id).catch(() => {}); // the request was aborted anyway; this stops the worker
+  };
+
+  const closeAiBar = () => {
+    aiRunRef.current += 1; // a request still running is abandoned
+    aiAbortRef.current?.abort();
+    stopAiJob(true);
+    setAiBar({ open: false, busy: false, progress: '', error: '', note: '' });
+    cmViewRef.current?.focus();
+  };
+
+  const cancelAiRun = () => {
+    aiRunRef.current += 1;
+    aiAbortRef.current?.abort();
+    stopAiJob(true);
+    setAiBar((bar) => ({ ...bar, busy: false, progress: '', note: t('Cancelled.') }));
+  };
+
+  const runAiEdit = async (prompt: string) => {
+    const view = cmViewRef.current;
+    if (!view || !activePath) return;
+    const run = ++aiRunRef.current;
+    const controller = new AbortController();
+    aiAbortRef.current = controller;
+    setAiBar((bar) => ({ ...bar, busy: true, error: '', note: '', progress: t('Saving…') }));
+    try {
+      // The server reads files from storage: make sure it has what is on screen (this flushes a live document too).
+      await (saveActiveFileRef.current() as unknown as Promise<unknown>);
+      const state = view.state;
+      const head = state.selection.main.head;
+      const line = state.doc.lineAt(head);
+      const sel = state.selection.main;
+      setAiBar((bar) => ({ ...bar, progress: t('Asking the AI…') }));
+      const jobId = crypto.randomUUID();
+      const timer = window.setInterval(() => {
+        jobProgress(jobId).then((job) => {
+          const last = job.progressLog[job.progressLog.length - 1];
+          if (last && aiRunRef.current === run) setAiBar((bar) => (bar.busy ? { ...bar, progress: last } : bar));
+        }).catch(() => {}); // not created yet, or already gone
+      }, 1000);
+      aiJobRef.current = { id: jobId, timer };
+      const res = await runAgent({
+        jobId,
+        task: 'edit',
+        prompt,
+        selection: '',
+        content: '',
+        mode: 'tools',
+        projectId,
+        activePath,
+        llmConfig,
+        interaction: 'agent',
+        editContext: {
+          activeFile: activePath,
+          mainFile: mainFile || undefined,
+          cursor: { line: line.number, col: head - line.from + 1 },
+          selection: sel.empty ? null : { text: state.sliceDoc(sel.from, sel.to) },
+          content: state.doc.toString()
+        }
+      }, controller.signal);
+      stopAiJob(false);
+      if (run !== aiRunRef.current) return; // cancelled or closed meanwhile: drop the late answer
+      if (!res.ok && !res.reply && res.error) throw new Error(res.error);
+      if (res.patches && res.patches.length > 0) {
+        setPendingChanges(res.patches.map((patch) => ({
+          filePath: patch.path,
+          original: patch.original ?? files[patch.path] ?? '',
+          proposed: patch.content,
+          diff: patch.diff
+        })));
+        setAiBar({ open: false, busy: false, progress: '', error: '', note: '' });
+        showPreviewView('diff');
+        setStatus(t('Review the AI proposal and apply it.'));
+        view.focus();
+      } else {
+        setAiBar((bar) => ({ ...bar, busy: false, progress: '', note: res.reply || t('The AI proposed no changes.') }));
+      }
+    } catch (err) {
+      if (run !== aiRunRef.current) return;
+      stopAiJob(false);
+      setAiBar((bar) => ({ ...bar, busy: false, progress: '', error: err instanceof Error ? err.message : String(err) }));
     }
   };
 
@@ -4323,6 +4490,7 @@ export default function EditorPage() {
   ];
 
   const insertMenuItems = (): MenuEntry[] => [
+    ...(canWrite && !getInviteToken() ? [{ label: t('Ask AI…'), icon: 'wand', onSelect: () => { openAiBarRef.current(); } } as MenuEntry, { type: 'sep' } as MenuEntry] : []),
     { type: 'label', label: t('Structure') },
     { label: t('Section'), icon: 'heading', onSelect: insertSectionSnippet },
     { label: t('Subsection'), icon: 'heading', onSelect: insertSubsectionSnippet },
@@ -4668,7 +4836,7 @@ export default function EditorPage() {
           <div className="ed-panes">
             <section className="ed-pane editor-panel" aria-label={t('Editor')}>
               <div className="ed-toolbar">
-                <MenuButton className="op-btn op-btn-ghost op-btn-sm" items={insertMenuItems} menuLabel={t('Insert')}>
+                <MenuButton className="op-btn op-btn-ghost op-btn-sm" items={insertMenuItems} menuLabel={t('Insert')} aria-label={t('Insert')}>
                   <Icon name="plus" />
                   <span className="ed-toolbar-label">{t('Insert')}</span>
                   <Icon name="chevron-down" />
@@ -4683,6 +4851,11 @@ export default function EditorPage() {
                   <span className="ed-toolbar-label">{t('Label')}</span>
                 </Button>
                 <span className="ed-toolbar-sep" aria-hidden="true" />
+                {canWrite && !getInviteToken() && (
+                  <Button variant="ghost" size="sm" icon="wand" onClick={() => openAiBarRef.current()} aria-label={t('Ask AI')} title={`${t('Ask AI')} (${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}K)`}>
+                    <span className="ed-toolbar-label">{t('Ask AI')}</span>
+                  </Button>
+                )}
                 <Button variant="ghost" size="sm" icon="sparkles" onClick={() => openRightTool('agent')} aria-label={t('Assistant')}>
                   <span className="ed-toolbar-label">{t('Assistant')}</span>
                 </Button>
@@ -4696,6 +4869,18 @@ export default function EditorPage() {
                 ref={editorSplitRef}
               >
                 <div className="editor-area" ref={editorAreaRef}>
+                  {aiBar.open && (
+                    <AiCommandBar
+                      onSubmit={(prompt) => void runAiEdit(prompt)}
+                      onCancel={cancelAiRun}
+                      onClose={closeAiBar}
+                      busy={aiBar.busy}
+                      progress={aiBar.progress}
+                      error={aiBar.error}
+                      note={aiBar.note}
+                      hasSelection={selectionRange[0] !== selectionRange[1]}
+                    />
+                  )}
                   <div ref={editorHostRef} className="editor-host" style={{ '--editor-font-size': `${editorFontSize}px` } as React.CSSProperties} />
                   <div className="editor-hint muted">{t('快捷键: Option/Alt + / 或 Cmd/Ctrl + Space 补全；Cmd/Ctrl + / 注释；Cmd/Ctrl + F 搜索；Cmd/Ctrl + S 保存')}</div>
                   {(inlineSuggestionText || isSuggesting) && suggestionPos && (
@@ -4920,7 +5105,8 @@ export default function EditorPage() {
                               </div>
                               <SplitDiffView rows={rows} />
                               <div className="row">
-                                <button className="op-btn op-btn-primary" onClick={() => applyPending(change)}>{t('应用此修改')}</button>
+                                {change.stale && <FieldError message={t('The file changed after this was proposed, so it no longer applies. Ask again.')} />}
+                                <button className="op-btn op-btn-primary" disabled={change.stale} onClick={() => applyPending(change)}>{t('应用此修改')}</button>
                                 <button className="op-btn op-btn-secondary op-btn-sm" onClick={() => discardPending(change)}>{t('放弃')}</button>
                               </div>
                             </div>
