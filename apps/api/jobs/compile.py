@@ -55,7 +55,11 @@ def build_command(engine, out_dir, main_file):
         return ['latexmk', '-norc', '-pdf', '-pdflatex=pdflatex -synctex=1 -interaction=nonstopmode %O %S',
                 '-interaction=nonstopmode', f'-outdir={out_dir}', main_file]
     if engine == 'tectonic':
-        return ['tectonic', '--synctex', '--outdir', str(out_dir), main_file]
+        # --untrusted: no shell escape and no extra search paths. --bundle is a local directory, so nothing is
+        # downloaded; tectonic runs its own bibtex passes.
+        home = Path(settings.TECTONIC_HOME)
+        return [str(home / 'bin' / 'tectonic'), '--untrusted', '--bundle', str(home / 'bundle'), '--synctex',
+                '--keep-logs', '--outdir', str(out_dir), main_file]
     raise CompileError(f'Unsupported engine: {engine}')
 
 
@@ -138,6 +142,11 @@ def _tex_env(home, engine='pdflatex'):
         # for lualatex the protection is the empty environment and the non-dumpable parent (see config/hardening.py).
         'openin_any': 'a' if engine == 'lualatex' else 'p',
     })
+    if engine == 'tectonic':
+        # Tectonic ignores openin_any and reads absolute paths, like lualatex (same protections apply). A document can
+        # make it run `biber` with arguments of its choosing (from its .run.xml), so PATH holds only tectonic itself.
+        home = Path(settings.TECTONIC_HOME)
+        env.update({'PATH': str(home / 'bin'), 'TECTONIC_CACHE_DIR': str(home / 'cache')})
     return env
 
 
@@ -171,7 +180,7 @@ def _probe_order(line, limit):
             yield line - step
 
 
-def forward_search(src, out_dir, base, focus, env):
+def forward_search(src, out_dir, base, focus, env, engine='pdflatex'):
     """Where in the PDF is source line `focus['line']` of `focus['file']`? Returns {'page', 'x', 'y'} or None.
 
     Runs while the compile's temp directory still exists. Best effort: a missing SyncTeX file, a file that was not part
@@ -184,6 +193,8 @@ def forward_search(src, out_dir, base, focus, env):
     pdf = out_dir / f'{base}.pdf'
     if line < 1 or not pdf.is_file() or not (out_dir / f'{base}.synctex.gz').is_file():
         return None
+    # tectonic records absolute input paths and `synctex view` matches names literally
+    name = str(src / file) if engine == 'tectonic' else file
     deadline = time.monotonic() + SYNCTEX_TIMEOUT
     for probe in itertools.islice(_probe_order(line, SYNCTEX_MAX_PROBES), SYNCTEX_MAX_PROBES):
         if time.monotonic() > deadline:
@@ -191,7 +202,7 @@ def forward_search(src, out_dir, base, focus, env):
         out = LogBuffer(limit=20_000)
         try:
             # The files named in the SyncTeX data are the temp paths from this compile, so run it where it ran.
-            run_command(['synctex', 'view', '-i', f'{probe}:0:{file}', '-o', str(pdf)], src, out, env, timeout=SYNCTEX_TIMEOUT)
+            run_command(['synctex', 'view', '-i', f'{probe}:0:{name}', '-o', str(pdf)], src, out, env, timeout=SYNCTEX_TIMEOUT)
         except (FileNotFoundError, OSError):
             return None  # no synctex binary in this image
         position = _parse_synctex_view(out.text())
@@ -235,10 +246,26 @@ def compile_project(project, main_file, engine, progress=lambda msg: None, focus
 
         pdf_path = out_dir / f'{base}.pdf'
         pdf = pdf_path.read_bytes() if pdf_path.is_file() else None
-        position = forward_search(src, out_dir, base, focus, env) if (pdf and focus) else None
-        return {'pdf': pdf, 'log': log.text(), 'status': code, 'focus': position, 'snapshot': snapshot}
+        # the standard TeX environment, not tectonic's (whose PATH holds no synctex)
+        position = forward_search(src, out_dir, base, focus, _tex_env(work), engine) if (pdf and focus) else None
+        error = _tectonic_error(log.text()) if (engine == 'tectonic' and not pdf) else None
+        return {'pdf': pdf, 'log': log.text(), 'status': code, 'focus': position, 'snapshot': snapshot, 'error': error}
     finally:
         shutil.rmtree(work, ignore_errors=True)
+
+
+# Packages, classes and styles only: a missing \input{chapter} is the project's own file, not the bundle's.
+MISSING_FILE_RE = re.compile(r"LaTeX Error: File `([^'/]+\.(?:sty|cls|clo|bst|def|fd|cfg))' not found")
+
+
+def _tectonic_error(log_text):
+    """A readable job error for the ways tectonic fails here that its own log does not explain, else None."""
+    m = MISSING_FILE_RE.search(log_text)
+    if m:
+        return f'{m.group(1)} is not in the offline package bundle tectonic uses.'
+    if 'Running external tool biber' in log_text:  # biber is kept off tectonic's PATH (see _tex_env)
+        return 'Tectonic cannot run biber here. Compile biblatex documents with pdfLaTeX, XeLaTeX or LuaLaTeX.'
+    return None
 
 
 def _bibliography_and_passes(cmd, src, out_dir, main_file, base, env, log, progress):

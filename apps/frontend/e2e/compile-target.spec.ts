@@ -109,6 +109,26 @@ test.describe('what compile builds', () => {
     expect(compiles).toHaveLength(0);
   });
 
+  test('Tectonic from the Compile options menu builds the PDF, citations included', async ({ page }) => {
+    const session = await newAccount('tectonic');
+    const id = await newProject(session, 'Tectonic', {
+      'main.tex': '\\documentclass{article}\n\\begin{document}\nTectonicword \\cite{k}.\n\\bibliographystyle{plain}\n\\bibliography{refs}\n\\end{document}\n',
+      'refs.bib': '@book{k, author={Ada Bibauthor}, title={A Title}, year={2020}, publisher={P}}\n'
+    });
+    await signIn(page, session);
+    await page.goto(`/editor/${id}`);
+    await page.waitForSelector('.cm-editor');
+    await page.getByRole('button', { name: 'Compile options' }).click();
+    await page.getByRole('menuitemradio', { name: 'Tectonic' }).click();
+    const request = page.waitForRequest((r) => r.method() === 'POST' && /\/api\/compile$/.test(r.url()));
+    await page.locator('.cm-content').click();
+    await page.keyboard.press('Control+Enter');
+    expect(JSON.parse((await request).postData() ?? '{}').engine).toBe('tectonic');
+    const word = (w: string) => page.locator('.pdf-page .textLayer span', { hasText: w }).first();
+    await expect(word('Tectonicword')).toBeVisible({ timeout: 90_000 });
+    await expect(word('Bibauthor')).toBeVisible(); // tectonic ran bibtex itself
+  });
+
   test('the XeLaTeX retry applies to that file only, not to the next one', async ({ page }) => {
     const session = await newAccount('engine2');
     const id = await newProject(session, 'Engine2', {

@@ -36,6 +36,8 @@ def make_png():
 
 
 HAS_TEX = shutil.which('pdflatex') is not None
+HAS_TECTONIC = os.access(os.path.join(settings.TECTONIC_HOME, 'bin', 'tectonic'), os.X_OK)
+NEEDS_TECTONIC = 'needs tectonic: docker compose run --rm worker-tex python manage.py test jobs --noinput'
 DOC = '\\documentclass{article}\n\\begin{document}\nHello \\LaTeX\n\\end{document}\n'
 
 
@@ -162,6 +164,10 @@ class CompileTaskTests(TestCase):
         self.assertEqual((self.job.status, self.job.error), ('failed', 'No PDF generated.'))
         self.assertIn('Undefined control sequence', self.job.result['log'])
 
+    def test_an_explained_failure_becomes_the_job_error(self):
+        self.run_task(return_value={'pdf': None, 'log': '...', 'status': 1, 'error': 'x.sty is not in the offline package bundle tectonic uses.'})
+        self.assertEqual(self.job.error, 'x.sty is not in the offline package bundle tectonic uses.')
+
     def test_setup_error_and_crash_fail_the_job(self):
         self.run_task(side_effect=tex.CompileError('pdflatex not available: x'))
         self.assertEqual((self.job.status, self.job.error), ('failed', 'pdflatex not available: x'))
@@ -246,8 +252,8 @@ class RealCompileTests(TestCase):
         with self.assertRaisesRegex(tex.CompileError, 'Main file not found'):
             tex.compile_project(self.project, 'main.tex', 'pdflatex')
         files.write_text(self.project, 'main.tex', DOC)
-        with self.assertRaisesRegex(tex.CompileError, 'tectonic not available'):
-            tex.compile_project(self.project, 'main.tex', 'tectonic')  # not installed in the worker image
+        with self.settings(TECTONIC_HOME='/nonexistent'), self.assertRaisesRegex(tex.CompileError, 'tectonic not available'):
+            tex.compile_project(self.project, 'main.tex', 'tectonic')  # e.g. the api image, which has no tectonic
 
     @override_settings(COMPILE_TIMEOUT_SECONDS=3)
     def test_runaway_document_is_killed(self):
@@ -353,7 +359,7 @@ class HostileDocumentTests(TestCase):
         self.assertNotIn('hunter2-probe', out['log'])
 
     def test_every_engine_still_compiles_under_the_restrictions(self):
-        for engine in ('pdflatex', 'xelatex', 'lualatex', 'latexmk'):
+        for engine in ('pdflatex', 'xelatex', 'lualatex', 'latexmk', *(('tectonic',) if HAS_TECTONIC else ())):
             body = r'\documentclass{article}\usepackage{amsmath,graphicx}\begin{document}Hello $x^2$ \input{part}\end{document}'
             out = self.compile(body, engine=engine, extra={'part.tex': 'included'})
             self.assertTrue(out['pdf'], f"{engine}: {out['log'][-400:]}")
@@ -364,6 +370,86 @@ class HostileDocumentTests(TestCase):
                            extra={'biber.conf': '<this is not valid biber configuration>'})
         self.assertIn('This is Biber', out['log'])
         self.assertTrue(out['pdf'], out['log'][-600:])
+
+
+@skipUnless(HAS_TECTONIC, NEEDS_TECTONIC)
+class TectonicTests(TestCase):
+    """The tectonic engine with its offline bundle (#40)."""
+
+    def setUp(self):
+        user = make_user('tectonic@example.com')
+        self.project = Project.objects.create(workspace=user.memberships.first().workspace, name='p')
+        self.addCleanup(files.delete_project_files, self.project)
+
+    def compile(self, tex_source, extra=None):
+        files.write_text(self.project, 'main.tex', tex_source)
+        for path, content in (extra or {}).items():
+            files.write_text(self.project, path, content)
+        return tex.compile_project(self.project, 'main.tex', 'tectonic')
+
+    def test_compiles_and_runs_its_own_bibtex_passes(self):
+        out = self.compile('\\documentclass{article}\\begin{document}See \\cite{k}.\\bibliographystyle{plain}\\bibliography{refs}\\end{document}',
+                           extra={'refs.bib': '@book{k, author={A. Author}, title={A Title}, year={2020}, publisher={P}}'})
+        self.assertTrue(out['pdf'].startswith(b'%PDF'), out['log'][-1500:])
+        self.assertIn('bibtex', out['log'])
+        self.assertNotIn('Citation `k\' undefined', out['log'].split('Running')[-1])
+
+    def test_never_downloads(self):
+        out = self.compile('\\documentclass{article}\\usepackage{amsmath,booktabs,hyperref}\\begin{document}$x$\\end{document}')
+        self.assertTrue(out['pdf'], out['log'][-1500:])
+        self.assertNotIn('downloading', out['log'].lower())
+        self.assertNotIn('http', out['log'])
+
+    @override_settings(COMPILE_TIMEOUT_SECONDS=60)
+    def test_a_package_missing_from_the_bundle_is_named(self):
+        out = self.compile('\\documentclass{article}\\usepackage{openprismnosuchpackage}\\begin{document}x\\end{document}')
+        self.assertIsNone(out['pdf'])
+        self.assertEqual(out['error'], 'openprismnosuchpackage.sty is not in the offline package bundle tectonic uses.')
+        self.assertNotIn('timed out', out['log'])
+
+    def test_biblatex_documents_are_told_to_use_another_engine(self):
+        out = self.compile('\\documentclass{article}\\usepackage{biblatex}\\addbibresource{refs.bib}\\begin{document}See \\cite{k}.'
+                           '\\printbibliography\\end{document}',
+                           extra={'refs.bib': '@book{k, author={A. Author}, title={A Title}, year={2020}, publisher={P}}'})
+        self.assertIsNone(out['pdf'])
+        self.assertIn('Compile biblatex documents with pdfLaTeX', out['error'])
+
+    def test_shell_escape_is_disabled(self):
+        marker = os.path.join(tempfile.gettempdir(), f'openprism-tectonic-{os.getpid()}')
+        self.addCleanup(lambda: os.path.exists(marker) and os.remove(marker))
+        self.compile(f'\\documentclass{{article}}\\begin{{document}}\\immediate\\write18{{touch {marker}}}x\\end{{document}}')
+        self.assertFalse(os.path.exists(marker), 'shell escape executed a command')
+
+    def test_cannot_read_the_workers_environment(self):
+        make_undumpable()  # what the Celery worker does at startup; this test process plays the worker
+        os.environ['OPENPRISM_PROBE_SECRET'] = 'hunter2-probe'
+        self.addCleanup(os.environ.pop, 'OPENPRISM_PROBE_SECRET', None)
+        # Tectonic reads absolute paths (like lualatex), so /etc/passwd is readable; the worker's environment must not be.
+        # Its own environment comes last: reading it stops TeX at the first NUL byte.
+        probe = HostileDocumentTests.PROBE.replace('PPID', str(os.getpid()))
+        out = self.compile(probe.replace(r'\probe{environ}{/proc/self/environ}\probe{parent}{/proc/%d/environ}' % os.getpid(),
+                                         r'\probe{parent}{/proc/%d/environ}\probe{environ}{/proc/self/environ}' % os.getpid()))
+        self.assertIn('[parent] BLOCKED', out['log'])
+        self.assertIn('PATH=/opt/tectonic/bin', out['log'])  # its own environment was read: the scrubbed one
+        self.assertNotIn('hunter2-probe', out['log'])
+        for secret in ('DATABASE_URL', 'S3_SECRET', 'DJANGO_SECRET_KEY', 'REDIS_URL'):
+            self.assertNotIn(secret, out['log'])
+
+    def test_a_document_cannot_make_it_run_programs(self):
+        # Tectonic runs `biber` with the arguments a document's .run.xml names (here: tool mode, writing to any path the
+        # worker can write), and prefers ./tectonic-biber. Neither may run.
+        marker = os.path.join(tempfile.gettempdir(), f'openprism-biber-{os.getpid()}')
+        self.addCleanup(lambda: os.path.exists(marker) and os.remove(marker))
+        run_xml = ('<?xml version="1.0"?><requests><external><binary>biber</binary><infile>refs.bib</infile>'
+                   f'<option>--tool</option><option>--output-file={marker}</option><cmdline/>'
+                   '<requires><file>refs.bib</file></requires></external></requests>')
+        out = self.compile('\\documentclass{article}\\newwrite\\x\\immediate\\openout\\x=main.run.xml'
+                           f'\\immediate\\write\\x{{{run_xml}}}\\immediate\\closeout\\x\\begin{{document}}x\\end{{document}}',
+                           extra={'refs.bib': '@book{k, author={A. Author}, title={T}, year={2020}, publisher={P}}',
+                                  'tectonic-biber': f'#!/bin/sh\ntouch {marker}\n'})
+        self.assertIn('Running external tool biber', out['log'])  # tectonic did try
+        self.assertNotIn('This is Biber', out['log'])               # but biber never started with those options
+        self.assertFalse(os.path.exists(marker), out['log'][-1500:])
 
 
 class SyncTexParsingTests(TestCase):
@@ -449,7 +535,7 @@ class ForwardSearchTests(TestCase):
         self.assertIsNone(out['focus'])
 
     def test_every_engine_supports_it(self):
-        for engine in ('pdflatex', 'xelatex', 'lualatex', 'latexmk'):
+        for engine in ('pdflatex', 'xelatex', 'lualatex', 'latexmk', *(('tectonic',) if HAS_TECTONIC else ())):
             position = self.where('main.tex', self.first_line, engine)
             self.assertIsNotNone(position, engine)
             self.assertEqual(position['page'], 1, engine)
