@@ -1011,6 +1011,20 @@ export async function restoreVersion(projectId: string, versionId: string): Prom
   throw new Error(await errorMessage(res));
 }
 
+/**
+ * Put one file back as it was in a version; nothing else changes and no version is recorded. A 409 (someone has the
+ * file open, or live edits could not be saved) comes back as a result, like `restoreVersion`.
+ */
+export async function restoreVersionFile(projectId: string, versionId: string, path: string): Promise<RestoreVersionResult> {
+  const res = await apiFetch(`${API_BASE}${versionsBase(projectId)}/${encodeURIComponent(versionId)}/restore-file`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path })
+  });
+  if (res.ok || res.status === 409) return (await res.json()) as RestoreVersionResult;
+  throw new Error(await errorMessage(res));
+}
+
 // ─── Comments ───
 
 export interface CommentMeta {

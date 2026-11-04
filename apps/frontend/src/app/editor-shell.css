@@ -278,6 +278,7 @@ body.ed-resizing iframe, body.ed-resizing canvas { pointer-events: none; }
 .version-compare-files { display: flex; flex-direction: column; gap: var(--sp-2); max-height: 60vh; overflow: auto; }
 .version-compare-path { overflow-wrap: anywhere; font-size: var(--fs-sm); }
 .version-compare-diff { min-width: 0; max-height: 60vh; overflow: auto; }
+.version-compare-restore { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-2); }
 .version-restore ul { margin: var(--sp-2) 0; padding-left: var(--sp-5); }
 .version-restore-blocked { margin-top: var(--sp-3); }
 @media (max-width: 640px) {

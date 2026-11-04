@@ -225,7 +225,7 @@ test('compare shows the files that differ and a line diff, in both orders', asyn
 
   const mainTex = page.locator('[data-testid="compare-file"][data-path="main.tex"]');
   await pickOption(page, '#compare-to', /#2/); // two saved versions, #1 -> #2
-  await mainTex.click(); // a new comparison selects its first file again
+  await mainTex.click();
   await expect(addedLine(page)).toContainText('Betadoc');
   await page.getByTestId('compare-swap').click(); // #2 -> #1: the other way round
   await mainTex.click();
@@ -270,6 +270,33 @@ test('restoring an older version brings its files back as a new version', async 
   await compile(page); // nothing changed since the restore, so no fourth version
   await expect(page.locator('.pdf-page .textLayer').first()).toContainText('Alphadoc');
   await expect(rows(page)).toHaveCount(3);
+});
+
+test('Compare restores one file from an older version and leaves the others alone', async ({ page }) => {
+  const session = await newAccount('ver');
+  const id = await newProject(session, 'Paper', { 'main.tex': doc('Alphadoc'), 'notes.tex': 'old notes' });
+  await compileViaApi(session, id);
+  await putFile(session, id, 'main.tex', doc('Betadoc'));
+  await putFile(session, id, 'notes.tex', 'new notes');
+  await compileViaApi(session, id);
+  await openEditor(page, session, id);
+  await expect(page.locator('.cm-content')).toContainText('Betadoc'); // main.tex is the open file
+  await openVersions(page);
+  await rows(page).nth(1).click(); // #1 against the project as it is now
+  await page.getByTestId('version-compare').click();
+  await page.locator('[data-testid="compare-file"][data-path="main.tex"]').click();
+  await page.getByTestId('compare-restore-file-button').click();
+  await expect(page.getByTestId('compare-restore-file')).toContainText('Replace main.tex with its version #1?');
+  await page.getByTestId('compare-restore-file-confirm').click();
+
+  // main.tex is now as in #1, so only notes.tex still differs; the open editor shows the restored text
+  await expect(page.getByTestId('compare-file')).toHaveCount(1);
+  await expect(page.locator('[data-testid="compare-file"][data-path="notes.tex"]')).toBeVisible();
+  await expect(page.locator('.cm-content')).toContainText('Alphadoc');
+  await page.getByRole('button', { name: 'Close' }).click();
+  await page.locator('.tree-label', { hasText: 'notes.tex' }).first().click();
+  await expect(page.locator('.cm-content')).toContainText('new notes');
+  await expect(rows(page)).toHaveCount(2); // a single-file restore records no version
 });
 
 test('a viewer cannot restore', async ({ page }) => {

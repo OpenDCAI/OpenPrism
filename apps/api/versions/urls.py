@@ -9,4 +9,5 @@ urlpatterns = [
     path('projects/<uuid:pk>/versions/<uuid:version_id>/pdf', views.version_pdf),
     path('projects/<uuid:pk>/versions/<uuid:version_id>/file', views.version_file),
     path('projects/<uuid:pk>/versions/<uuid:version_id>/restore', views.version_restore),
+    path('projects/<uuid:pk>/versions/<uuid:version_id>/restore-file', views.version_restore_file),
 ]

@@ -880,5 +880,8 @@
   "Show resolved ({{count}})": "显示已解决（{{count}}）",
   "Can comment": "可评论",
   "The transfer failed.": "模板转换失败。",
-  "The unfinished project was removed.": "未完成的项目已删除。"
+  "The unfinished project was removed.": "未完成的项目已删除。",
+  "Restored {{path}} from version #{{n}}": "已从版本 #{{n}} 恢复 {{path}}",
+  "Replace {{path}} with its version #{{n}}?": "用版本 #{{n}} 中的 {{path}} 替换当前文件？",
+  "Restore this file": "恢复此文件"
 }

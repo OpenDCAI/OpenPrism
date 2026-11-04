@@ -203,6 +203,12 @@ def versions_diff(request, pk):
     return Response({'ok': True, 'files': diff_manifests(old, new, include_unchanged=request.query_params.get('all') == '1')})
 
 
+def _write_of(entry, blob):
+    """The `apply_changes` write that puts a version's file back."""
+    return {'path': entry['path'], 'kind': entry['kind'], 'text': blob.text, 'source_key': blob.s3_key,
+            'size': entry['size'], 'content_type': blob.content_type}
+
+
 @api_view(['POST'])
 @permission_classes([IsUserOrGuest])
 def version_restore(request, pk, version_id):
@@ -243,8 +249,7 @@ def version_restore(request, pk, version_id):
         blob = blobs.get(entry['sha256'])
         if blob is None:
             return fail('Some of this version\'s files are no longer stored, so it cannot be restored.', 409)
-        writes.append({'path': path, 'kind': entry['kind'], 'text': blob.text, 'source_key': blob.s3_key,
-                       'size': entry['size'], 'content_type': blob.content_type})
+        writes.append(_write_of(entry, blob))
     applied = None
     try:
         with transaction.atomic():
@@ -256,3 +261,41 @@ def version_restore(request, pk, version_id):
         return fail(f'Restore failed, nothing was changed: {exc}', 500)
     return Response({'ok': True, 'restored': True, 'versionId': str(created.id), 'versionNumber': created.number,
                      'changed': {'written': len(to_write), 'removed': len(to_remove)}})
+
+
+@api_view(['POST'])
+@permission_classes([IsUserOrGuest])
+def version_restore_file(request, pk, version_id):
+    """Put one file back as it was in this version, leaving every other file alone. No version is recorded: the project
+    now matches no compile, and the next compile records one as usual. Live rooms are handled as in a whole restore."""
+    project = get_project(request, pk, write=True)
+    version = get_version(project, version_id)
+    raw = request.data.get('path')
+    if not isinstance(raw, str) or not raw:
+        raise ParseError('Missing path')
+    try:
+        path = safe_path(raw)
+    except InvalidPath:
+        raise ParseError('Invalid path')
+    entry = next((m for m in version.manifest if m['path'] == path and m['kind'] != 'dir'), None)
+    if entry is None:
+        raise NotFound('File not found in this version')
+
+    if live_room(project, path) and not flush_room(project, path):
+        return fail('Live edits could not be saved first. Try again in a moment.', 409)
+    evict_idle_room(project, path)
+    if not diff_manifests({path: entry}, {k: v for k, v in current_manifest(project).items() if k == path}):
+        return Response({'ok': True, 'restored': False, 'path': path, 'message': 'The file already matches this version.'})
+    if live_room(project, path):
+        return Response({'ok': False, 'error': 'Someone has this file open. Ask them to close it, then try again.',
+                         'files': [path]}, status=409)
+    blob = VersionBlob.objects.filter(project=project, sha256=entry['sha256']).first()
+    if blob is None:
+        return fail('This file is no longer stored, so it cannot be restored.', 409)
+    try:
+        pfiles.apply_changes(project, [_write_of(entry, blob)], [])
+    except (IsADirectoryError, NotADirectoryError, FileExistsError) as exc:
+        return fail(f'Cannot restore {path}: {exc}')
+    except Exception as exc:
+        return fail(f'Restore failed, nothing was changed: {exc}', 500)
+    return Response({'ok': True, 'restored': True, 'path': path})
