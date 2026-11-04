@@ -68,11 +68,8 @@ in this release.
 
 ## v0.0.7 - Misc
 
-
-- [ ] **`tectonic` is offered as a compile engine but is not installed** in the worker image, so choosing it always
-      fails with "tectonic not available". Install it or remove it from the engine list.
-- [ ] **Failed template transfers leave their target project behind**, and a worker crash fails the job with no
-      auto-resume (the user's API key is deliberately not stored, so resuming needs the user to start again).
+Moved to `docs/todo.md` (issues #40, #41). Decided: install tectonic with an offline bundle (the compile worker has
+no internet in Kubernetes); delete a failed transfer's unfinished target project automatically.
 
 ## v0.0.8 - Security issues
 
