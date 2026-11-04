@@ -4,7 +4,13 @@
 never log them."""
 from django.conf import settings
 from django.core.mail import EmailMultiAlternatives
-from django.template.loader import render_to_string
+from django.template import Context
+from django.template.loader import get_template, render_to_string
+
+
+def _plain(name, ctx):
+    """Render a text part without HTML escaping (a link's `&` must stay `&`)."""
+    return get_template(name).template.render(Context(ctx, autoescape=False))
 
 
 def app_link(path):
@@ -14,8 +20,8 @@ def app_link(path):
 
 def render(template, context):
     ctx = {'app_url': settings.APP_BASE_URL, **context}
-    subject = ' '.join(render_to_string(f'email/{template}_subject.txt', ctx).split())  # one line, no stray whitespace
-    return subject, render_to_string(f'email/{template}.txt', ctx), render_to_string(f'email/{template}.html', ctx)
+    subject = ' '.join(_plain(f'email/{template}_subject.txt', ctx).split())  # one line, no stray whitespace
+    return subject, _plain(f'email/{template}.txt', ctx), render_to_string(f'email/{template}.html', ctx)
 
 
 def deliver(to, template, context):

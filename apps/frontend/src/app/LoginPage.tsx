@@ -31,6 +31,8 @@ export default function LoginPage() {
       mode={mode}
       onModeChange={(m) => navigate(`${m === 'register' ? '/register' : '/login'}${qs}`, { replace: true })}
       onSubmit={submit}
+      onForgotPassword={() => navigate('/forgot-password')}
+      initialEmail={params.get('email') || undefined}
       notice={next && /^\/(editor|collab)/.test(next) ? t('Sign in to continue to your project.') : undefined}
     />
   );

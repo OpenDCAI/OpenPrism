@@ -408,6 +408,8 @@ button.op-badge { cursor: pointer; }
 .op-signed-out-card { width: min(400px, 100%); display: grid; justify-items: center; gap: var(--sp-5); padding: var(--sp-8); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); text-align: center; color: var(--text); }
 .op-signed-out-card h1 { margin: 0; font-size: var(--fs-2xl); font-weight: var(--fw-semibold); }
 .op-signed-out-card p { margin: 0; color: var(--text-2); }
+.op-auth-label-row { display: flex; align-items: baseline; justify-content: space-between; gap: var(--sp-2); }
+.op-auth-forgot { font-size: var(--fs-sm); }
 .op-auth-form { display: grid; gap: var(--sp-4); width: 100%; text-align: left; }
 .op-auth-banner { display: flex; align-items: flex-start; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-sm); background: var(--accent-soft); color: var(--text); font-size: var(--fs-sm); text-align: left; --icon-size: 16px; }
 .op-auth-banner > .op-icon { margin-top: 2px; flex: none; }

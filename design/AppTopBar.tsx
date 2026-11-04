@@ -70,7 +70,10 @@ export function AppTopBar({ crumbs, actions }: AppTopBarProps) {
           { label: t('Sign in with an account'), icon: 'user', onSelect: () => { ws.signOut(); navigate('/login'); } } as MenuEntry,
           { label: t('Leave shared project'), icon: 'log-out', onSelect: () => { ws.signOut(); navigate('/'); } } as MenuEntry
         ]
-      : [{ label: t('Sign out'), icon: 'log-out', onSelect: () => ws.signOut() } as MenuEntry]),
+      : [
+          { label: t('Account settings'), icon: 'user', onSelect: () => navigate('/account') } as MenuEntry,
+          { label: t('Sign out'), icon: 'log-out', onSelect: () => ws.signOut() } as MenuEntry
+        ]),
     { type: 'sep' },
     { type: 'label', label: `OpenPrism ${t('version')} ${__APP_VERSION__}` }
   ];

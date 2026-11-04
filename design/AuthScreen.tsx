@@ -18,6 +18,10 @@ interface AuthScreenProps {
   onModeChange: (mode: AuthMode) => void;
   /** Resolve on success; reject with an Error whose message is shown above the form. */
   onSubmit: (values: AuthValues) => Promise<void>;
+  /** Shows a "Forgot password?" link on the sign-in form. */
+  onForgotPassword?: () => void;
+  /** Pre-fills the email field (e.g. from an invitation link). */
+  initialEmail?: string;
   /** Optional context shown above the form, e.g. "Sign in to continue to your project". */
   notice?: ReactNode;
 }
@@ -26,11 +30,11 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8;
 
 /** Sign-in and account creation. Full-screen, shown whenever there is no session. */
-export function AuthScreen({ mode, onModeChange, onSubmit, notice }: AuthScreenProps) {
+export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassword, initialEmail = '' }: AuthScreenProps) {
   const { t } = useTranslation();
   const uid = useId();
   const register = mode === 'register';
-  const [values, setValues] = useState<AuthValues>({ email: '', password: '', name: '' });
+  const [values, setValues] = useState<AuthValues>({ email: initialEmail, password: '', name: '' });
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -112,13 +116,18 @@ export function AuthScreen({ mode, onModeChange, onSubmit, notice }: AuthScreenP
               aria-invalid={shown('email') ? true : undefined}
               aria-describedby={shown('email') ? `${uid}-email-error` : undefined}
               onChange={set('email')}
-              onBlur={() => setTouched((x) => ({ ...x, email: true }))}
+              onBlur={() => /* empty fields are flagged on submit only, so clicking a link does not shift the form */ values.email && setTouched((x) => ({ ...x, email: true }))}
             />
             <FieldError id={`${uid}-email-error`} message={shown('email')} />
           </div>
 
           <div className="op-field">
-            <label className="op-field-label" htmlFor={`${uid}-password`}>{t('Password')}</label>
+            <div className="op-auth-label-row">
+              <label className="op-field-label" htmlFor={`${uid}-password`}>{t('Password')}</label>
+              {!register && onForgotPassword && (
+                <button type="button" className="op-link-btn op-auth-forgot" onClick={onForgotPassword}>{t('Forgot password?')}</button>
+              )}
+            </div>
             <div className="op-input-wrap">
               <input
                 id={`${uid}-password`}
@@ -129,7 +138,7 @@ export function AuthScreen({ mode, onModeChange, onSubmit, notice }: AuthScreenP
                 aria-invalid={shown('password') ? true : undefined}
                 aria-describedby={shown('password') ? `${uid}-password-error` : register ? `${uid}-password-help` : undefined}
                 onChange={set('password')}
-                onBlur={() => setTouched((x) => ({ ...x, password: true }))}
+                onBlur={() => values.password && setTouched((x) => ({ ...x, password: true }))}
               />
               <IconButton
                 icon={showPassword ? 'eye-off' : 'eye'}
