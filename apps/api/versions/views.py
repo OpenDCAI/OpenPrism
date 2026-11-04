@@ -35,6 +35,7 @@ def version_json(v, detail=False):
         'mainFile': v.main_file, 'engine': v.engine, 'name': v.name,
         'fileCount': sum(1 for m in v.manifest if m['kind'] != 'dir'), 'pdfSize': v.pdf_size,
         'restoredFrom': v.restored_from.number if v.restored_from_id else None,
+        'status': v.status, 'hasLog': bool(v.log_key),
     }
     if detail:
         out['manifest'] = v.manifest
@@ -112,6 +113,18 @@ def version_pdf(request, pk, version_id):
     resp = HttpResponse(storage.get_bytes(version.pdf_key), content_type='application/pdf')
     resp['X-Content-Type-Options'] = 'nosniff'
     return resp
+
+
+@api_view(['GET'])
+@authentication_classes([QueryTokenJWTAuthentication])
+@permission_classes([IsUserOrGuest])
+def version_log(request, pk, version_id):
+    """The compile log recorded with the version (the job's capped log)."""
+    project = get_project(request, pk)
+    version = get_version(project, version_id)
+    if not version.log_key:
+        raise NotFound('No log for this version')
+    return Response({'ok': True, 'log': storage.get_bytes(version.log_key).decode('utf-8', 'replace')})
 
 
 @api_view(['GET'])

@@ -138,6 +138,26 @@ class PruneTests(VersionApiBase):
         self.assertIn('draft 0', texts)  # a named version's blob stays
         self.assertEqual(VersionBlob.objects.count(), 53)
 
+    @override_settings(VERSION_KEEP_UNNAMED=3, VERSION_KEEP_FAILED=2)
+    def test_failed_versions_are_kept_apart_so_failures_never_push_good_versions_out(self):
+        made = []
+        for i in range(6):  # alternating: success, failure, success, failure, ... and then four more failures
+            files.write_text(self.project, 'main.tex', f'good {i}')
+            made.append(self.save_version(log=f'log good {i}'))
+            files.write_text(self.project, 'main.tex', f'bad {i}')
+            made.append(self.save_version(pdf=None, log=f'log bad {i}'))
+        ProjectVersion.objects.filter(pk=made[1].pk).update(name='the first break')  # a named failure is pinned
+
+        self.assertEqual(prune_versions(), 3 + 3)  # successes 1, 3, 5 and unnamed failures 4, 6, 8
+
+        left = list(self.project.versions.order_by('number').values_list('number', 'status'))
+        self.assertEqual(left, [(2, 'failed'), (7, 'success'), (9, 'success'), (10, 'failed'), (11, 'success'), (12, 'failed')])
+        gone = [v for v in made if v.number not in {n for n, _ in left}]
+        self.assertTrue(all(not exists(v.log_key) for v in gone))
+        self.assertTrue(all(not exists(v.pdf_key) for v in gone if v.pdf_key))
+        kept = [v for v in made if v.number in {n for n, _ in left}]
+        self.assertTrue(all(exists(v.log_key) for v in kept))
+
     def test_a_second_run_changes_nothing(self):
         self.make(5)
         with override_settings(VERSION_KEEP_UNNAMED=2):
