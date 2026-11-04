@@ -37,6 +37,18 @@ file is open live). Left for later:
 
 Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
 
+## v0.0.5 follow-ups (found while building in-place AI editing)
+
+- [ ] **Accepting a proposal writes other files by REST, even when someone has them open live** (known collaboration
+      limitation). A multi-file proposal only goes through the shared document for the active file.
+- [ ] **In-place AI undo in a live session** is the editor's own history; check that Ctrl+Z in a collaborative session undoes
+      only the local user's accept (y-codemirror's undo manager) and does not undo remote edits.
+- [ ] **No streaming.** The bar shows step names, not the model's text; long tasks look idle between steps.
+- [ ] **Cite and bibliography tasks** ("cite the Attention paper") need the Zotero/arXiv tools in edit mode and a recorded task.
+- [ ] **A configurable shortcut** (Ctrl/Cmd+K is fixed; browsers bind Ctrl+K to the address bar when the editor is not focused).
+- [ ] **A cancelled request can still finish its current model call** (the worker checks between calls), and a cancel sent
+      before the job row exists is lost.
+
 ## v0.0.6 - Better account management
 
 - [ ] **Account management is minimal.** No password reset, email verification, change-password screen, or

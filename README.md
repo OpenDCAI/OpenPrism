@@ -148,6 +148,10 @@ Owners and admins can set an AI provider for a whole workspace under **Settings 
 
 Every successful compile saves a **version** of the project (the files as compiled, plus the PDF). Open **Versions** in the editor's right rail to see them, open an older PDF (the preview is labelled and has a way back), **Compare** it with the current project or another version, **name** it ("submitted to ACL"), delete it, or **Restore** it. Restoring replaces the project files with that version's and is itself saved as a new version, so nothing is lost. It is refused while someone else has an affected file open live (they close it, you try again). A compile of an unchanged project saves nothing. Unnamed versions beyond the newest 50 per project are removed nightly (`VERSION_KEEP_UNNAMED`); named ones are kept forever.
 
+### Ask AI (in-place editing)
+
+Press **Ctrl/Cmd+K** in the editor (or **Ask AI** in the toolbar or the Insert menu), type what you want ("add an author", "create a section on related work", "turn this list into a table") and press Enter. The AI sees your caret, your selection, the active file and the project's main file, and reads other files as needed. It never changes anything by itself: the proposal opens in the Diff preview, where you apply or discard each file. Applying is one Undo step. If the file changed while the AI worked, your edits are kept when they do not overlap the proposal; otherwise the proposal is marked stale and you ask again. Cancel stops a running request; Up/Down in an empty bar recalls earlier requests. Available to people who can edit (not viewers or invite-link guests), limited to `AI_EDIT_RATE_PER_MINUTE` (default 20) requests per user per minute. It uses the workspace AI provider, your browser settings, or the server default, in that order.
+
 ### Zotero
 
 In the editor's right rail choose **Zotero**, paste an API key created at https://www.zotero.org/settings/keys/new (library access, plus group read access if needed), then search your library and **Insert \cite{}** or **Add to bibliography**. Entries are appended to the project's `.bib` (`references.bib` if there is none); existing text is never rewritten.

@@ -34,7 +34,8 @@ SYSTEM_EDIT = ' '.join([
     'Read other files with read_file before editing them. Front matter (title, authors, affiliations) is written differently',
     'in each conference template: read the preamble of the main file and follow the markup this template uses.',
     'A task may need several files (for example a new section is a new file plus an \\input in the main file): propose all of them.',
-    'Prefer apply_patch with small hunks; use propose_patch only for new files or full rewrites. Never assume writes are applied.',
+    'Edit existing files with replace_text (exact old text, unique in the file) or apply_patch; never rewrite an existing file with propose_patch.',
+    'Use propose_patch only to create a new file. Never assume writes are applied.',
     'Keep changes minimal and do not touch unrelated text. Finish with a one or two sentence summary.'])
 
 TOOL_SPECS = [
@@ -42,6 +43,8 @@ TOOL_SPECS = [
      {'path': {'type': 'string'}}, ['path']),
     ('list_files', 'List files under a directory. Input: { dir } (relative path, optional).',
      {'dir': {'type': 'string'}}, []),
+    ('replace_text', 'Replace exact text in a file. Input: { path, old_text, new_text }. old_text must occur exactly once (include enough surrounding lines to make it unique). Preferred for edits to existing files. This does NOT write.',
+     {'path': {'type': 'string'}, 'old_text': {'type': 'string'}, 'new_text': {'type': 'string'}}, ['path', 'old_text', 'new_text']),
     ('propose_patch', 'Propose a full file rewrite. Input: { path, content }. This does NOT write. It returns a patch for user confirmation.',
      {'path': {'type': 'string'}, 'content': {'type': 'string'}}, ['path', 'content']),
     ('apply_patch', 'Apply a unified diff to a file and propose changes. Input: { patch, path? }. This does NOT write.',
@@ -102,14 +105,30 @@ def direct_mode(p, cfg, lang):
 
 
 class ToolBox:
-    def __init__(self, project, compile_log):
-        self.project, self.compile_log, self.patches = project, compile_log, []
+    def __init__(self, project, compile_log, edit_mode=False):
+        self.project, self.compile_log, self.patches, self.edit_mode = project, compile_log, [], edit_mode
 
     def _read(self, path):
+        """The file as this run has left it: an earlier patch to the same file is already applied."""
+        for patch in self.patches:
+            if patch['path'] == path:
+                return patch['content']
         try:
             return pfiles.read_text(self.project, path)
         except pfiles.FileNotFound:
             return None
+
+    def _stage(self, path, content):
+        """Record a proposal; several edits to one file collapse into one patch from the stored text to the final text."""
+        for patch in self.patches:
+            if patch['path'] == path:
+                patch['content'], patch['diff'] = content, make_patch(path, patch['original'], content)
+                return
+        try:
+            original = pfiles.read_text(self.project, path)
+        except pfiles.FileNotFound:
+            original = ''
+        self.patches.append({'path': path, 'original': original, 'content': content, 'diff': make_patch(path, original, content)})
 
     def call(self, name, args):
         """Run a tool; failures come back as text so the model can correct itself."""
@@ -134,17 +153,32 @@ class ToolBox:
 
     def tool_propose_patch(self, path, content):
         path = safe_path(path)
-        original = self._read(path) or ''
-        self.patches.append({'path': path, 'original': original, 'content': content, 'diff': make_patch(path, original, content)})
+        if self.edit_mode and (self._read(path) or '').strip():
+            raise ValueError(f'{path} already exists: change it with replace_text or apply_patch, not a full rewrite.')
+        self._stage(path, content)
         return f'Patch prepared for {path}. Awaiting user confirmation.'
+
+    def tool_replace_text(self, path, old_text, new_text):
+        path = safe_path(path)
+        original = self._read(path)
+        if original is None:
+            raise pfiles.FileNotFound(f'File not found: {path}')
+        if not old_text:
+            raise ValueError('old_text must not be empty')
+        count = original.count(old_text)
+        if count == 0:
+            raise ValueError('old_text was not found in the file; copy it exactly, including whitespace')
+        if count > 1:
+            raise ValueError(f'old_text occurs {count} times; include more surrounding text so it is unique')
+        self._stage(path, original.replace(old_text, new_text, 1))
+        return f'Change prepared for {path}. Awaiting user confirmation.'
 
     def tool_apply_patch(self, patch, path=None):
         path = safe_path(path or extract_path(patch) or '')
         original = self._read(path)
         if original is None:
             raise pfiles.FileNotFound(f'File not found: {path}')
-        patched = apply_patch(original, patch)
-        self.patches.append({'path': path, 'original': original, 'content': patched, 'diff': make_patch(path, original, patched)})
+        self._stage(path, apply_patch(original, patch))
         return f'Patch applied in memory for {path}. Awaiting user confirmation.'
 
     def tool_get_compile_log(self):
@@ -219,7 +253,7 @@ def tools_mode(p, project, cfg, lang, progress=None, cancelled=None):
         return {'ok': False, 'reply': t(lang, 'missing_project_id_tools'), 'patches': []}
     if not llm.resolve_config(cfg)['api_key']:
         return {'ok': False, 'reply': 'OPENPRISM_LLM_API_KEY not set', 'patches': []}
-    box = ToolBox(project, p.get('compileLog'))
+    box = ToolBox(project, p.get('compileLog'), edit_mode=bool(p.get('editContext')))
     user = '\n\n'.join(x for x in [
         f"Task: {p.get('task') or 'polish'}",
         f"Active file: {p['activePath']}" if p.get('activePath') else '',

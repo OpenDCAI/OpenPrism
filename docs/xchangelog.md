@@ -65,3 +65,24 @@
 - [x] #26 **Compare and restore in the UI.** Compare dialog (any two versions or the current project, split line
       diff, swap), restore with a confirmation that lists what changes, a 409 explanation when someone has a file open,
       and a shared `SplitDiff` component; Playwright specs incl. a second live browser.
+
+## v0.0.5 - AI assistance for LaTeX tasks
+
+- [x] #27 **Give the agent editor context.** `editContext` (active file, caret, selection, main file, unsaved text) on
+      `POST /api/agent/run`: validated, write access only, caret-marked prompt with the main file's `\documentclass`, and
+      a system prompt telling the model to read the preamble because front matter differs per template. New
+      `replace_text` tool (exact, unique old text) and cumulative staging, so several edits to one file are one patch and
+      edit mode refuses full rewrites of existing files (a live run first produced stray whitespace changes that way).
+- [x] #28 **Command bar opened by a hotkey.** Ctrl/Cmd+K (also the toolbar "Ask AI" button and Insert menu), Esc closes
+      and returns to the editor, hidden for viewers and guests (the tree endpoint reports `canWrite`).
+- [x] #29 **Review, accept (one undo step), reject, stale handling.** Proposals open in the Diff preview; accepting is a
+      single editor transaction (a live room carries it through the shared document); a changed file is merged by a
+      line-level three-way merge when the edits do not overlap, otherwise the proposal is marked stale and nothing is
+      written. Two-browser Playwright test included.
+- [x] #30 **Progress, cancel, rate limit, recent requests.** The agent logs progress the bar shows; Cancel stops the
+      worker before its next model call and drops a late answer; `AI_EDIT_RATE_PER_MINUTE` (20) per user returns 429;
+      Up/Down recalls the last 20 requests. Found and fixed on the way: the bar lost focus after a request.
+- [x] #31 **Recorded-task tests across templates, docs.** `ai/test_edit_tasks.py`: add an author, add a related work
+      section, list-to-table on ACL, NeurIPS, ICML and CVPR with a replayed model, prompt and patch checks, and a real
+      compile of the edited project in `worker-tex`. Also run against the real model from `.env` (gpt-6-luna): author and
+      related-work on all four templates, 8 of 8 gave small diffs (4 to 15 changed lines) that compile, 5 to 12 s each.
