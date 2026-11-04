@@ -25,8 +25,11 @@ Moved to `docs/todo.md` (issue #20).
 
 Moved to `docs/todo.md` (issues #21-#26). Decided: only successful compiles are saved, unnamed versions keep the newest
 50, named versions are kept forever, restore replaces the files and records a new version (blocked while an affected
-file is open live). Left for later:
+file is open live). 
 
+## v0.0.4.1  - Version history with diff Follow up
+
+Left for later:
 - [ ] **Visual PDF comparison** between two versions (page-by-page overlay or side by side with highlighted changes).
 - [ ] **Save failed compiles as versions** ("what broke it"), shown with their log instead of a PDF.
 - [ ] **Per-workspace storage accounting and a time-based retention option** for versions (blobs are deduplicated per
@@ -37,7 +40,7 @@ file is open live). Left for later:
 
 Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
 
-## v0.0.5 follow-ups (found while building in-place AI editing)
+## v0.0.5.1 follow-ups (found while building in-place AI editing)
 
 - [ ] **Accepting a proposal writes other files by REST, even when someone has them open live** (known collaboration
       limitation). A multi-file proposal only goes through the shared document for the active file.
@@ -55,7 +58,7 @@ Moved to `docs/todo.md` (issues #32-#39). Decided: SMTP via environment variable
 still added to a workspace at once (now with an email), pending invites need a verified address, and commenting is built
 in this release.
 
-## v0.0.6 follow-ups (found while building account management and comments)
+## v0.0.6.1 follow-ups (found while building account management and comments)
 
 - [ ] **No way to change the account's email address** (it would need re-verification and must not orphan invitations).
 - [ ] **Comment notifications.** Nobody is told about a new comment or reply (mail digest, @mentions, an unread count).
@@ -94,7 +97,7 @@ no internet in Kubernetes); delete a failed transfer's unfinished target project
 - [ ] **AI endpoints hold a web thread for up to 5 minutes** while they wait for the worker. Fine at small scale; move
       the clients to polling `/api/jobs/:id` before serving many users.
 
-## v0.0.8 - Collaboration Enhancements
+## v0.0.9 - Collaboration Enhancements
 
 - [ ] **REST writes to a file someone has open are overwritten by the next live-editing save** *(pre-existing behaviour)*.
       Template apply/convert and uploads to an open file are the affected paths.
@@ -103,7 +106,7 @@ no internet in Kubernetes); delete a failed transfer's unfinished target project
 - [ ] **A hard server crash can lose up to ~800 ms of typing** (the flush debounce); awareness entries of a crashed
       replica linger until its clients reconnect.
 
-## v0.0.9 - Better testing
+## v0.0.10 - Better testing
 
 - [ ] **Grow the browser test suite.** `apps/frontend/e2e` (Playwright, `npm run e2e`, against a running stack) now covers
       the editor shortcut and the PDF preview. Still to add: sign-in and registration, workspaces and invitations, invite
@@ -128,7 +131,7 @@ no internet in Kubernetes); delete a failed transfer's unfinished target project
       429s (Retry-After), which fixed it.
 - [ ] **`design/reference/` is untracked** (and `design/README.md` already links to it).
 
-## v0.0.10 - Operations
+## v0.0.11 - Operations
 
 - [ ] **No observability.** No metrics, structured logs, tracing or alerts; no view of queue depth, failed jobs, or
       websocket counts. (Queue depth is also the better autoscaling signal, see the KEDA component.)
