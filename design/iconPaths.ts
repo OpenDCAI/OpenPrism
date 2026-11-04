@@ -6,6 +6,7 @@ export const ICON_PATHS = {
   'columns': "<rect x=\"3\" y=\"4\" width=\"18\" height=\"16\" rx=\"2\"/><path d=\"M12 4v16\"/>",
   'layout-grid': "<rect x=\"3\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"14\" y=\"3\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"3\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/><rect x=\"14\" y=\"14\" width=\"7\" height=\"7\" rx=\"1.5\"/>",
   'chevron-down': "<path d=\"m6 9 6 6 6-6\"/>",
+  'chevron-up': "<path d=\"m18 15-6-6-6 6\"/>",
   'chevron-right': "<path d=\"m9 6 6 6-6 6\"/>",
   'chevron-left': "<path d=\"m15 6-6 6 6 6\"/>",
   'chevrons-up-down': "<path d=\"m7 15 5 5 5-5\"/><path d=\"m7 9 5-5 5 5\"/>",

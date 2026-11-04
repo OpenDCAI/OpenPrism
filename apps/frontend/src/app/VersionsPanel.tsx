@@ -20,11 +20,13 @@ interface VersionsPanelProps {
   onRestore: (version: ProjectVersionMeta) => Promise<RestoreVersionResult>;
   /** Put one file back from a version (the Compare dialog's "Restore this file"). */
   onRestoreFile: (version: ProjectVersionMeta, path: string) => Promise<RestoreVersionResult>;
+  /** The preview's current build (blob URL) for the PDF comparison, or null. */
+  currentPdf: string | null;
 }
 
 const PAGE = 30;
 
-export default function VersionsPanel({ projectId, refreshKey, viewingId, onViewPdf, onDeleted, onRestore, onRestoreFile }: VersionsPanelProps) {
+export default function VersionsPanel({ projectId, refreshKey, viewingId, onViewPdf, onDeleted, onRestore, onRestoreFile, currentPdf }: VersionsPanelProps) {
   const { t } = useTranslation();
   const [versions, setVersions] = useState<ProjectVersionMeta[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -296,6 +298,7 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
           initialFrom={selected}
           canWrite={canWrite}
           onRestoreFile={onRestoreFile}
+          currentPdf={currentPdf}
           onClose={() => setComparing(false)}
         />
       )}

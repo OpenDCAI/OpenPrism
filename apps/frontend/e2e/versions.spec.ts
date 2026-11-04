@@ -327,6 +327,103 @@ test('Compare restores one file from an older version and leaves the others alon
   await expect(rows(page)).toHaveCount(2); // a single-file restore records no version
 });
 
+// ── PDF comparison ──
+
+const threePages = (middle: string) =>
+  `\\documentclass{article}\n\\begin{document}\nFirst page.\n\\newpage\n${middle}\n\\newpage\nThird page.\n\\end{document}\n`;
+
+async function openPdfCompare(page: Page, row: number, openPanel = true) {
+  if (openPanel) await openVersions(page); // the rail button toggles: only when the panel is closed
+  await rows(page).nth(row).click();
+  await page.getByTestId('version-compare').click();
+  await page.getByTestId('version-compare-modal').getByRole('button', { name: 'PDF', exact: true }).click();
+}
+
+test('the PDF comparison finds the page that changed and highlights it', async ({ page }) => {
+  const session = await newAccount('ver');
+  const id = await newProject(session, 'Paper', { 'main.tex': threePages('Second page says Alphadoc.') });
+  await compileViaApi(session, id);
+  await putFile(session, id, 'main.tex', threePages('Second page says Betadocument instead.'));
+  await compileViaApi(session, id);
+  await openEditor(page, session, id);
+
+  await openPdfCompare(page, 1); // no build in this tab yet: nothing to compare "current" with
+  await expect(page.getByTestId('pdf-compare-missing')).toContainText('Compile the project');
+  await pickOption(page, '#compare-to', /#2/);
+  const summary = page.getByTestId('pdf-compare-summary');
+  await expect(summary).toHaveText('1 of 3 pages changed', { timeout: 30_000 });
+  const chips = page.getByTestId('pdf-compare-strip').locator('button');
+  await expect(chips).toHaveCount(3);
+  await expect(chips.nth(1)).toHaveAttribute('data-changed', 'true');
+  await expect(chips.nth(0)).toHaveAttribute('data-changed', 'false');
+  await expect(chips.nth(2)).toHaveAttribute('data-changed', 'false');
+
+  await page.getByTestId('pdf-compare-next').click();
+  await expect(chips.nth(1)).toHaveAttribute('aria-pressed', 'true');
+  await expect(page.getByTestId('pdf-compare-next')).toBeDisabled();
+  await expect(page.getByTestId('pdf-compare-prev')).toBeDisabled();
+
+  await page.getByRole('button', { name: 'Highlight changes' }).click();
+  await expect(page.getByTestId('pdf-compare-highlight')).toHaveCount(3);
+  // the changed page is tinted where the words differ, the others are not
+  const tinted = await page.getByTestId('pdf-compare-highlight').evaluateAll((imgs) => imgs.map((img) => {
+    const el = img as HTMLImageElement;
+    const c = document.createElement('canvas');
+    c.width = el.naturalWidth;
+    c.height = el.naturalHeight;
+    const ctx = c.getContext('2d')!;
+    ctx.drawImage(el, 0, 0);
+    const d = ctx.getImageData(0, 0, c.width, c.height).data;
+    let n = 0;
+    for (let i = 0; i < d.length; i += 4) if (d[i] > 150 && d[i + 1] < 120 && d[i + 2] < 120) n += 1;
+    return n;
+  }));
+  expect(tinted[0]).toBe(0);
+  expect(tinted[1]).toBeGreaterThan(50);
+  expect(tinted[2]).toBe(0);
+});
+
+test('the PDF comparison against the current build, an extra page, and a failed version', async ({ page }) => {
+  const session = await newAccount('ver');
+  const id = await newProject(session, 'Paper', { 'main.tex': threePages('Same middle.') });
+  await compileViaApi(session, id);
+  await putFile(session, id, 'main.tex', threePages('Same middle.\n\\newpage\nA fourth page.'));
+  await compileViaApi(session, id);
+  await putFile(session, id, 'main.tex', doc('\\undefinedmacro'));
+  await compileViaApi(session, id).catch(() => undefined); // fails: version #3 has no PDF
+  await openEditor(page, session, id);
+
+  await openPdfCompare(page, 0); // #3, failed
+  await expect(page.getByTestId('pdf-compare-missing')).toContainText('Version #3 has no PDF');
+  await pickOption(page, '#compare-from', /#1/);
+  await pickOption(page, '#compare-to', /#2/);
+  await expect(page.getByTestId('pdf-compare-summary')).toHaveText(/of 4 pages changed/, { timeout: 30_000 });
+  await expect(page.getByTestId('pdf-compare-strip').locator('button').nth(3)).toHaveAttribute('data-changed', 'true');
+  await page.getByRole('button', { name: 'Close' }).click();
+
+  await putFile(session, id, 'main.tex', threePages('Same middle.'));
+  await compile(page); // the server compiles the stored file, now identical to #1's
+  await openPdfCompare(page, 3, false); // #1 against the current project
+  await expect(page.getByTestId('pdf-compare-summary')).toHaveText('No visual differences', { timeout: 30_000 });
+});
+
+test('the PDF comparison stacks its columns on a phone', async ({ page }) => {
+  const session = await newAccount('ver');
+  const id = await newProject(session, 'Paper', { 'main.tex': doc('Alphadoc') });
+  await compileViaApi(session, id);
+  await putFile(session, id, 'main.tex', doc('Betadoc'));
+  await compileViaApi(session, id);
+  await page.setViewportSize({ width: 390, height: 800 });
+  await openEditor(page, session, id);
+  await openPdfCompare(page, 1);
+  await pickOption(page, '#compare-to', /#2/);
+  await expect(page.getByTestId('pdf-compare-summary')).toHaveText('1 of 1 pages changed', { timeout: 30_000 });
+  const [before, after] = await page.getByTestId('pdf-compare-rows').locator('[data-page="1"] img').all();
+  const [a, b] = [await before.boundingBox(), await after.boundingBox()];
+  expect(b!.y).toBeGreaterThan(a!.y + a!.height - 1); // one under the other, not side by side
+  expect(await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth)).toBeLessThanOrEqual(0);
+});
+
 test('a viewer cannot restore', async ({ page }) => {
   const admin = await newAccount('ver-admin');
   const viewer = await newAccount('ver-viewer');

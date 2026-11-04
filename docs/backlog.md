@@ -34,6 +34,17 @@ with their log (newest 10 unnamed, separately from the 50 successful); storage i
 retention is an optional per-workspace setting that always keeps each project's newest version; PDF comparison is done
 in the browser by pixel diff.
 
+## v0.0.4.1 follow-ups (found while building it)
+
+- [ ] **New model fields have no database default, so old code breaks during a rollout.** `ProjectVersion.status`,
+      `log_key` and `log_size` (and any later field) use Django defaults, which the old code does not send: between the
+      migration and the worker restart, every version insert failed (the compile still succeeded, the version was lost).
+      Use `db_default` for new non-null fields, and document "restart workers after migrating" for compose.
+- [ ] **The PDF comparison's highlight paints both versions' ink** where a word changed, so the changed text is hard to
+      read in Highlight mode; consider tinting only the after page's pixels and outlining removed areas.
+- [ ] **The Compare dialog closes at phone width when the editor collapses its right panel** (it lives inside the
+      Versions panel). Opening it at phone width works.
+
 ## v0.0.5 - AI Assistance for LaTeX tasks
 
 Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
