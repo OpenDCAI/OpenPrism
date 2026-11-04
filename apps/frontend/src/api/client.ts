@@ -693,6 +693,24 @@ export async function changePassword(current: string, password: string) {
   setSession({ access: res.access, refresh: res.refresh });
 }
 
+export type DeleteAccountResult =
+  | { ok: true }
+  | { ok: false; error: string; workspaces?: { id: string; name: string }[] };
+
+/** Delete the signed-in account. A 409 lists the shared workspaces the user alone owns (returned, not thrown). */
+export async function deleteAccount(password: string): Promise<DeleteAccountResult> {
+  const res = await apiFetch(`${API_BASE}/api/auth/me`, {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password })
+  });
+  const body = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
+  return res.ok ? { ok: true } : { ok: false, error: body.error || `HTTP ${res.status}`, workspaces: body.workspaces };
+}
+
+/** Forget this browser's tokens without telling the server (used after the account itself is gone). */
+export function clearLocalSession() {
+  clearSession();
+}
+
 export async function logout() {
   const session = getSession();
   clearSession(); // sign out locally first: it must work even if the server is unreachable

@@ -171,6 +171,15 @@ def member(request, pk, member_id):
         return fail('Only owners can change admins.', 403)
     if request.method == 'DELETE':
         (target or invite).delete()
+    elif str((request.data or {}).get('role') or '').lower() == Membership.OWNER:
+        # Ownership is shared, not moved: an owner makes another member an owner (then may leave or delete their
+        # account). Owners cannot be demoted here, so this is only offered to owners and only for real members.
+        if actor.role != Membership.OWNER:
+            return fail('Only owners can make someone an owner.', 403)
+        if target is None:
+            return fail('Invite them first: only members can become owners.')
+        target.role = Membership.OWNER
+        target.save(update_fields=['role'])
     else:
         role = clean_role((request.data or {}).get('role'))
         if role is None:

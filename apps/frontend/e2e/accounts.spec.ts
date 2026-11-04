@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { latestMail, mailLink, newAccount, signIn } from './helpers';
+import { inviteMember, latestMail, mailLink, newAccount, newProject, newWorkspace, setActiveWorkspace, signIn } from './helpers';
 
 // Password reset by email (read from Mailpit), and changing the password on the account page.
 
@@ -74,4 +74,59 @@ test('change password from the account page', async ({ page }) => {
   });
   expect((await login('brand-new-horse-42')).status).toBe(200);
   expect((await login(PASSWORD)).status).toBe(401);
+});
+
+const base = () => process.env.E2E_BASE_URL || 'http://localhost:5173';
+const loginStatus = async (email: string, password = PASSWORD) => (await fetch(`${base()}/api/auth/login`, {
+  method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password })
+})).status;
+
+async function openDeleteDialog(page: import('@playwright/test').Page) {
+  await page.goto('/account');
+  await page.getByRole('button', { name: 'Delete account…' }).click();
+  return page.getByRole('dialog', { name: 'Delete your account?' });
+}
+
+test('delete account: wrong password is refused, the right one deletes it and signs out', async ({ page }) => {
+  const session = await newAccount('del');
+  await newProject(session, 'Doomed', { 'main.tex': 'x' });
+  await signIn(page, session);
+  const dialog = await openDeleteDialog(page);
+  await dialog.getByLabel('Password').fill('wrong-password-1');
+  await dialog.getByRole('button', { name: 'Delete account' }).click();
+  await expect(dialog).toContainText('Your password is not correct.');
+  expect(await loginStatus(session.user.email)).toBe(200);
+
+  await dialog.getByLabel('Password').fill(PASSWORD);
+  await dialog.getByRole('button', { name: 'Delete account' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  expect(await loginStatus(session.user.email)).toBe(401);
+});
+
+test('the only owner of a shared workspace is told which one, makes a member owner, then can delete', async ({ page }) => {
+  const owner = await newAccount('own');
+  const member = await newAccount('mem');
+  const ws = await newWorkspace(owner, 'Shared Lab');
+  await inviteMember(owner, ws, member.user.email, 'editor');
+  await signIn(page, owner);
+  let dialog = await openDeleteDialog(page);
+  await dialog.getByLabel('Password').fill(PASSWORD);
+  await dialog.getByRole('button', { name: 'Delete account' }).click();
+  await expect(dialog.getByRole('list', { name: 'Workspaces you alone own' })).toContainText('Shared Lab');
+  expect(await loginStatus(owner.user.email)).toBe(200);
+  await dialog.getByRole('button', { name: 'Cancel' }).click();
+
+  await setActiveWorkspace(page, owner, ws);
+  await page.goto('/projects?section=members');
+  await page.getByRole('button', { name: /^Role for / }).click(); // the member's role picker (the owner's own role is fixed)
+  await page.getByRole('menuitemradio', { name: 'Owner' }).click();
+  await page.getByRole('dialog', { name: /an owner\?/ }).getByRole('button', { name: 'Make owner' }).click();
+  await expect(page.getByRole('button', { name: /^Role for / })).toHaveCount(0); // both are owners now: nothing to change
+
+  dialog = await openDeleteDialog(page);
+  await dialog.getByLabel('Password').fill(PASSWORD);
+  await dialog.getByRole('button', { name: 'Delete account' }).click();
+  await expect(page).toHaveURL(/\/$/);
+  expect(await loginStatus(owner.user.email)).toBe(401);
+  expect(await loginStatus(member.user.email)).toBe(200); // the member and the workspace stay
 });

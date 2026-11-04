@@ -810,5 +810,15 @@
   "Set new password": "设置新密码",
   "Sign in with your new password. Other browsers where you were signed in have been signed out.": "请用新密码登录。你在其他浏览器上的登录已被退出。",
   "The two passwords do not match.": "两次输入的密码不一致。",
-  "This reset link is incomplete. Ask for a new one.": "此重置链接不完整，请重新获取。"
+  "This reset link is incomplete. Ask for a new one.": "此重置链接不完整，请重新获取。",
+  "Delete account": "删除账户",
+  "Delete account…": "删除账户……",
+  "Delete your account?": "要删除你的账户吗？",
+  "Deletes your account, your personal workspace and every project in it, and team workspaces where you are the only member. Shared workspaces and their projects stay with their other members. This cannot be undone.": "将删除你的账户、个人工作区及其中所有项目，以及只有你一个成员的团队工作区。共享工作区及其项目会留给其他成员。此操作无法撤销。",
+  "Your projects, files and versions are deleted for good.": "你的项目、文件和版本将被永久删除。",
+  "Workspaces you alone own": "只有你是所有者的工作区",
+  "Open each workspace’s Members page and make another member an owner, then try again.": "请在每个工作区的成员页面把另一位成员设为所有者，然后重试。",
+  "Make {{name}} an owner?": "要把 {{name}} 设为所有者吗？",
+  "Owners have full control of the workspace, and an owner cannot be changed back to another role. You stay an owner too.": "所有者拥有工作区的全部权限，且所有者无法再改回其他角色。你也仍是所有者。",
+  "Make owner": "设为所有者"
 }

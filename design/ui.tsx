@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import type { ButtonHTMLAttributes, KeyboardEvent as ReactKeyboardEvent, ReactNode } from 'react';
 import { createPortal } from 'react-dom';
 import { Icon } from './Icon';
@@ -392,6 +392,7 @@ export interface ModalProps {
 
 export function Modal({ title, description, onClose, children, footer, size = 'md', closeLabel = 'Close' }: ModalProps) {
   const ref = useRef<HTMLDivElement | null>(null);
+  const titleId = useId(); // the title names the dialog for screen readers (and getByRole('dialog', { name }))
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
     const first = ref.current?.querySelector<HTMLElement>('input, textarea, select, button:not([data-modal-close])');
@@ -408,10 +409,10 @@ export function Modal({ title, description, onClose, children, footer, size = 'm
   }, []);
   return createPortal(
     <div className="op-modal-backdrop" onMouseDown={(e) => { if (e.target === e.currentTarget) onClose(); }}>
-      <div ref={ref} className={cx('op-modal', size !== 'md' && `op-modal-${size}`)} role="dialog" aria-modal="true" tabIndex={-1}>
+      <div ref={ref} className={cx('op-modal', size !== 'md' && `op-modal-${size}`)} role="dialog" aria-modal="true" aria-labelledby={titleId} tabIndex={-1}>
         <div className="op-modal-header">
           <div className="op-modal-heading">
-            <span className="op-modal-title">{title}</span>
+            <span className="op-modal-title" id={titleId}>{title}</span>
             {description && <span className="op-modal-desc">{description}</span>}
           </div>
           <IconButton icon="x" label={closeLabel} tip={false} data-modal-close onClick={onClose} />

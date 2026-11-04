@@ -212,3 +212,5 @@
 .account-section p { margin: 0; color: var(--text-2); }
 .account-form { display: grid; gap: var(--sp-4); }
 .account-ok { color: var(--success); }
+.account-danger { border-color: var(--danger); }
+.account-blocked { margin: 0; padding-left: var(--sp-5); color: var(--text); }
