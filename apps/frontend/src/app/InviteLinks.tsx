@@ -83,7 +83,7 @@ export default function InviteLinks({ projectId, linkFor, onCreated, onStatus }:
           ariaLabel={t('Role for people who open the link')}
           value={role}
           onChange={setRole}
-          options={[{ value: 'editor', label: t('Can edit') }, { value: 'viewer', label: t('Can view') }]}
+          options={[{ value: 'editor', label: t('Can edit') }, { value: 'commenter', label: t('Can comment') }, { value: 'viewer', label: t('Can view') }]}
         />
         <Select<string>
           size="sm"
@@ -107,7 +107,7 @@ export default function InviteLinks({ projectId, linkFor, onCreated, onStatus }:
         <ul className="invite-list" aria-label={t('Active invite links')}>
           {invites.map((invite) => (
             <li key={invite.id} className="invite-item">
-              <Badge tone={invite.role === 'viewer' ? 'neutral' : 'accent'}>{roleLabel(invite.role)}</Badge>
+              <Badge tone={invite.role === 'editor' ? 'accent' : 'neutral'}>{roleLabel(invite.role)}</Badge>
               <span className="invite-meta">
                 {t('by {{who}}, expires {{when}}', { who: invite.createdBy || t('someone'), when: new Date(invite.expiresAt).toLocaleString() })}
               </span>

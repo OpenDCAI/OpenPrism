@@ -303,3 +303,23 @@ body.ed-resizing iframe, body.ed-resizing canvas { pointer-events: none; }
 .invite-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-1); }
 .invite-item { display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-1) 0; border-top: 1px solid var(--border); }
 .invite-meta { flex: 1; min-width: 0; color: var(--text-2); font-size: var(--fs-xs); }
+
+/* Comments (CommentsPanel.tsx, commentMarks.ts) */
+.cm-comment-range { background: var(--warning-soft); border-bottom: 2px solid var(--warning); cursor: pointer; }
+.comments-panel { display: grid; gap: var(--sp-3); align-content: start; }
+.comment-file { display: grid; gap: var(--sp-2); }
+.comment-file-name { margin: 0; font-size: var(--fs-xs); font-weight: var(--fw-semibold); color: var(--text-2); font-family: var(--font-mono); }
+.comment-thread { display: grid; gap: var(--sp-2); padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface); }
+.comment-thread.is-focused { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.comment-thread.is-resolved { opacity: 0.8; }
+.comment-thread.is-new { border-style: dashed; }
+.comment-thread-head { display: flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+.comment-quote { padding: 0; border: 0; background: none; text-align: left; font: inherit; font-size: var(--fs-sm); color: var(--text-2); font-style: italic; cursor: pointer; overflow-wrap: anywhere; }
+.comment-quote:disabled { cursor: default; text-decoration: line-through; }
+.comment-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); }
+.comment-item { display: grid; gap: var(--sp-1); }
+.comment-head { display: flex; align-items: center; gap: var(--sp-2); font-size: var(--fs-sm); min-width: 0; }
+.comment-when { margin-top: calc(-1 * var(--sp-1)); color: var(--text-3); font-size: var(--fs-xs); }
+.comment-body { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: var(--fs-sm); }
+.comment-composer { display: grid; gap: var(--sp-2); }
+.comment-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--sp-2); }

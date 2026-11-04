@@ -232,7 +232,7 @@ export async function uploadFiles(projectId: string, files: File[], basePath?: s
   return res.json() as Promise<{ ok: boolean; files?: string[] }>;
 }
 
-export type InviteRole = 'editor' | 'viewer';
+export type InviteRole = 'editor' | 'commenter' | 'viewer';
 
 export function createCollabInvite(id: string, role: InviteRole = 'editor', ttlSeconds?: number) {
   return request<{ ok: boolean; token: string; role?: string; expiresAt?: string }>(`/api/projects/${id}/collab/invite`, {
@@ -1007,4 +1007,73 @@ export async function restoreVersion(projectId: string, versionId: string): Prom
   });
   if (res.ok || res.status === 409) return (await res.json()) as RestoreVersionResult;
   throw new Error(await errorMessage(res));
+}
+
+// ─── Comments ───
+
+export interface CommentMeta {
+  id: string;
+  author: string;
+  guest: boolean;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+  mine: boolean;
+}
+
+export interface CommentThreadMeta {
+  id: string;
+  path: string;
+  quote: string;
+  prefix: string;
+  suffix: string;
+  /** Where the quote is in the stored file now; null when it can no longer be found (orphaned). */
+  anchor: { from: number; to: number } | null;
+  orphaned: boolean;
+  /** The offsets the thread had when it was last placed. */
+  hint: { from: number; to: number };
+  resolved: boolean;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  comments: CommentMeta[];
+}
+
+export interface CommentList {
+  canComment: boolean;
+  canModerate: boolean;
+  threads: CommentThreadMeta[];
+}
+
+const commentsBase = (projectId: string) => `/api/projects/${projectId}/comments`;
+
+export function listComments(projectId: string) {
+  return request<CommentList & { ok: boolean }>(commentsBase(projectId));
+}
+
+export async function createCommentThread(projectId: string, body: {
+  path: string; from: number; to: number; quote: string; prefix: string; suffix: string; body: string;
+}) {
+  return (await request<{ thread: CommentThreadMeta }>(commentsBase(projectId), { method: 'POST', body: JSON.stringify(body) })).thread;
+}
+
+export async function replyToThread(projectId: string, threadId: string, body: string) {
+  return (await request<{ thread: CommentThreadMeta }>(`${commentsBase(projectId)}/${threadId}/replies`, { method: 'POST', body: JSON.stringify({ body }) })).thread;
+}
+
+export async function setThreadResolved(projectId: string, threadId: string, resolved: boolean) {
+  return (await request<{ thread: CommentThreadMeta }>(`${commentsBase(projectId)}/${threadId}`, { method: 'PATCH', body: JSON.stringify({ resolved }) })).thread;
+}
+
+export async function deleteThread(projectId: string, threadId: string) {
+  await request<{ ok: boolean }>(`${commentsBase(projectId)}/${threadId}`, { method: 'DELETE' });
+}
+
+export async function editComment(projectId: string, threadId: string, commentId: string, body: string) {
+  return (await request<{ thread: CommentThreadMeta }>(`${commentsBase(projectId)}/${threadId}/replies/${commentId}`, { method: 'PATCH', body: JSON.stringify({ body }) })).thread;
+}
+
+/** Returns the thread, or null when that was its last comment (the thread is gone). */
+export async function deleteComment(projectId: string, threadId: string, commentId: string) {
+  return (await request<{ thread: CommentThreadMeta | null }>(`${commentsBase(projectId)}/${threadId}/replies/${commentId}`, { method: 'DELETE' })).thread;
 }
