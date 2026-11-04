@@ -7,6 +7,7 @@ import {
   listWorkspaces,
   moveProjectApi,
   removeMemberApi,
+  resendInviteApi,
   renameWorkspaceApi,
   setMemberRoleApi
 } from '../api/client';
@@ -61,7 +62,7 @@ export function useAccountWorkspaces(account: Account, signOut: () => void): Wor
     return () => {
       cancelled = true;
     };
-  }, [account.id, attempt]);
+  }, [account.id, account.emailVerified, attempt]); // confirming the address accepts invitations: reload
 
   const replace = useCallback((dto: WorkspaceDto) => {
     setDtos((cur) => (cur ? cur.map((w) => (w.id === dto.id ? dto : w)) : cur));
@@ -113,6 +114,7 @@ export function useAccountWorkspaces(account: Account, signOut: () => void): Wor
       inviteMember: async (email, role) => replace(await inviteMemberApi(activeDto.id, email, role)),
       setMemberRole: async (userId, role) => replace(await setMemberRoleApi(activeDto.id, userId, role)),
       removeMember: async (userId) => replace(await removeMemberApi(activeDto.id, userId)),
+      resendInvite: async (userId) => replace(await resendInviteApi(activeDto.id, userId)),
       moveProject: async (projectId, workspaceId) => {
         await moveProjectApi(projectId, workspaceId);
       },
@@ -149,6 +151,7 @@ export function guestWorkspaces(guest: GuestInfo, leave: () => void): WorkspaceC
     inviteMember: unavailable,
     setMemberRole: unavailable,
     removeMember: unavailable,
+    resendInvite: unavailable,
     moveProject: unavailable,
     signOut: leave
   };
