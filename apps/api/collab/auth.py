@@ -56,15 +56,28 @@ def is_guest(user):
     return getattr(user, 'is_guest', False)
 
 
+def verified_enough(request, view):
+    """With REQUIRE_EMAIL_VERIFICATION, an account that has not verified its address reaches only views marked
+    `allow_unverified` (who am I, verify, resend, sign out, change password, delete account). Guests are unaffected."""
+    from django.conf import settings
+    from rest_framework.exceptions import PermissionDenied
+    user = request.user
+    if not settings.REQUIRE_EMAIL_VERIFICATION or is_guest(user) or getattr(user, 'email_verified_at', None):
+        return True
+    if getattr(view, 'allow_unverified', False):
+        return True
+    raise PermissionDenied('Verify your email address first: open the link we sent you.')
+
+
 class IsRealUser(BasePermission):
     """Default: signed-in accounts only. Guests are refused everywhere that has not opted in."""
 
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated and not is_guest(request.user))
+        return bool(request.user and request.user.is_authenticated and not is_guest(request.user)) and verified_enough(request, view)
 
 
 class IsUserOrGuest(BasePermission):
     """For project-scoped views. Whether a guest may touch *this* project, and write, is decided in get_project()."""
 
     def has_permission(self, request, view):
-        return bool(request.user and request.user.is_authenticated)
+        return bool(request.user and request.user.is_authenticated) and verified_enough(request, view)

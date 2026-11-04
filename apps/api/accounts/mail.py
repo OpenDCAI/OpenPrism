@@ -34,5 +34,7 @@ def deliver(to, template, context):
 
 def send_template(to, template, context):
     """Queue a templated mail. Returns at once; delivery is retried by the task."""
+    if settings.MAIL_SEND_INLINE:
+        return deliver(to, template, context)
     from .tasks import send_email
     send_email.delay(to, template, context)

@@ -34,6 +34,8 @@ interface AuthContextValue {
   /** Stop acting as an invite-link guest in this tab. */
   leaveGuest: () => void;
   renameAccount: (name: string) => Promise<void>;
+  /** Re-read the account (e.g. after the email address was verified). */
+  refreshAccount: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -130,6 +132,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     leaveGuest: () => clearCollabToken(),
     renameAccount: async (name) => {
       const account = await updateProfile(name);
+      setState((cur) => (cur.status === 'user' ? { status: 'user', account } : cur));
+    },
+    refreshAccount: async () => {
+      if (!getSession()) return;
+      const account = await fetchMe();
       setState((cur) => (cur.status === 'user' ? { status: 'user', account } : cur));
     }
   }), [state]);

@@ -1,0 +1,5 @@
+{% extends "email/base.html" %}
+{% block body %}<p>Hello {{ name }},</p>
+<p>Please confirm that this is your email address.</p>
+{% include "email/_button.html" with label="Confirm email address" %}
+<p>The link is valid for 3 days. Workspace invitations sent to this address are accepted once it is confirmed. If you did not create an OpenPrism account, ignore this message.</p>{% endblock %}

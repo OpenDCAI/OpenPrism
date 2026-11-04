@@ -214,3 +214,9 @@
 .account-ok { color: var(--success); }
 .account-danger { border-color: var(--danger); }
 .account-blocked { margin: 0; padding-left: var(--sp-5); color: var(--text); }
+
+/* ── Unverified email reminder (VerifyEmail.tsx) ── */
+.verify-banner { position: fixed; z-index: 700; left: 50%; bottom: var(--sp-4); transform: translateX(-50%); width: min(640px, calc(100% - var(--sp-8)));
+  display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); box-shadow: var(--shadow-2); color: var(--text); font-size: var(--fs-sm); }
+.verify-banner > span { flex: 1; min-width: 0; }

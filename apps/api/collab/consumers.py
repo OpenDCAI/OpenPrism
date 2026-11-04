@@ -3,6 +3,7 @@ import logging
 from urllib.parse import parse_qs
 
 from channels.generic.websocket import AsyncWebsocketConsumer
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.tokens import AccessToken
@@ -51,6 +52,8 @@ def authorize(token, project_param, raw_path):
         membership = Membership.objects.filter(workspace_id=project.workspace_id, user_id=user_id).first()
         if membership is None:
             raise Reject(1008, 'Project not found')  # same answer as a missing project
+        if settings.REQUIRE_EMAIL_VERIFICATION and membership.user.email_verified_at is None:
+            raise Reject(1008, 'Unauthorized')  # like every other API until the address is verified
         project_id, can_write = str(project.id), membership.role in Membership.WRITE_ROLES
     if not Project.objects.filter(pk=project_id).exists():
         raise Reject(1008, 'Project not found')

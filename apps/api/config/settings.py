@@ -47,7 +47,15 @@ EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', '')
 EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', False)
 EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
 EMAIL_TIMEOUT = int(env('EMAIL_TIMEOUT', '20'))
+# Accounts. REQUIRE_EMAIL_VERIFICATION: an unverified account may only reach the auth endpoints until it clicks the link.
+# REGISTRATION_MODE: `open` (anyone) or `invite` (only addresses with a pending workspace invitation).
+REQUIRE_EMAIL_VERIFICATION = env_bool('REQUIRE_EMAIL_VERIFICATION', False)
+REGISTRATION_MODE = env('REGISTRATION_MODE', 'open')
+if REGISTRATION_MODE not in ('open', 'invite'):
+    raise ImproperlyConfigured('REGISTRATION_MODE must be "open" or "invite"')
+EMAIL_VERIFY_MAX_AGE = 3 * 24 * 3600  # seconds a verification link stays valid
 PASSWORD_RESET_TIMEOUT = 3600  # seconds a reset link stays valid (it also dies when the password changes)
+MAIL_SEND_INLINE = TESTING  # tests deliver to the locmem outbox at once instead of queueing a Celery task
 DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', 'OpenPrism <no-reply@localhost>')
 
 ALLOWED_HOSTS = [h for h in env('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h]

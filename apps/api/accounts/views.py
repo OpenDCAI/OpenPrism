@@ -30,6 +30,7 @@ class RegisterView(APIView):
 
 
 class MeView(APIView):
+    allow_unverified = True  # who am I / rename / delete account work before the address is verified
     def get(self, request):
         return Response({'ok': True, 'user': UserSerializer(request.user).data})
 
@@ -58,6 +59,7 @@ class MeView(APIView):
 
 class LogoutView(APIView):
     """Revoke a refresh token (the access token simply expires)."""
+    allow_unverified = True
     permission_classes = [AllowAny]
     throttle_scope = 'auth'
 

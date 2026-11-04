@@ -33,8 +33,10 @@ export async function newProject(session: Session, name: string, files: Record<s
 }
 
 /** Start the page signed in as `session` (the app reads its tokens from localStorage). */
-export async function signIn(page: Page, session: Session) {
+export async function signIn(page: Page, session: Session, opts: { verifyBanner?: boolean } = {}) {
   await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), ['openprism-auth-v1', JSON.stringify(session)]);
+  // Test accounts never open their verification mail; keep the reminder from covering the bottom of the screen.
+  if (!opts.verifyBanner) await page.addInitScript(() => window.sessionStorage.setItem('openprism-verify-banner', 'hidden'));
 }
 
 /** A multi-page document: one section per page, each with a few paragraphs, so every page has a known heading. */

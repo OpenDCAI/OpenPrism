@@ -56,7 +56,7 @@ class WorkspaceApiTests(ApiBase):
         self.assertEqual(self.roles()['known@example.com'], 'Commenter')
         self.assertEqual(self.c.post(f'{self.base}/members', {'email': 'known@example.com', 'role': 'editor'}, format='json').status_code, 409)
 
-    def test_invite_unknown_email_becomes_membership_on_registration(self):
+    def test_invite_unknown_email_becomes_membership_once_the_address_is_verified(self):
         res = self.c.post(f'{self.base}/members', {'email': 'new@university.edu', 'role': 'editor'}, format='json')
         pending = [m for m in res.data['workspace']['members'] if m.get('invited')]
         self.assertEqual(pending, [{'userId': 'invite-new@university.edu', 'role': 'Editor', 'invited': True}])
@@ -65,8 +65,12 @@ class WorkspaceApiTests(ApiBase):
         newcomer = APIClient()
         reg = newcomer.post('/api/auth/register', {'email': 'New@University.edu', 'password': 'correct-horse-battery'}, format='json')
         newcomer.credentials(HTTP_AUTHORIZATION=f"Bearer {reg.data['access']}")
-        names = sorted(w['name'] for w in newcomer.get('/api/workspaces').data['workspaces'])
-        self.assertEqual(names, ['Lab', 'Personal'])                                # joined Lab on sign-up
+        names = lambda: sorted(w['name'] for w in newcomer.get('/api/workspaces').data['workspaces'])
+        self.assertEqual(names(), ['Personal'])  # registering alone proves nothing about the address
+        from accounts.verification import make_token
+        from accounts.models import User
+        self.assertTrue(newcomer.post('/api/auth/verify-email', {'token': make_token(User.objects.get(email='new@university.edu'))}, format='json').data['ok'])
+        self.assertEqual(names(), ['Lab', 'Personal'])                                # joined Lab once verified
         self.assertEqual(self.roles()['new@university.edu'], 'Editor')
         self.assertFalse(WorkspaceInvite.objects.exists())
 
