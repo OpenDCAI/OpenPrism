@@ -733,7 +733,6 @@
   "This workspace provides the AI provider{{model}}. Your own key is not used for its projects.": "此工作区提供 AI 服务商{{model}}，其项目不会使用你自己的密钥。",
   "Versions": "版本",
   "No versions yet": "还没有版本",
-  "A version is saved every time a compile succeeds, so you can look back at an earlier PDF.": "每次编译成功都会保存一个版本，方便回看之前的 PDF。",
   "restored from #{{n}}": "恢复自 #{{n}}",
   "Viewing": "正在查看",
   "Version #{{n}}": "版本 #{{n}}",
@@ -741,7 +740,6 @@
   "Open PDF": "打开 PDF",
   "Back to current build": "返回当前编译",
   "e.g. submitted to ACL": "例如：已提交 ACL",
-  "A named version is kept forever. Unnamed versions beyond the newest 50 are removed.": "命名的版本会永久保留；超出最新 50 个的未命名版本会被清理。",
   "Save name": "保存名称",
   "Remove name": "移除名称",
   "Delete version #{{n}}?": "删除版本 #{{n}}？",
@@ -883,5 +881,11 @@
   "The unfinished project was removed.": "未完成的项目已删除。",
   "Restored {{path}} from version #{{n}}": "已从版本 #{{n}} 恢复 {{path}}",
   "Replace {{path}} with its version #{{n}}?": "用版本 #{{n}} 中的 {{path}} 替换当前文件？",
-  "Restore this file": "恢复此文件"
+  "Restore this file": "恢复此文件",
+  "A version is saved every time you compile, so you can look back at an earlier PDF, or at the log of a compile that failed.": "每次编译都会保存一个版本，可以回看早先的 PDF，或查看失败编译的日志。",
+  "A named version is kept forever. Unnamed versions beyond the newest 50, and failed ones beyond the newest 10, are removed.": "命名的版本会永久保留。未命名的版本只保留最新 50 个，失败的版本只保留最新 10 个。",
+  "Failed": "失败",
+  "Open log": "打开日志",
+  "Log of version #{{n}}": "版本 #{{n}} 的日志",
+  "Saved as version #{{n}} (failed)": "已保存为版本 #{{n}}（失败）"
 }
