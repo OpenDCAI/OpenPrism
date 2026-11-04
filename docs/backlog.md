@@ -51,14 +51,9 @@ Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
 
 ## v0.0.6 - Better account management
 
-- [ ] **Account management is minimal.** No password reset, email verification, change-password screen, or
-      account deletion. Registration is open to anyone who can reach the site (consider invite-only or verification).
-- [ ] **Workspace invitations send no email.** Invited addresses wait until that person registers; the inviter has to
-      tell them. Needs an email provider and a template (and probably an accept/decline step).
-- [ ] **The Commenter role does nothing yet.** It exists in the UI and API (read-only) but there is no commenting feature.
-- [ ] **Project invite links are always "editor".** The API supports `viewer` links; the Collaboration panel only offers
-      editor. Add a role choice (and a way to see/revoke outstanding links).
-
+Moved to `docs/todo.md` (issues #32-#39). Decided: SMTP via environment variables (Mailpit in development), existing accounts are
+still added to a workspace at once (now with an email), pending invites need a verified address, and commenting is built
+in this release.
 
 ## v0.0.7 - Misc
 
