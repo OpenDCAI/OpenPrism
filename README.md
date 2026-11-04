@@ -83,6 +83,7 @@ There is no seeded user: click **Create account** in the UI to register. Registe
 | 8080 | nginx `web` image |
 | 8000 | Django API |
 | 5432 / 6379 / 3900 | Postgres / Redis / Garage S3 |
+| 8025 | Mailpit: every mail the app sends in development (password reset, verification, invitations) |
 
 ### Health checks
 

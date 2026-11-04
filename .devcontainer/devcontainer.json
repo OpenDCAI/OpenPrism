@@ -9,10 +9,11 @@
   "postCreateCommand": "sudo chown -R node:node /home/node/.claude && npm install",
   // "initializeCommand": "test -f .env || cp .env.sample .env",
   "runArgs": ["--env-file", "${localWorkspaceFolder}/.env"],
-  "forwardPorts": [5173, 8080, 8000, 5432, 6379, 3900],
+  "forwardPorts": [5173, 8080, 8000, 5432, 6379, 3900, 8025],
   "portsAttributes": {
     "5173": { "label": "Frontend (Vite dev)" },
     "8080": { "label": "App (nginx)" },
+    "8025": { "label": "Mailpit (dev mail)" },
     "8000": { "label": "API (Django)" },
     "5432": { "label": "Postgres" },
     "6379": { "label": "Redis" },
