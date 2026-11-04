@@ -85,6 +85,9 @@ def reap_stale_jobs():
          'Job timed out (worker stopped responding).'),
         (Job.objects.filter(status=Job.QUEUED, updated_at__lt=now - timedelta(minutes=settings.JOB_QUEUED_STALE_MINUTES)),
          'Job was never started (queue backlog or lost message).'),
+        # A transfer paused for the layout check waits for the browser's page images; if the tab is gone it never resumes.
+        (Job.objects.filter(status=Job.WAITING_IMAGES, updated_at__lt=now - timedelta(minutes=settings.JOB_WAITING_STALE_MINUTES)),
+         'The layout check was never answered (the page was closed).'),
     ]
     count = 0
     for queryset, message in stale:
@@ -92,6 +95,8 @@ def reap_stale_jobs():
         count += queryset.filter(pk__in=ids).update(status=Job.FAILED, error=message, updated_at=now)
         for job_id in ids:
             job_secrets.delete(str(job_id))
+        from transfer.cleanup import discard_failed_targets  # imported lazily: transfer depends on jobs
+        discard_failed_targets(ids)
     return count
 
 

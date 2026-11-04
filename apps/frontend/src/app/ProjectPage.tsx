@@ -629,7 +629,7 @@ export default function ProjectPage() {
 
   // Active transfer job (persists after modal close)
   const [activeJob, setActiveJob] = useState<{
-    jobId: string; status: string; progressLog: string[]; error?: string;
+    jobId: string; status: string; progressLog: string[]; error?: string; targetDeleted?: boolean;
     sourceName?: string;
   } | null>(null);
   const [jobWidgetOpen, setJobWidgetOpen] = useState(true);
@@ -1599,7 +1599,7 @@ export default function ProjectPage() {
             onJobUpdate={(job) => {
               setActiveJob({ ...job, sourceName: transferSource.name });
               setJobWidgetOpen(true);
-              if (job.status === 'success') loadProjects();
+              if (job.status === 'success' || job.targetDeleted) loadProjects(); // a failed transfer's project is gone
             }}
           />
         </Modal>

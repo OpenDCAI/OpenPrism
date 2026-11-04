@@ -47,7 +47,8 @@ def status_name(job):
 
 
 def status_body(job):
-    return {'status': status_name(job), 'progressLog': job.progress_log, 'error': job.error or None}
+    return {'status': status_name(job), 'progressLog': job.progress_log, 'error': job.error or None,
+            'targetDeleted': bool(job.result.get('targetDeleted'))}
 
 
 def _create_job(request, mode, b):

@@ -15,6 +15,7 @@ from projects import storage
 from projects.models import Project
 
 from . import nodes
+from .cleanup import discard_target
 from .llmjson import TransferError
 
 log = logging.getLogger(__name__)
@@ -147,6 +148,7 @@ def _finish(run):
         job.result = {**job.result, 'pdfKey': pdf_key}
     run.save()
     job_secrets.delete(str(job.id))
+    discard_target(job)  # no-op unless it failed
 
 
 def _fail(run, message):
@@ -154,3 +156,4 @@ def _fail(run, message):
     run.job.progress_log = [*run.job.progress_log, f'[error] {message}']
     run.save()
     job_secrets.delete(str(run.job.id))
+    discard_target(run.job)

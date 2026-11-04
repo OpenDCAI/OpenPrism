@@ -249,7 +249,7 @@ class TransferApiTests(ApiBase):
         done = self.step(job_id)
         self.assertEqual(done['status'], 'failed')
         self.assertEqual(done['error'], 'No PDF generated.')
-        self.assertIn('Compile attempts: 5', done['progressLog'][-1])
+        self.assertIn('Compile attempts: 5', done['progressLog'][-2])  # then the note that the target was removed
         self.assertEqual(sum('[fixCompile]' in l for l in done['progressLog']), 4)
 
     def test_llm_failure_fails_the_job_with_the_provider_message(self):
@@ -258,8 +258,59 @@ class TransferApiTests(ApiBase):
         done = self.step(job_id)
         self.assertEqual(done['status'], 'failed')
         self.assertIn('LLM call failed: invalid api key', done['error'])
-        self.assertIn('[error]', done['progressLog'][-1])
+        self.assertIn('[error]', done['progressLog'][-2])
         self.assertEqual(job_secrets.get(job_id), {})
+
+    # ---- a failed transfer leaves nothing behind ----
+    def assert_target_gone(self, job_id, new_id):
+        self.assertFalse(Project.objects.filter(pk=new_id).exists())
+        self.assertEqual(self._keys(f'projects/{new_id}/'), [])
+        status = self.c.get(f'/api/transfer/status/{job_id}').data  # the job (and its error) is still there
+        self.assertEqual((status['status'], status['targetDeleted']), ('failed', True))
+        self.assertIn('The unfinished project was removed.', status['progressLog'])
+        self.assertNotIn(new_id, [p['id'] for p in self.c.get('/api/projects').data['projects']])
+
+    def test_failed_transfer_deletes_its_target_project(self):
+        job_id, new_id = self.start(self.fake((401, 'invalid api key')))
+        self.assertTrue(Project.objects.filter(pk=new_id).exists())  # created up front
+        self.assertEqual(self.step(job_id)['status'], 'failed')
+        self.assert_target_gone(job_id, new_id)
+        from .cleanup import discard_target
+        self.assertFalse(discard_target(Job.objects.get(pk=job_id)))  # idempotent
+
+    def test_failure_by_compile_attempts_and_by_timeout_also_discard(self):
+        job_id, new_id = self.start(self.fake(json.dumps(PLAN), 'BAD1', *['BAD'] * 5))
+        self.step(job_id)
+        self.assert_target_gone(job_id, new_id)
+        from celery.exceptions import SoftTimeLimitExceeded
+        job_id, new_id = self.start(self.fake())
+        with mock.patch('transfer.engine.run_segment', side_effect=SoftTimeLimitExceeded()):
+            self.step(job_id)
+        self.assert_target_gone(job_id, new_id)
+
+    def test_successful_transfer_keeps_its_project(self):
+        fake = self.fake(json.dumps(PLAN), GOOD)
+        job_id, new_id = self.start(fake)
+        self.assertEqual(self.step(job_id)['status'], 'success')
+        self.assertTrue(Project.objects.filter(pk=new_id).exists())
+        self.assertFalse(self.c.get(f'/api/transfer/status/{job_id}').data['targetDeleted'])
+
+    def test_reaped_and_abandoned_transfers_lose_their_target(self):
+        from datetime import timedelta
+        from django.utils import timezone
+        from jobs.tasks import reap_stale_jobs
+        fake = self.fake(json.dumps(PLAN), GOOD)
+        abandoned, abandoned_target = self.start(fake, layoutCheck=True)
+        self.assertEqual(self.step(abandoned)['status'], 'waiting_images')
+        dead, dead_target = self.start(self.fake())
+        Job.objects.filter(pk=dead).update(status=Job.RUNNING)
+        old = timezone.now() - timedelta(hours=2)
+        Job.objects.filter(pk__in=[abandoned, dead]).update(updated_at=old)
+        Project.objects.filter(pk=self.source_id).update(updated_at=old)
+        self.assertEqual(reap_stale_jobs(), 2)
+        self.assert_target_gone(abandoned, abandoned_target)
+        self.assert_target_gone(dead, dead_target)
+        self.assertTrue(Project.objects.filter(pk=self.source_id).exists())  # never the source
 
     # ---- layout check pause / resume ----
     def test_layout_check_pauses_and_resumes_with_images(self):

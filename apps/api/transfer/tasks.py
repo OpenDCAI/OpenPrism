@@ -23,3 +23,5 @@ def run_transfer_segment(job_id, segment):
         job.progress_log = [*job.progress_log, '[error] The transfer timed out.']
         job.save(update_fields=['status', 'error', 'progress_log', 'updated_at'])
         job_secrets.delete(str(job_id))
+        from .cleanup import discard_target
+        discard_target(job)
