@@ -5,6 +5,8 @@ import EditorPage from './EditorPage';
 import LandingPage from './LandingPage';
 import ProjectPage from './ProjectPage';
 import CollabJoinPage from './CollabJoinPage';
+import AccountPage from './AccountPage';
+import { ForgotPasswordPage, ResetPasswordPage } from './PasswordPages';
 import LoginPage, { safeNext } from './LoginPage';
 import { useAuth } from '../auth/AuthProvider';
 import type { GuestInfo } from '../auth/AuthProvider';
@@ -35,6 +37,8 @@ function AnonymousRoutes() {
       <Route path="/login" element={<LoginPage />} />
       <Route path="/register" element={<LoginPage />} />
       <Route path="/collab" element={<CollabJoinPage />} />
+      <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+      <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="*" element={<Navigate to={`/login?next=${encodeURIComponent(pathname + search)}`} replace />} />
     </Routes>
   );
@@ -51,6 +55,8 @@ function GuestRoutes({ guest }: { guest: GuestInfo }) {
         <Route path="/collab" element={<CollabJoinPage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<LoginPage />} />
+        <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="*" element={<Navigate to={`/editor/${guest.projectId}`} replace />} />
       </Routes>
     </WorkspaceProvider>
@@ -77,6 +83,8 @@ function AccountRoutes({ account }: { account: Account }) {
         <Route path="/projects" element={<ProjectPage />} />
         <Route path="/editor/:projectId" element={<EditorPage />} />
         <Route path="/collab" element={<CollabJoinPage />} />
+        <Route path="/account" element={<AccountPage />} />
+        <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/login" element={<Navigate to={afterLogin} replace />} />
         <Route path="/register" element={<Navigate to={afterLogin} replace />} />
         <Route path="*" element={<Navigate to="/projects" replace />} />

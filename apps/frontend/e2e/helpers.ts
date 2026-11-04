@@ -66,3 +66,27 @@ export async function setWorkspaceLlm(session: Session, workspaceId: string, bod
 export async function setActiveWorkspace(page: Page, session: Session, workspaceId: string) {
   await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [`openprism-active-workspace:${session.user.id}`, workspaceId]);
 }
+
+const mailpit = () => process.env.E2E_MAILPIT_URL || 'http://localhost:8025';
+
+/** The newest mail to `to` in Mailpit (the dev mail catcher), waiting for it to arrive. `after` skips older ones. */
+export async function latestMail(to: string, opts: { subject?: RegExp; timeoutMs?: number } = {}): Promise<{ subject: string; text: string; html: string }> {
+  const deadline = Date.now() + (opts.timeoutMs ?? 20_000);
+  while (Date.now() < deadline) {
+    const res = await fetch(`${mailpit()}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`);
+    const list = await res.json() as { messages: { ID: string; Subject: string }[] };
+    const hit = list.messages.find((m) => !opts.subject || opts.subject.test(m.Subject));
+    if (hit) {
+      const msg = await (await fetch(`${mailpit()}/api/v1/message/${hit.ID}`)).json() as { Subject: string; Text: string; HTML: string };
+      return { subject: msg.Subject, text: msg.Text, html: msg.HTML };
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`no mail to ${to}${opts.subject ? ` matching ${opts.subject}` : ''}`);
+}
+
+/** The first link into the app found in a mail's text, as a path (so it works on :5173 and :8080 alike). */
+export function mailLink(text: string): string {
+  const url = new URL(text.match(/https?:\/\/\S+/)![0]);
+  return url.pathname + url.search;
+}

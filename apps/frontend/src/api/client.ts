@@ -677,6 +677,22 @@ export async function updateProfile(name: string): Promise<Account> {
   return (await request<{ user: Account }>('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ name }) })).user;
 }
 
+/** Ask for a password-reset mail. The answer is the same whether or not the address has an account. */
+export async function forgotPassword(email: string) {
+  await authCall<{ ok: boolean }>('/api/auth/password/forgot', { email });
+}
+
+/** Set a new password from the reset link's uid and token. */
+export async function resetPassword(uid: string, token: string, password: string) {
+  await authCall<{ ok: boolean }>('/api/auth/password/reset', { uid, token, password });
+}
+
+/** Change the password while signed in. Other browsers are signed out; this one gets fresh tokens. */
+export async function changePassword(current: string, password: string) {
+  const res = await request<{ access: string; refresh: string }>('/api/auth/password/change', { method: 'POST', body: JSON.stringify({ current, password }) });
+  setSession({ access: res.access, refresh: res.refresh });
+}
+
 export async function logout() {
   const session = getSession();
   clearSession(); // sign out locally first: it must work even if the server is unreachable

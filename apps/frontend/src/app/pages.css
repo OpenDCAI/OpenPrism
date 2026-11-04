@@ -202,3 +202,13 @@
   .lp-hero { padding-top: var(--sp-8); }
   .lp-card { padding: var(--sp-8) var(--sp-4); }
 }
+
+/* ── Account settings (/account) ── */
+.account-main { overflow: auto; width: min(640px, 100%); margin: 0 auto; padding: var(--sp-8) var(--sp-4) var(--sp-12); display: grid; gap: var(--sp-6); align-content: start; }
+.account-main h1 { margin: 0; font-size: var(--fs-2xl); font-weight: var(--fw-semibold); }
+.account-who { margin: calc(-1 * var(--sp-4)) 0 0; color: var(--text-2); }
+.account-section { display: grid; gap: var(--sp-4); padding: var(--sp-6); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.account-section h2 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.account-section p { margin: 0; color: var(--text-2); }
+.account-form { display: grid; gap: var(--sp-4); }
+.account-ok { color: var(--success); }
