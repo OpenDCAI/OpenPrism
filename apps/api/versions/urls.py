@@ -1,8 +1,9 @@
 from django.urls import path
 
-from . import views
+from . import storage_report, views
 
 urlpatterns = [
+    path('workspaces/<uuid:pk>/storage', storage_report.workspace_storage),
     path('projects/<uuid:pk>/versions', views.versions_collection),
     path('projects/<uuid:pk>/versions/diff', views.versions_diff),
     path('projects/<uuid:pk>/versions/<uuid:version_id>', views.version_detail),

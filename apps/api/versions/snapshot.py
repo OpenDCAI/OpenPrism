@@ -65,6 +65,7 @@ def record(project, entries, pdf, main_file, engine, job=None, user=None, log=No
     version_id = uuid.uuid4()
     key = pdf_key(project.id, version_id) if pdf else ''
     lkey = log_key(project.id, version_id) if log is not None else ''
+    log_bytes = log.encode('utf-8') if lkey else b''
     stored = []
     try:
         with transaction.atomic():
@@ -77,12 +78,12 @@ def record(project, entries, pdf, main_file, engine, job=None, user=None, log=No
                 storage.put_bytes(key, pdf, 'application/pdf')
                 stored.append(key)
             if lkey:
-                storage.put_bytes(lkey, log.encode('utf-8'), 'text/plain; charset=utf-8')
+                storage.put_bytes(lkey, log_bytes, 'text/plain; charset=utf-8')
                 stored.append(lkey)
             version = ProjectVersion.objects.create(
                 id=version_id, project=project, number=(latest.number + 1 if latest else 1), created_by=user, job=job,
                 main_file=main_file, engine=engine, manifest=manifest, manifest_hash=digest, pdf_key=key,
-                pdf_size=len(pdf) if pdf else 0, status=status, log_key=lkey)
+                pdf_size=len(pdf) if pdf else 0, status=status, log_key=lkey, log_size=len(log_bytes))
             return version, True
     except Exception:
         storage.delete_keys(stored)
@@ -109,7 +110,7 @@ def record_restore(project, source, user=None):
                 id=version_id, project=project, number=(latest.number + 1 if latest else 1), created_by=user,
                 main_file=source.main_file, engine=source.engine, manifest=source.manifest,
                 manifest_hash=source.manifest_hash, pdf_key=key, pdf_size=source.pdf_size, restored_from=source,
-                status=source.status, log_key=lkey)
+                status=source.status, log_key=lkey, log_size=source.log_size if lkey else 0)
     except Exception:
         storage.delete_keys(copied)
         raise

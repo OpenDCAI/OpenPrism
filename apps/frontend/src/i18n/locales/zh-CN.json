@@ -887,5 +887,18 @@
   "Failed": "失败",
   "Open log": "打开日志",
   "Log of version #{{n}}": "版本 #{{n}} 的日志",
-  "Saved as version #{{n}} (failed)": "已保存为版本 #{{n}}（失败）"
+  "Saved as version #{{n}} (failed)": "已保存为版本 #{{n}}（失败）",
+  "Storage": "存储",
+  "Project files {{files}} · Version history {{history}} in {{count}} versions": "项目文件 {{files}} · 版本历史 {{history}}，共 {{count}} 个版本",
+  "History": "历史",
+  "In trash": "在回收站",
+  "Keep versions": "版本保留",
+  "By count only": "仅按数量",
+  "For a number of days": "按天数",
+  "Days": "天数",
+  "Each project keeps its newest 50 unnamed versions and 10 failed ones. Named versions are kept forever.": "每个项目保留最新 50 个未命名版本和 10 个失败版本。命名的版本永久保留。",
+  "Unnamed versions older than this are removed every night, as well as beyond the newest 50. Each project keeps its newest version, and named versions are kept forever.": "超过此天数的未命名版本每晚删除，超出最新 50 个的也会删除。每个项目始终保留最新版本，命名的版本永久保留。",
+  "Enter a number of days from 1 to 3650.": "请输入 1 到 3650 之间的天数。",
+  "Could not save.": "无法保存。",
+  "Version history setting saved": "版本历史设置已保存"
 }

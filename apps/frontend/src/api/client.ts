@@ -997,6 +997,36 @@ export function deleteVersion(projectId: string, versionId: string) {
   return request<{ ok: boolean }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
 }
 
+export interface WorkspaceStorageRow {
+  id: string;
+  name: string;
+  trashed: boolean;
+  fileBytes: number;
+  versionBytes: number;
+  versionCount: number;
+}
+export interface WorkspaceStorage {
+  ok: boolean;
+  error?: string;
+  /** Unnamed versions older than this many days are pruned (each project's newest stays); null: by count only. */
+  versionRetentionDays: number | null;
+  totals: { fileBytes: number; versionBytes: number; versionCount: number };
+  projects: WorkspaceStorageRow[];
+}
+/** What the workspace's projects and their version history take up. Owners and admins only. */
+export function getWorkspaceStorage(workspaceId: string) {
+  return request<WorkspaceStorage>(`/api/workspaces/${encodeURIComponent(workspaceId)}/storage`);
+}
+export async function setVersionRetention(workspaceId: string, days: number | null): Promise<WorkspaceStorage> {
+  const res = await apiFetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/storage`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ versionRetentionDays: days })
+  });
+  if (res.ok || res.status === 400) return (await res.json()) as WorkspaceStorage; // 400: a readable validation error
+  throw new Error(await errorMessage(res));
+}
+
 export interface RestoreVersionResult {
   ok: boolean;
   error?: string;

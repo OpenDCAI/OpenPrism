@@ -114,7 +114,9 @@
 .home-member-text strong { font-weight: var(--fw-medium); }
 .home-member-text span { font-size: var(--fs-xs); color: var(--text-3); }
 .home-muted { color: var(--text-3); white-space: nowrap; }
-.home-cell-end { text-align: right; }
+.home-cell-end, .home-table th.home-cell-end { text-align: right; }
+.ws-retention { display: grid; gap: var(--sp-3); justify-items: start; }
+.ws-retention .op-field { width: 100%; max-width: 160px; }
 
 /* ---------- modals ---------- */
 .home-modal-text { margin: 0; color: var(--text-2); }
