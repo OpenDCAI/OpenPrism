@@ -22,12 +22,18 @@ import {
   arxivBibtex,
   arxivSearch,
   createFolder as createFolderApi,
-  createCollabInvite,
   compileProject,
   getAllFiles,
   getCollabServer,
   getFile,
   cancelJob,
+  createCommentThread,
+  deleteComment,
+  deleteThread,
+  editComment,
+  listComments,
+  replyToThread,
+  setThreadResolved,
   jobProgress,
   getProjectTree,
   fetchVersionPdf,
@@ -48,7 +54,7 @@ import {
   flushCollabFile,
   setCollabServer
 } from '../api/client';
-import type { ArxivPaper, PdfFocus, RestoreVersionResult } from '../api/client';
+import type { ArxivPaper, CommentThreadMeta, PdfFocus, RestoreVersionResult } from '../api/client';
 import { getInviteToken, tokenForUrl } from '../api/auth';
 import { createTwoFilesPatch } from 'diff';
 import { merge3 } from './merge3';
@@ -61,6 +67,11 @@ import { CollabProvider } from '../collab/provider';
 import ZoteroPanel from './ZoteroPanel';
 import VersionsPanel from './VersionsPanel';
 import AiCommandBar from './AiCommandBar';
+import InviteLinks from './InviteLinks';
+import CommentsPanel from './CommentsPanel';
+import type { PendingComment } from './CommentsPanel';
+import { contextOf, locate } from './commentAnchor';
+import { commentClicks, commentMarksField, setCommentMarks } from './commentMarks';
 import {
   AppTopBar,
   Avatar,
@@ -156,7 +167,7 @@ const RIGHT_VIEW_OPTIONS = (t: (key: string) => string) => [
 ];
 
 type LeftView = 'files' | 'outline' | 'search';
-type RightTool = 'agent' | 'vision' | 'search' | 'zotero' | 'versions' | 'websearch' | 'plot' | 'review' | 'collab';
+type RightTool = 'agent' | 'vision' | 'search' | 'zotero' | 'versions' | 'comments' | 'websearch' | 'plot' | 'review' | 'collab';
 type ViewMode = 'editor' | 'split' | 'pdf';
 
 const EDITOR_LAYOUT_KEY = 'openprism-editor-layout-v1';
@@ -1461,6 +1472,14 @@ export default function EditorPage() {
   const aiAbortRef = useRef<AbortController | null>(null);
   const aiJobRef = useRef<{ id: string; timer: number } | null>(null);
   const openAiBarRef = useRef<() => boolean>(() => false);
+  // Comments: every thread of the project, what the caller may do, and a selection waiting for its first comment.
+  const [commentThreads, setCommentThreads] = useState<CommentThreadMeta[]>([]);
+  const [commentRights, setCommentRights] = useState({ canComment: false, canModerate: false });
+  const [pendingComment, setPendingComment] = useState<PendingComment | null>(null);
+  const [focusedThread, setFocusedThread] = useState<string | null>(null);
+  const [commentError, setCommentError] = useState('');
+  const startCommentRef = useRef<() => boolean>(() => false);
+  const openThreadRef = useRef<(id: string) => void>(() => {});
   const [compileLog, setCompileLog] = useState('');
   const [pdfUrl, setPdfUrl] = useState('');
   /** An older version's PDF shown in place of the current build; `backUrl` is the build to return to. */
@@ -1555,8 +1574,6 @@ export default function EditorPage() {
   const [websearchSelectedAll, setWebsearchSelectedAll] = useState(false);
   const [collabEnabled, setCollabEnabled] = useState(() => Boolean(getCollabToken()));
   const [collabStatus, setCollabStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
-  const [collabInviteBusy, setCollabInviteBusy] = useState(false);
-  const [collabInviteLink, setCollabInviteLink] = useState('');
   const [collabServer, setCollabServerState] = useState(() => getCollabServer() || (typeof window === 'undefined' ? '' : window.location.origin));
   const [collabName, setCollabName] = useState(() => loadCollabName() || 'Guest');
   const [collabToken] = useState(() => getCollabToken());
@@ -1598,6 +1615,8 @@ export default function EditorPage() {
   const collabActiveRef = useRef(false);
   const collabColorRef = useRef<string>(pickCollabColor(collabName));
   const collabCompartment = useMemo(() => new Compartment(), []);
+  const readOnlyCompartment = useMemo(() => new Compartment(), []);
+  const canWriteRef = useRef(false); // read when the editor view is (re)created
 
   const {
     llmEndpoint,
@@ -1777,39 +1796,6 @@ export default function EditorPage() {
       setCollabPeers([]);
     };
   }, [activePath, collabCompartment, collabEnabled, collabName, collabServer, collabToken, projectId, t]);
-
-  const handleCreateInvite = useCallback(async () => {
-    if (!projectId) return;
-    setCollabInviteBusy(true);
-    try {
-      const res = await createCollabInvite(projectId);
-      if (!res.ok || !res.token) {
-        throw new Error(t('邀请生成失败'));
-      }
-      const baseInput = normalizeServerUrl(collabServer) || (typeof window === 'undefined' ? '' : window.location.origin);
-      const base = baseInput.replace(/\/$/, '');
-      const link = `${base}/collab?token=${encodeURIComponent(res.token)}`;
-      setCollabInviteLink(link);
-      if (!collabEnabled) {
-        setCollabEnabled(true);
-      }
-      setStatus(t('邀请链接已生成'));
-    } catch (err) {
-      setStatus(t('生成邀请失败: {{error}}', { error: String(err) }));
-    } finally {
-      setCollabInviteBusy(false);
-    }
-  }, [collabServer, projectId, t]);
-
-  const copyInviteLink = useCallback(async () => {
-    if (!collabInviteLink) return;
-    try {
-      await navigator.clipboard.writeText(collabInviteLink);
-      setStatus(t('邀请链接已复制'));
-    } catch (err) {
-      setStatus(t('复制失败: {{error}}', { error: String(err) }));
-    }
-  }, [collabInviteLink, t]);
 
   const showingVersion = versionView && versionView.url === pdfUrl ? versionView : null;
   useEffect(() => {
@@ -2023,6 +2009,9 @@ export default function EditorPage() {
         editorTheme,
         syntaxHighlighting(latexHighlight),
         collabCompartment.of([]),
+        commentMarksField,
+        commentClicks((id) => openThreadRef.current(id)),
+        readOnlyCompartment.of(canWriteRef.current ? [] : [EditorState.readOnly.of(true), EditorView.editable.of(false)]),
         ghostField,
         search(),
         autocompletion({
@@ -2039,7 +2028,8 @@ export default function EditorPage() {
         // the same key to "insert blank line", which is why this one is Prec.highest and handles the key itself.
         Prec.highest(keymap.of([
           { key: 'Mod-Enter', run: () => { void compileRef.current(); return true; } },
-          { key: 'Mod-k', run: () => openAiBarRef.current() }
+          { key: 'Mod-k', run: () => openAiBarRef.current() },
+          { key: 'Mod-Alt-m', run: () => startCommentRef.current() }
         ]))
       ]
     });
@@ -4079,6 +4069,89 @@ export default function EditorPage() {
     if (aiJobRef.current) window.clearInterval(aiJobRef.current.timer); // leaving the editor ends the progress polling
   }, []);
 
+  // People who cannot write (viewers, viewer links) get a read-only editor; the server drops their edits anyway.
+  useEffect(() => {
+    canWriteRef.current = canWrite;
+    cmViewRef.current?.dispatch({
+      effects: readOnlyCompartment.reconfigure(canWrite ? [] : [EditorState.readOnly.of(true), EditorView.editable.of(false)])
+    });
+  }, [canWrite, readOnlyCompartment]);
+
+  const loadComments = useCallback(async () => {
+    if (!projectId) return;
+    try {
+      const res = await listComments(projectId);
+      setCommentThreads(res.threads);
+      setCommentRights({ canComment: res.canComment, canModerate: res.canModerate });
+      setCommentError('');
+    } catch (err) {
+      setCommentError(err instanceof Error ? err.message : String(err));
+    }
+  }, [projectId]);
+
+  useEffect(() => {
+    void loadComments();
+  }, [loadComments, activePath]);
+
+  // While the Comments tool is open, pick up other people's comments without a reload.
+  useEffect(() => {
+    if (!(rightOpen && activeSidebar === 'comments')) return;
+    const timer = window.setInterval(() => void loadComments(), 15_000);
+    return () => window.clearInterval(timer);
+  }, [rightOpen, activeSidebar, loadComments]);
+
+  // Draw the open file's unresolved threads, placed against the live text (it may be ahead of what the server has).
+  // Between placements the highlights follow edits by themselves (commentMarks maps them); placing again shortly after
+  // typing stops also catches text that came back (undo, a collaborator) and a file that has just loaded.
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      const view = cmViewRef.current;
+      if (!view) return;
+      const text = view.state.doc.toString();
+      const marks = commentThreads
+        .filter((th) => th.path === activePath && !th.resolved)
+        .map((th) => ({ id: th.id, at: locate(text, th.quote, th.prefix, th.suffix, th.anchor?.from ?? th.hint.from) }))
+        .filter((m): m is { id: string; at: { from: number; to: number } } => m.at !== null)
+        .map((m) => ({ id: m.id, ...m.at }));
+      view.dispatch({ effects: setCommentMarks.of(marks) });
+    }, 300);
+    return () => window.clearTimeout(timer);
+  }, [commentThreads, activePath, editorValue]);
+
+  const replaceThread = (thread: CommentThreadMeta | null, id: string) =>
+    setCommentThreads((cur) => (thread ? cur.map((th) => (th.id === id ? thread : th)) : cur.filter((th) => th.id !== id)));
+
+  startCommentRef.current = () => {
+    const view = cmViewRef.current;
+    if (!view || !activePath || !commentRights.canComment) return false;
+    const sel = view.state.selection.main;
+    if (sel.empty) {
+      setStatus(t('Select the text you want to comment on first.'));
+      return true;
+    }
+    const text = view.state.doc.toString();
+    const to = Math.min(sel.to, sel.from + 2000);
+    setPendingComment({ path: activePath, from: sel.from, to, quote: text.slice(sel.from, to), ...contextOf(text, sel.from, to) });
+    openRightTool('comments');
+    return true;
+  };
+
+  openThreadRef.current = (id: string) => {
+    setFocusedThread(id);
+    openRightTool('comments');
+  };
+
+  const jumpToThread = async (thread: CommentThreadMeta) => {
+    if (thread.path !== activePath) await openFile(thread.path);
+    const view = cmViewRef.current;
+    if (!view) return;
+    const at = locate(view.state.doc.toString(), thread.quote, thread.prefix, thread.suffix, thread.anchor?.from ?? thread.hint.from);
+    if (!at) return;
+    view.dispatch({ selection: { anchor: at.from, head: at.to }, scrollIntoView: true });
+    view.focus();
+    setFocusedThread(thread.id);
+  };
+
   openAiBarRef.current = () => {
     if (!canWrite || getInviteToken() || !activePath) return false;
     setAiBar((bar) => ({ ...bar, open: true, error: '' }));
@@ -4428,6 +4501,7 @@ export default function EditorPage() {
     { id: 'review', label: t('Review'), icon: 'review' },
     { id: 'search', label: t('论文检索'), icon: 'book-open' },
     { id: 'zotero', label: t('Zotero'), icon: 'quote' },
+    { id: 'comments', label: t('Comments'), icon: 'comment' },
     { id: 'versions', label: t('Versions'), icon: 'history' },
     { id: 'websearch', label: t('Websearch'), icon: 'globe' },
     { id: 'vision', label: t('图像识别'), icon: 'scan' },
@@ -4851,6 +4925,12 @@ export default function EditorPage() {
                   <span className="ed-toolbar-label">{t('Label')}</span>
                 </Button>
                 <span className="ed-toolbar-sep" aria-hidden="true" />
+                {commentRights.canComment && (
+                  <Button variant="ghost" size="sm" icon="comment" onClick={() => startCommentRef.current()} aria-label={t('Comment')}
+                    title={`${t('Comment on the selection')} (${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘⌥' : 'Ctrl+Alt+'}M)`}>
+                    <span className="ed-toolbar-label">{t('Comment')}</span>
+                  </Button>
+                )}
                 {canWrite && !getInviteToken() && (
                   <Button variant="ghost" size="sm" icon="wand" onClick={() => openAiBarRef.current()} aria-label={t('Ask AI')} title={`${t('Ask AI')} (${/Mac|iPhone|iPad/.test(navigator.platform) ? '⌘' : 'Ctrl+'}K)`}>
                     <span className="ed-toolbar-label">{t('Ask AI')}</span>
@@ -5238,30 +5318,14 @@ export default function EditorPage() {
                         {collabEnabled ? t('断开') : t('连接')}
                       </button>
                     </div>
-                    <div className="collab-row">
-                      <button
-                        className="op-btn op-btn-primary"
-                        onClick={() => handleCreateInvite()}
-                        disabled={collabInviteBusy || !projectId}
-                      >
-                        {collabInviteBusy ? t('生成中...') : t('生成邀请链接')}
-                      </button>
-                      <button
-                        className="op-btn op-btn-secondary"
-                        onClick={() => copyInviteLink()}
-                        disabled={!collabInviteLink}
-                      >
-                        {t('复制')}
-                      </button>
-                    </div>
-                    <div className="collab-row">
-                      <input
-                        className="op-input"
-                        readOnly
-                        value={collabInviteLink || ''}
-                        placeholder={t('尚未生成邀请链接')}
+                    {canWrite && !getInviteToken() && projectId && (
+                      <InviteLinks
+                        projectId={projectId}
+                        linkFor={(token) => `${(normalizeServerUrl(collabServer) || window.location.origin).replace(/\/$/, '')}/collab?token=${encodeURIComponent(token)}`}
+                        onCreated={() => setCollabEnabled(true)}
+                        onStatus={setStatus}
                       />
-                    </div>
+                    )}
                     <div className="collab-row">
                       <div className="muted">
                         {activePath ? t('当前文件: {{path}}', { path: activePath }) : t('未选择文件')}
@@ -5642,6 +5706,39 @@ export default function EditorPage() {
                         void refreshTree();
                         if (file === activePath) void openFile(file);
                       }}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : activeSidebar === 'comments' ? (
+              <>
+                <PanelHeader title={t('Comments')} side="right" onCollapse={() => setRightOpen(false)} collapseLabel={t('Collapse panel')} />
+                <div className="ed-panel-body">
+                  <div className="tools-body">
+                    <CommentsPanel
+                      threads={commentThreads}
+                      activePath={activePath}
+                      canComment={commentRights.canComment}
+                      canModerate={commentRights.canModerate}
+                      pending={pendingComment}
+                      focusedId={focusedThread}
+                      error={commentError}
+                      onCreate={async (pending, body) => {
+                        const thread = await createCommentThread(projectId, { ...pending, body });
+                        setCommentThreads((cur) => [...cur, thread]);
+                        setPendingComment(null);
+                        setFocusedThread(thread.id);
+                      }}
+                      onCancelPending={() => setPendingComment(null)}
+                      onReply={async (id, body) => replaceThread(await replyToThread(projectId, id, body), id)}
+                      onResolve={async (id, resolved) => replaceThread(await setThreadResolved(projectId, id, resolved), id)}
+                      onDeleteThread={async (id) => {
+                        await deleteThread(projectId, id);
+                        replaceThread(null, id);
+                      }}
+                      onEditComment={async (id, cid, body) => replaceThread(await editComment(projectId, id, cid, body), id)}
+                      onDeleteComment={async (id, cid) => replaceThread(await deleteComment(projectId, id, cid), id)}
+                      onJump={(thread) => void jumpToThread(thread)}
                     />
                   </div>
                 </div>

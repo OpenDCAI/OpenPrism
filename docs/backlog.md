@@ -51,14 +51,20 @@ Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
 
 ## v0.0.6 - Better account management
 
-- [ ] **Account management is minimal.** No password reset, email verification, change-password screen, or
-      account deletion. Registration is open to anyone who can reach the site (consider invite-only or verification).
-- [ ] **Workspace invitations send no email.** Invited addresses wait until that person registers; the inviter has to
-      tell them. Needs an email provider and a template (and probably an accept/decline step).
-- [ ] **The Commenter role does nothing yet.** It exists in the UI and API (read-only) but there is no commenting feature.
-- [ ] **Project invite links are always "editor".** The API supports `viewer` links; the Collaboration panel only offers
-      editor. Add a role choice (and a way to see/revoke outstanding links).
+Moved to `docs/todo.md` (issues #32-#39). Decided: SMTP via environment variables (Mailpit in development), existing accounts are
+still added to a workspace at once (now with an email), pending invites need a verified address, and commenting is built
+in this release.
 
+## v0.0.6 follow-ups (found while building account management and comments)
+
+- [ ] **No way to change the account's email address** (it would need re-verification and must not orphan invitations).
+- [ ] **Comment notifications.** Nobody is told about a new comment or reply (mail digest, @mentions, an unread count).
+- [ ] **Comment gutter markers** were left out; highlights only. Long files need a way to see where comments are.
+- [ ] **Permanently deleting a project leaves its compile jobs' storage** (`jobs/<id>/` prefixes) until the job rows age
+      out; account deletion inherits this. Delete the prefixes with the project.
+- [ ] **Comments on live text are placed against the stored file on the server**, which can lag the live document by
+      ~800 ms; the editor re-places them against its live text, but the API's `anchor` may briefly disagree.
+- [ ] **Two owners can no longer demote each other** (owners are fixed once made); decide whether an owner may step down.
 
 ## v0.0.7 - Misc
 
@@ -119,6 +125,10 @@ Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
       has an `iat` in the future and SimpleJWT rejects it. Different unrelated tests fail each run and pass alone;
       with `SIMPLE_JWT['LEEWAY'] = 5` the API suite (301) and worker-tex suite (130) pass every time. Add a small
       leeway under the test settings (not production) or fix the clock sync, and note it in CLAUDE.md.
+      Browser runs show the same thing as 2-minute timeouts (a rejected token signs the page out before the editor
+      loads); a v0.0.6 run with a 5 s leeway had none. A second, separate cause of fast browser failures was the auth
+      rate limit (20/min per address) tripped by test registrations; `newAccount` and the accounts spec now wait out
+      429s (Retry-After), which fixed it.
 - [ ] **`design/reference/` is untracked** (and `design/README.md` already links to it).
 
 ## v0.0.10 - Operations

@@ -36,6 +36,28 @@ ZOTERO_API_BASE = env('ZOTERO_API_BASE', 'https://api.zotero.org').rstrip('/')
 if env_bool('DJANGO_BEHIND_TLS_PROXY', False):
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # the ingress terminates TLS
 
+# Email (accounts/mail.py). Links in mails point at APP_BASE_URL, the origin people open the app at.
+APP_BASE_URL = env('APP_BASE_URL', 'http://localhost:5173' if (DEBUG or TESTING) else None, required=True).rstrip('/')
+EMAIL_BACKEND = ('django.core.mail.backends.locmem.EmailBackend' if TESTING
+                 else env('EMAIL_BACKEND', 'django.core.mail.backends.smtp.EmailBackend'))
+EMAIL_HOST = env('EMAIL_HOST', 'localhost')
+EMAIL_PORT = int(env('EMAIL_PORT', '25'))
+EMAIL_HOST_USER = env('EMAIL_HOST_USER', '')
+EMAIL_HOST_PASSWORD = env('EMAIL_HOST_PASSWORD', '')
+EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', False)
+EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
+EMAIL_TIMEOUT = int(env('EMAIL_TIMEOUT', '20'))
+# Accounts. REQUIRE_EMAIL_VERIFICATION: an unverified account may only reach the auth endpoints until it clicks the link.
+# REGISTRATION_MODE: `open` (anyone) or `invite` (only addresses with a pending workspace invitation).
+REQUIRE_EMAIL_VERIFICATION = env_bool('REQUIRE_EMAIL_VERIFICATION', False)
+REGISTRATION_MODE = env('REGISTRATION_MODE', 'open')
+if REGISTRATION_MODE not in ('open', 'invite'):
+    raise ImproperlyConfigured('REGISTRATION_MODE must be "open" or "invite"')
+EMAIL_VERIFY_MAX_AGE = 3 * 24 * 3600  # seconds a verification link stays valid
+PASSWORD_RESET_TIMEOUT = 3600  # seconds a reset link stays valid (it also dies when the password changes)
+MAIL_SEND_INLINE = TESTING  # tests deliver to the locmem outbox at once instead of queueing a Celery task
+DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', 'OpenPrism <no-reply@localhost>')
+
 ALLOWED_HOSTS = [h for h in env('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h]
 
 INSTALLED_APPS = [
@@ -56,6 +78,7 @@ INSTALLED_APPS = [
     'collab',
     'integrations',
     'versions',
+    'comments',
     'common',
 ]
 
@@ -164,6 +187,7 @@ CELERY_TASK_ROUTES = {
     'jobs.tasks.cleanup_old_jobs': {'queue': 'import'},
     'collab.tasks.*': {'queue': 'import'},
     'versions.tasks.*': {'queue': 'import'},
+    'accounts.tasks.*': {'queue': 'import'},  # outgoing mail
 }
 CELERY_BEAT_SCHEDULE = {
     'reap-stale-jobs': {'task': 'jobs.tasks.reap_stale_jobs', 'schedule': 60.0},

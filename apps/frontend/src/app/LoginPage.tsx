@@ -31,7 +31,11 @@ export default function LoginPage() {
       mode={mode}
       onModeChange={(m) => navigate(`${m === 'register' ? '/register' : '/login'}${qs}`, { replace: true })}
       onSubmit={submit}
-      notice={next && /^\/(editor|collab)/.test(next) ? t('Sign in to continue to your project.') : undefined}
+      onForgotPassword={() => navigate('/forgot-password')}
+      initialEmail={params.get('email') || undefined}
+      notice={params.get('invited') && mode === 'register'
+        ? t('Create your account with the invited address. You join the workspace once you confirm it from the email we send.')
+        : next && /^\/(editor|collab)/.test(next) ? t('Sign in to continue to your project.') : undefined}
     />
   );
 }

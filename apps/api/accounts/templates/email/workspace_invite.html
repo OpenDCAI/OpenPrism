@@ -1,0 +1,5 @@
+{% extends "email/base.html" %}
+{% block body %}<p>Hello,</p>
+<p>{{ inviter }} invited you to the workspace <strong>{{ workspace }}</strong> on OpenPrism as {{ role }}.</p>
+{% include "email/_button.html" with label="Create your account" %}
+<p>You join the workspace as soon as you confirm your email address. If you were not expecting this, ignore this message.</p>{% endblock %}

@@ -9,7 +9,7 @@ from django.utils import timezone
 from .models import CollabInvite
 
 PREFIX = 'op2.'
-ROLES = ('editor', 'viewer')
+ROLES = ('editor', 'commenter', 'viewer')  # commenter links read and comment, like viewers who can comment
 MAX_TTL_SECONDS = 7 * 24 * 3600
 
 
@@ -20,7 +20,7 @@ def hash_token(token):
 def create_invite(project, user, role='editor', ttl_seconds=None):
     """Returns (raw_token, invite). The raw token is shown once; only its hash is stored."""
     if role not in ROLES:
-        raise ValueError('role must be editor or viewer')
+        raise ValueError('role must be editor, commenter or viewer')
     ttl = min(int(ttl_seconds or settings.COLLAB_INVITE_TTL_SECONDS), MAX_TTL_SECONDS)
     token = PREFIX + secrets.token_urlsafe(32)
     invite = CollabInvite.objects.create(project=project, token_hash=hash_token(token), role=role, created_by=user,

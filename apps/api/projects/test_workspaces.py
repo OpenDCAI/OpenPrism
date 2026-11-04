@@ -56,17 +56,23 @@ class WorkspaceApiTests(ApiBase):
         self.assertEqual(self.roles()['known@example.com'], 'Commenter')
         self.assertEqual(self.c.post(f'{self.base}/members', {'email': 'known@example.com', 'role': 'editor'}, format='json').status_code, 409)
 
-    def test_invite_unknown_email_becomes_membership_on_registration(self):
+    def test_invite_unknown_email_becomes_membership_once_the_address_is_verified(self):
         res = self.c.post(f'{self.base}/members', {'email': 'new@university.edu', 'role': 'editor'}, format='json')
         pending = [m for m in res.data['workspace']['members'] if m.get('invited')]
-        self.assertEqual(pending, [{'userId': 'invite-new@university.edu', 'role': 'Editor', 'invited': True}])
+        self.assertEqual([{k: m[k] for k in ('userId', 'role', 'invited', 'sendFailed')} for m in pending],
+                         [{'userId': 'invite-new@university.edu', 'role': 'Editor', 'invited': True, 'sendFailed': False}])
+        self.assertTrue(pending[0]['invitedAt'].endswith('Z') and pending[0]['lastSentAt'].endswith('Z'))
         self.assertEqual(res.data['workspace']['users']['invite-new@university.edu']['email'], 'new@university.edu')
         self.assertEqual(self.c.post(f'{self.base}/members', {'email': 'new@university.edu', 'role': 'viewer'}, format='json').status_code, 409)
         newcomer = APIClient()
         reg = newcomer.post('/api/auth/register', {'email': 'New@University.edu', 'password': 'correct-horse-battery'}, format='json')
         newcomer.credentials(HTTP_AUTHORIZATION=f"Bearer {reg.data['access']}")
-        names = sorted(w['name'] for w in newcomer.get('/api/workspaces').data['workspaces'])
-        self.assertEqual(names, ['Lab', 'Personal'])                                # joined Lab on sign-up
+        names = lambda: sorted(w['name'] for w in newcomer.get('/api/workspaces').data['workspaces'])
+        self.assertEqual(names(), ['Personal'])  # registering alone proves nothing about the address
+        from accounts.verification import make_token
+        from accounts.models import User
+        self.assertTrue(newcomer.post('/api/auth/verify-email', {'token': make_token(User.objects.get(email='new@university.edu'))}, format='json').data['ok'])
+        self.assertEqual(names(), ['Lab', 'Personal'])                                # joined Lab once verified
         self.assertEqual(self.roles()['new@university.edu'], 'Editor')
         self.assertFalse(WorkspaceInvite.objects.exists())
 
@@ -79,12 +85,13 @@ class WorkspaceApiTests(ApiBase):
         mid = str(user.id)
         self.assertEqual(self.c.patch(f'{self.base}/members/{mid}', {'role': 'Viewer'}, format='json').status_code, 200)
         self.assertEqual(self.roles()['m@example.com'], 'Viewer')
-        self.assertEqual(self.c.patch(f'{self.base}/members/{mid}', {'role': 'owner'}, format='json').status_code, 400)
+        self.assertEqual(self.c.patch(f'{self.base}/members/{mid}', {'role': 'superuser'}, format='json').status_code, 400)
         self.assertEqual(self.c.patch(f'{self.base}/members/{self.user.id}', {'role': 'viewer'}, format='json').status_code, 403)  # owner
         self.assertEqual(self.c.delete(f'{self.base}/members/{self.user.id}').status_code, 403)
         self.assertTrue(self.c.delete(f'{self.base}/members/{mid}').data['ok'])
         self.assertNotIn('m@example.com', self.roles())
         self.c.post(f'{self.base}/members', {'email': 'p@example.com', 'role': 'viewer'}, format='json')
+        self.assertEqual(self.c.patch(f'{self.base}/members/invite-p@example.com', {'role': 'owner'}, format='json').status_code, 400)  # members only
         self.assertTrue(self.c.patch(f'{self.base}/members/invite-p@example.com', {'role': 'editor'}, format='json').data['ok'])
         self.assertEqual(self.roles()['p@example.com'], 'Editor')
         self.assertTrue(self.c.delete(f'{self.base}/members/invite-p@example.com').data['ok'])
@@ -137,3 +144,56 @@ class WorkspaceApiTests(ApiBase):
         self.assertEqual(Project.objects.get(pk=pid).workspace_id.hex, self.ws_id.replace('-', ''))
         stranger = Workspace.objects.create(name='Stranger').id
         self.assertEqual(self.c.post('/api/projects', {'name': 'x', 'workspaceId': str(stranger)}, format='json').status_code, 404)
+
+
+class InvitationMailTests(ApiBase):
+    def setUp(self):
+        super().setUp()
+        self.ws_id = self.c.post('/api/workspaces', {'name': 'Lab'}, format='json').data['workspace']['id']
+        self.base = f'/api/workspaces/{self.ws_id}'
+
+    def test_new_address_gets_a_sign_up_link_with_the_address_filled_in(self):
+        from django.core import mail as outbox
+        self.c.post(f'{self.base}/members', {'email': 'new@uni.edu', 'role': 'viewer'}, format='json')
+        msg = outbox.outbox[-1]
+        self.assertEqual(msg.to, ['new@uni.edu'])
+        self.assertIn('invited you to Lab', msg.subject)
+        self.assertIn('http://localhost:5173/register?email=new%40uni.edu&invited=1', msg.body)
+        self.assertIn('as viewer', msg.body)
+
+    def test_existing_account_is_added_and_told(self):
+        from django.core import mail as outbox
+        make_user('known@uni.edu')
+        outbox.outbox.clear()
+        self.c.post(f'{self.base}/members', {'email': 'known@uni.edu', 'role': 'editor'}, format='json')
+        self.assertEqual(outbox.outbox[-1].to, ['known@uni.edu'])
+        self.assertIn('added you to Lab', outbox.outbox[-1].subject)
+
+    def test_resend_is_throttled_and_admin_only(self):
+        from datetime import timedelta
+        from django.core import mail as outbox
+        from django.utils import timezone
+        self.c.post(f'{self.base}/members', {'email': 'new@uni.edu', 'role': 'editor'}, format='json')
+        sent = len(outbox.outbox)
+        url = f'{self.base}/members/invite-new@uni.edu/resend'
+        self.assertEqual(self.c.post(url).status_code, 429)
+        WorkspaceInvite.objects.update(last_sent_at=timezone.now() - timedelta(minutes=11))
+        self.assertTrue(self.c.post(url).data['ok'])
+        self.assertEqual(len(outbox.outbox), sent + 1)
+        editor = make_user('ed@uni.edu')
+        Membership.objects.create(workspace_id=self.ws_id, user=editor, role=Membership.EDITOR)
+        self.assertEqual(client_for(editor).post(url).status_code, 403)
+        self.assertEqual(self.c.post(f'{self.base}/members/invite-nobody@uni.edu/resend').status_code, 404)
+
+    def test_a_mail_that_cannot_be_delivered_is_flagged(self):
+        import smtplib
+        from unittest import mock
+        from accounts.tasks import send_email
+        with mock.patch('accounts.mail.deliver', side_effect=smtplib.SMTPServerDisconnected('down')), \
+                mock.patch.object(send_email, 'max_retries', 0), self.assertLogs('accounts.tasks', 'WARNING'):
+            res = self.c.post(f'{self.base}/members', {'email': 'new@uni.edu', 'role': 'editor'}, format='json')
+        self.assertEqual(res.status_code, 201)  # the invitation stands even though its mail did not go out
+        self.assertTrue(WorkspaceInvite.objects.get(email='new@uni.edu').send_failed)
+        WorkspaceInvite.objects.update(last_sent_at=None)
+        self.c.post(f'{self.base}/members/invite-new@uni.edu/resend')  # works this time
+        self.assertFalse(WorkspaceInvite.objects.get(email='new@uni.edu').send_failed)

@@ -202,3 +202,22 @@
   .lp-hero { padding-top: var(--sp-8); }
   .lp-card { padding: var(--sp-8) var(--sp-4); }
 }
+
+/* ── Account settings (/account) ── */
+.account-main { overflow: auto; width: min(640px, 100%); margin: 0 auto; padding: var(--sp-8) var(--sp-4) var(--sp-12); display: grid; gap: var(--sp-6); align-content: start; }
+.account-main h1 { margin: 0; font-size: var(--fs-2xl); font-weight: var(--fw-semibold); }
+.account-who { margin: calc(-1 * var(--sp-4)) 0 0; color: var(--text-2); }
+.account-section { display: grid; gap: var(--sp-4); padding: var(--sp-6); border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); }
+.account-section h2 { margin: 0; font-size: var(--fs-lg); font-weight: var(--fw-semibold); }
+.account-section p { margin: 0; color: var(--text-2); }
+.account-form { display: grid; gap: var(--sp-4); }
+.account-ok { color: var(--success); }
+.account-danger { border-color: var(--danger); }
+.account-blocked { margin: 0; padding-left: var(--sp-5); color: var(--text); }
+
+/* ── Unverified email reminder (VerifyEmail.tsx) ── */
+.verify-banner { position: fixed; z-index: 700; left: 50%; bottom: var(--sp-4); transform: translateX(-50%); width: min(640px, calc(100% - var(--sp-8)));
+  display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md);
+  background: var(--surface); box-shadow: var(--shadow-2); color: var(--text); font-size: var(--fs-sm); }
+.verify-banner > span { flex: 1; min-width: 0; }
+.home-invite-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }

@@ -51,6 +51,18 @@ services:
       timeout: 3s
       retries: 10
 
+  # Development mail catcher: SMTP on 1025, web UI and API on http://localhost:8025. Nothing leaves the machine.
+  mailpit:
+    image: axllent/mailpit:v1.21.8
+    ports:
+      - "1025:1025"
+      - "8025:8025"
+    healthcheck:
+      test: ["CMD", "/mailpit", "readyz"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
   api:
     build: {context: ./apps/api, target: api}
     command: >
@@ -72,6 +84,14 @@ services:
       S3_BUCKET: ${S3_BUCKET:-openprism}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-GK000000000000000000000001}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-0000000000000000000000000000000000000000000000000000000000000001}
+      APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173} # links in emails
+      EMAIL_HOST: ${EMAIL_HOST:-mailpit} # dev: every mail lands in Mailpit, read it at http://localhost:8025
+      EMAIL_PORT: ${EMAIL_PORT:-1025}
+      EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}
+      EMAIL_HOST_PASSWORD: ${EMAIL_HOST_PASSWORD:-}
+      EMAIL_USE_TLS: ${EMAIL_USE_TLS:-0}
+      EMAIL_USE_SSL: ${EMAIL_USE_SSL:-0}
+      DEFAULT_FROM_EMAIL: ${DEFAULT_FROM_EMAIL:-OpenPrism <no-reply@openprism.local>}
     ports:
       - "8000:8000"
     volumes:

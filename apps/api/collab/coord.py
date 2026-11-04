@@ -3,6 +3,7 @@ import hashlib
 import time
 
 KIND_UPDATE, KIND_AWARENESS, KIND_FLUSH, KIND_SYNC, KIND_EVICT = b'U', b'A', b'F', b'S', b'E'
+KIND_REVOKE = b'R'  # on a project channel: payload is a revoked invite's id; its live connections are closed
 ORIGIN_LEN = 16
 HOLDER_FRESH_SECONDS = 90
 
@@ -17,6 +18,11 @@ def _h(key):
 
 def channel(key):
     return f'collab:room:{_h(key)}'
+
+
+def project_channel(project_id):
+    """Every room of a project also listens here (messages about the whole project, e.g. a revoked invite link)."""
+    return f'collab:project:{project_id}'
 
 
 def holders_key(key):

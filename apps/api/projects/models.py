@@ -20,7 +20,8 @@ class Workspace(models.Model):
 class Membership(models.Model):
     OWNER, ADMIN, EDITOR, COMMENTER, VIEWER = 'owner', 'admin', 'editor', 'commenter', 'viewer'
     ROLES = [(OWNER, 'Owner'), (ADMIN, 'Admin'), (EDITOR, 'Editor'), (COMMENTER, 'Commenter'), (VIEWER, 'Viewer')]
-    WRITE_ROLES = (OWNER, ADMIN, EDITOR)  # commenters (no commenting feature yet) and viewers are read-only
+    WRITE_ROLES = (OWNER, ADMIN, EDITOR)  # commenters and viewers cannot change files
+    COMMENT_ROLES = WRITE_ROLES + (COMMENTER,)  # may write comments (viewers only read them)
     ADMIN_ROLES = (OWNER, ADMIN)
     ASSIGNABLE = (ADMIN, EDITOR, COMMENTER, VIEWER)  # ownership is not handed out through invitations
 
@@ -39,6 +40,8 @@ class WorkspaceInvite(models.Model):
     role = models.CharField(max_length=10, choices=Membership.ROLES, default=Membership.EDITOR)
     invited_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
+    last_sent_at = models.DateTimeField(null=True, blank=True)  # when the invitation mail was last queued
+    send_failed = models.BooleanField(default=False)  # the last mail could not be delivered after every retry
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['workspace', 'email'], name='uniq_workspace_invite')]

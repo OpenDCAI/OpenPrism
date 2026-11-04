@@ -34,6 +34,33 @@ def create_invite(request, pk):
     return Response({'ok': True, 'token': token, 'role': invite.role, 'expiresAt': invite.expires_at.isoformat()})
 
 
+def invite_json(invite):
+    by = invite.created_by
+    return {'id': str(invite.id), 'role': invite.role, 'createdBy': (by.name or by.email) if by else None,
+            'createdAt': invite.created_at.isoformat().replace('+00:00', 'Z'),
+            'expiresAt': invite.expires_at.isoformat().replace('+00:00', 'Z')}
+
+
+@api_view(['GET'])
+def list_invites(request, pk):
+    """Outstanding (unexpired) invite links of a project. Never the token: it is shown once, at creation."""
+    project = get_project(request, pk, write=True)
+    invites = project.invites.filter(expires_at__gt=timezone.now()).select_related('created_by').order_by('-created_at')
+    return Response({'ok': True, 'invites': [invite_json(i) for i in invites]})
+
+
+@api_view(['DELETE'])
+def revoke_invite(request, pk, invite_id):
+    """Revoke a link: its REST requests fail from now on, and its live connections are closed on every replica."""
+    project = get_project(request, pk, write=True)
+    deleted, _ = project.invites.filter(pk=invite_id).delete()
+    if not deleted:
+        return Response({'ok': False, 'error': 'Invite link not found.'}, status=404)
+    _redis().publish(coord.project_channel(project.id),
+                     coord.pack(coord.KIND_REVOKE, b'\x00' * coord.ORIGIN_LEN, str(invite_id).encode()))
+    return Response({'ok': True})
+
+
 @api_view(['GET'])
 @authentication_classes([])
 @permission_classes([AllowAny])

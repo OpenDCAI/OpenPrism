@@ -227,6 +227,8 @@ function MembersSection({
   }, [w.id]);
 
   const roleOptions: SelectOption<WorkspaceRole>[] = ASSIGNABLE_ROLES.map((r) => ({ value: r, label: t(r) }));
+  // Owners may also make a member an owner (ownership is shared; owners cannot be demoted afterwards).
+  const memberRoleOptions: SelectOption<WorkspaceRole>[] = ws.myRole() === 'Owner' ? [{ value: 'Owner', label: t('Owner') }, ...roleOptions] : roleOptions;
 
   const validateEmail = (value: string, required: boolean): string | null => {
     const v = value.trim();
@@ -336,14 +338,31 @@ function MembersSection({
                       <Select<WorkspaceRole>
                         size="sm"
                         value={m.role}
-                        options={roleOptions}
+                        options={m.invited ? roleOptions : memberRoleOptions}
                         ariaLabel={t('Role for {{name}}', { name: u.name })}
-                        onChange={(r) => ws.setMemberRole(m.userId, r).catch((err) => onStatus(err.message))}
+                        onChange={(r) => r === 'Owner'
+                          ? onConfirm({
+                              title: t('Make {{name}} an owner?', { name: u.name }),
+                              message: t('Owners have full control of the workspace, and an owner cannot be changed back to another role. You stay an owner too.'),
+                              confirmLabel: t('Make owner'),
+                              onConfirm: () => ws.setMemberRole(m.userId, r).catch((err) => onStatus(err.message))
+                            })
+                          : ws.setMemberRole(m.userId, r).catch((err) => onStatus(err.message))}
                       />
                     )}
                   </td>
                   <td>
-                    {m.invited ? <Badge tone="info">{t('Invited')}</Badge> : <span className="home-muted">{isMe ? t('Now') : t('Not tracked')}</span>}
+                    {m.invited ? (
+                      <span className="home-invite-status">
+                        {m.sendFailed ? <Badge tone="danger">{t('Email not sent')}</Badge> : <Badge tone="info">{t('Invited')}</Badge>}
+                        {m.lastSentAt && <span className="home-muted">{t('Sent {{when}}', { when: new Date(m.lastSentAt).toLocaleString() })}</span>}
+                        {admin && (
+                          <Button size="sm" variant="ghost" onClick={() => ws.resendInvite(m.userId)
+                            .then(() => onStatus(t('Invitation sent again to {{email}}', { email: u.email })))
+                            .catch((err) => onStatus(err.message))}>{t('Resend')}</Button>
+                        )}
+                      </span>
+                    ) : <span className="home-muted">{isMe ? t('Now') : t('Not tracked')}</span>}
                   </td>
                   <td className="home-cell-end">
                     {!locked && (

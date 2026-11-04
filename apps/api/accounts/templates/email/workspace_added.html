@@ -1,0 +1,5 @@
+{% extends "email/base.html" %}
+{% block body %}<p>Hello,</p>
+<p>{{ inviter }} added you to the workspace <strong>{{ workspace }}</strong> on OpenPrism as {{ role }}. It is in the workspace switcher.</p>
+{% include "email/_button.html" with label="Open OpenPrism" %}
+<p>If you do not want to be in it, open the workspace's Members page and choose Leave workspace.</p>{% endblock %}

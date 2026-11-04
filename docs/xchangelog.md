@@ -86,3 +86,26 @@
       section, list-to-table on ACL, NeurIPS, ICML and CVPR with a replayed model, prompt and patch checks, and a real
       compile of the edited project in `worker-tex`. Also run against the real model from `.env` (gpt-6-luna): author and
       related-work on all four templates, 8 of 8 gave small diffs (4 to 15 changed lines) that compile, 5 to 12 s each.
+
+## v0.0.6 - Better account management
+
+- [x] #32 **Email delivery.** SMTP from `EMAIL_*`/`APP_BASE_URL` (required outside debug), Mailpit in compose (:8025),
+      templated text+HTML mail sent by a retried Celery task that never logs bodies, `send_test_email`, k8s config and an
+      SMTP-only egress policy for `worker-ai`.
+- [x] #33 **Password reset and change.** Reset link by mail (same answer for unknown addresses, single use, 1 h), change
+      password on the new Account settings page; any change revokes every refresh token and mails a notice. The sign-in
+      form no longer flags empty fields on blur (it shifted the form under the pointer).
+- [x] #34 **Delete account.** Password required; personal and solo team workspaces go with their projects and storage;
+      refused (with the list) while the user alone owns a shared workspace. New: owners can make a member an owner.
+      Dialogs are now named by their title.
+- [x] #35 **Email verification and registration modes.** Signed 3-day link; pending workspace invitations are accepted
+      only once the address is verified (registering alone used to be enough); optional `REQUIRE_EMAIL_VERIFICATION`
+      gate (API, websocket, UI) and `REGISTRATION_MODE=invite`. Existing accounts are marked verified.
+- [x] #36 **Invitation mail.** Sign-up link with the address filled in for new addresses, an "added you" mail for
+      existing accounts, sent time / "Email not sent" / Resend (10 min) in Members; workspaces reload on verification.
+- [x] #37 **Invite-link roles.** Edit / comment / view links with a lifetime, list and revoke; revoking closes that link's
+      live connections on every replica (per-project collab channel). Read-only editor for people who cannot write.
+- [x] #38 **Comments API.** Threads anchored by quote + context (orphaned, not lost, when the text goes), replies,
+      resolve/reopen, own edit/delete; commenters and editor/commenter links comment, viewers read; threads follow renames.
+- [x] #39 **Comments in the editor.** Comment button / Ctrl+Alt+M, highlights that follow edits and open their thread,
+      Comments tool (file or project, resolved collapsed, orphaned listed) refreshed every 15 s.

@@ -21,7 +21,20 @@ async function api<T>(path: string, token: string | null, method = 'GET', body?:
 /** A fresh account (so tests never depend on each other's data). */
 export async function newAccount(prefix = 'e2e'): Promise<Session> {
   const email = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
-  return api<Session>('/api/auth/register', null, 'POST', { email, password: 'correct-horse-battery' });
+  // Registration is rate limited (AUTH_RATE_LIMIT, 20/min per address) and a full run creates far more accounts than
+  // that: wait as long as the server asks instead of failing the test.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const res = await fetch(baseUrl() + '/api/auth/register', {
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'correct-horse-battery' })
+    });
+    if (res.status !== 429) {
+      if (!res.ok) throw new Error(`POST /api/auth/register -> ${res.status}: ${await res.text()}`);
+      return res.json() as Promise<Session>;
+    }
+    const wait = Number(res.headers.get('retry-after') || '10');
+    await new Promise((r) => setTimeout(r, Math.min(wait, 60) * 1000 + 250));
+  }
+  throw new Error('registration stayed rate limited');
 }
 
 export async function newProject(session: Session, name: string, files: Record<string, string> = {}, template?: string): Promise<string> {
@@ -33,8 +46,10 @@ export async function newProject(session: Session, name: string, files: Record<s
 }
 
 /** Start the page signed in as `session` (the app reads its tokens from localStorage). */
-export async function signIn(page: Page, session: Session) {
+export async function signIn(page: Page, session: Session, opts: { verifyBanner?: boolean } = {}) {
   await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), ['openprism-auth-v1', JSON.stringify(session)]);
+  // Test accounts never open their verification mail; keep the reminder from covering the bottom of the screen.
+  if (!opts.verifyBanner) await page.addInitScript(() => window.sessionStorage.setItem('openprism-verify-banner', 'hidden'));
 }
 
 /** A multi-page document: one section per page, each with a few paragraphs, so every page has a known heading. */
@@ -65,4 +80,28 @@ export async function setWorkspaceLlm(session: Session, workspaceId: string, bod
 /** Open the app with `workspaceId` as the active workspace for this account. */
 export async function setActiveWorkspace(page: Page, session: Session, workspaceId: string) {
   await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), [`openprism-active-workspace:${session.user.id}`, workspaceId]);
+}
+
+const mailpit = () => process.env.E2E_MAILPIT_URL || 'http://localhost:8025';
+
+/** The newest mail to `to` in Mailpit (the dev mail catcher), waiting for it to arrive. `after` skips older ones. */
+export async function latestMail(to: string, opts: { subject?: RegExp; timeoutMs?: number } = {}): Promise<{ subject: string; text: string; html: string }> {
+  const deadline = Date.now() + (opts.timeoutMs ?? 20_000);
+  while (Date.now() < deadline) {
+    const res = await fetch(`${mailpit()}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`);
+    const list = await res.json() as { messages: { ID: string; Subject: string }[] };
+    const hit = list.messages.find((m) => !opts.subject || opts.subject.test(m.Subject));
+    if (hit) {
+      const msg = await (await fetch(`${mailpit()}/api/v1/message/${hit.ID}`)).json() as { Subject: string; Text: string; HTML: string };
+      return { subject: msg.Subject, text: msg.Text, html: msg.HTML };
+    }
+    await new Promise((r) => setTimeout(r, 500));
+  }
+  throw new Error(`no mail to ${to}${opts.subject ? ` matching ${opts.subject}` : ''}`);
+}
+
+/** The first link into the app found in a mail's text, as a path (so it works on :5173 and :8080 alike). */
+export function mailLink(text: string): string {
+  const url = new URL(text.match(/https?:\/\/\S+/)![0]);
+  return url.pathname + url.search;
 }

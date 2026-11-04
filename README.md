@@ -83,6 +83,7 @@ There is no seeded user: click **Create account** in the UI to register. Registe
 | 8080 | nginx `web` image |
 | 8000 | Django API |
 | 5432 / 6379 / 3900 | Postgres / Redis / Garage S3 |
+| 8025 | Mailpit: every mail the app sends in development (password reset, verification, invitations) |
 
 ### Health checks
 
@@ -151,6 +152,14 @@ Every successful compile saves a **version** of the project (the files as compil
 ### Ask AI (in-place editing)
 
 Press **Ctrl/Cmd+K** in the editor (or **Ask AI** in the toolbar or the Insert menu), type what you want ("add an author", "create a section on related work", "turn this list into a table") and press Enter. The AI sees your caret, your selection, the active file and the project's main file, and reads other files as needed. It never changes anything by itself: the proposal opens in the Diff preview, where you apply or discard each file. Applying is one Undo step. If the file changed while the AI worked, your edits are kept when they do not overlap the proposal; otherwise the proposal is marked stale and you ask again. Cancel stops a running request; Up/Down in an empty bar recalls earlier requests. Available to people who can edit (not viewers or invite-link guests), limited to `AI_EDIT_RATE_PER_MINUTE` (default 20) requests per user per minute. It uses the workspace AI provider, your browser settings, or the server default, in that order.
+
+### Comments
+
+Select text in the editor and press **Comment** (or Ctrl/Cmd+Alt+M) to start a discussion on it. Commented text is highlighted; click it to open the thread in the **Comments** tool, where people reply, resolve and reopen. Comments stay attached to their words while the file changes; if the words are deleted the thread is kept and marked "Text no longer found". Owners, admins, editors and **commenters** can comment (commenters cannot change files); viewers read. Invite links can be "Can edit", "Can comment" or "Can view".
+
+### Accounts and email
+
+New accounts get an email to confirm their address (in development every mail lands in Mailpit at http://localhost:8025). Workspace invitations sent to an address are accepted once that address is confirmed. **Forgot password?** on the sign-in screen mails a reset link; **Account settings** in the account menu changes your password or deletes your account. Operators can require confirmation before anything else works (`REQUIRE_EMAIL_VERIFICATION=1`) and limit sign-up to invited addresses (`REGISTRATION_MODE=invite`). Configure a real mail server with the `EMAIL_*` variables and `APP_BASE_URL` (see `.env.sample`); `docker compose exec api python manage.py send_test_email you@example.com` checks it.
 
 ### Zotero
 

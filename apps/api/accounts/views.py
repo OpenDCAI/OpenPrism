@@ -30,6 +30,7 @@ class RegisterView(APIView):
 
 
 class MeView(APIView):
+    allow_unverified = True  # who am I / rename / delete account work before the address is verified
     def get(self, request):
         return Response({'ok': True, 'user': UserSerializer(request.user).data})
 
@@ -41,9 +42,24 @@ class MeView(APIView):
         request.user.save(update_fields=['name'])
         return Response({'ok': True, 'user': UserSerializer(request.user).data})
 
+    def delete(self, request):
+        """Delete the signed-in account (password required). See accounts/deletion.py for what goes and what blocks."""
+        from .deletion import blocking_workspaces, delete_account
+        user = request.user
+        if not user.check_password(str((request.data or {}).get('password') or '')):
+            return Response({'ok': False, 'error': 'Your password is not correct.'}, status=400)
+        blocked = blocking_workspaces(user)
+        if blocked:
+            return Response({'ok': False, 'workspaces': [{'id': str(w.id), 'name': w.name} for w in blocked],
+                             'error': 'You are the only owner of workspaces other people use. Make one of them an owner first.'},
+                            status=409)
+        delete_account(user)
+        return Response({'ok': True})
+
 
 class LogoutView(APIView):
     """Revoke a refresh token (the access token simply expires)."""
+    allow_unverified = True
     permission_classes = [AllowAny]
     throttle_scope = 'auth'
 

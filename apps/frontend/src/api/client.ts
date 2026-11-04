@@ -232,11 +232,31 @@ export async function uploadFiles(projectId: string, files: File[], basePath?: s
   return res.json() as Promise<{ ok: boolean; files?: string[] }>;
 }
 
-export function createCollabInvite(id: string, role: 'editor' | 'viewer' = 'editor') {
+export type InviteRole = 'editor' | 'commenter' | 'viewer';
+
+export function createCollabInvite(id: string, role: InviteRole = 'editor', ttlSeconds?: number) {
   return request<{ ok: boolean; token: string; role?: string; expiresAt?: string }>(`/api/projects/${id}/collab/invite`, {
     method: 'POST',
-    body: JSON.stringify({ role })
+    body: JSON.stringify({ role, ...(ttlSeconds ? { ttlSeconds } : {}) })
   });
+}
+
+export interface CollabInviteMeta {
+  id: string;
+  role: string;
+  createdBy: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+/** Outstanding invite links (never their tokens). Write access only. */
+export async function listCollabInvites(id: string) {
+  return (await request<{ invites: CollabInviteMeta[] }>(`/api/projects/${id}/collab/invites`)).invites;
+}
+
+/** Revoke an invite link: it stops working and anyone connected with it is disconnected. */
+export async function revokeCollabInvite(id: string, inviteId: string) {
+  await request<{ ok: boolean }>(`/api/projects/${id}/collab/invites/${encodeURIComponent(inviteId)}`, { method: 'DELETE' });
 }
 
 export function resolveCollabToken(token: string) {
@@ -648,6 +668,10 @@ export interface Account {
   id: string;
   email: string;
   name: string;
+  /** False until the link in the verification mail is opened. */
+  emailVerified?: boolean;
+  /** The server requires a verified address before anything else works (REQUIRE_EMAIL_VERIFICATION). */
+  verificationRequired?: boolean;
 }
 
 async function authCall<T>(url: string, body: unknown): Promise<T> {
@@ -677,6 +701,50 @@ export async function updateProfile(name: string): Promise<Account> {
   return (await request<{ user: Account }>('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ name }) })).user;
 }
 
+/** Confirm the email address with the token from the verification mail (works signed in or not). */
+export async function verifyEmail(token: string) {
+  return authCall<{ ok: boolean; email: string }>('/api/auth/verify-email', { token });
+}
+
+/** Send the verification mail again. */
+export async function resendVerification() {
+  return request<{ ok: boolean; alreadyVerified?: boolean }>('/api/auth/verify-email/resend', { method: 'POST' });
+}
+
+/** Ask for a password-reset mail. The answer is the same whether or not the address has an account. */
+export async function forgotPassword(email: string) {
+  await authCall<{ ok: boolean }>('/api/auth/password/forgot', { email });
+}
+
+/** Set a new password from the reset link's uid and token. */
+export async function resetPassword(uid: string, token: string, password: string) {
+  await authCall<{ ok: boolean }>('/api/auth/password/reset', { uid, token, password });
+}
+
+/** Change the password while signed in. Other browsers are signed out; this one gets fresh tokens. */
+export async function changePassword(current: string, password: string) {
+  const res = await request<{ access: string; refresh: string }>('/api/auth/password/change', { method: 'POST', body: JSON.stringify({ current, password }) });
+  setSession({ access: res.access, refresh: res.refresh });
+}
+
+export type DeleteAccountResult =
+  | { ok: true }
+  | { ok: false; error: string; workspaces?: { id: string; name: string }[] };
+
+/** Delete the signed-in account. A 409 lists the shared workspaces the user alone owns (returned, not thrown). */
+export async function deleteAccount(password: string): Promise<DeleteAccountResult> {
+  const res = await apiFetch(`${API_BASE}/api/auth/me`, {
+    method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ password })
+  });
+  const body = await res.json().catch(() => ({ ok: false, error: `HTTP ${res.status}` }));
+  return res.ok ? { ok: true } : { ok: false, error: body.error || `HTTP ${res.status}`, workspaces: body.workspaces };
+}
+
+/** Forget this browser's tokens without telling the server (used after the account itself is gone). */
+export function clearLocalSession() {
+  clearSession();
+}
+
 export async function logout() {
   const session = getSession();
   clearSession(); // sign out locally first: it must work even if the server is unreachable
@@ -698,7 +766,7 @@ export interface WorkspaceDto {
   name: string;
   kind: 'Personal' | 'Team';
   color: string;
-  members: { userId: string; role: WorkspaceRoleName; invited?: boolean }[];
+  members: { userId: string; role: WorkspaceRoleName; invited?: boolean; invitedAt?: string | null; lastSentAt?: string | null; sendFailed?: boolean }[];
   users: Record<string, { id: string; name: string; email: string; color: string }>;
 }
 
@@ -728,6 +796,10 @@ export async function setMemberRoleApi(id: string, userId: string, role: Workspa
 
 export async function removeMemberApi(id: string, userId: string) {
   return (await request<{ workspace: WorkspaceDto }>(`/api/workspaces/${id}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' })).workspace;
+}
+
+export async function resendInviteApi(id: string, userId: string) {
+  return (await request<{ workspace: WorkspaceDto }>(`/api/workspaces/${id}/members/${encodeURIComponent(userId)}/resend`, { method: 'POST' })).workspace;
 }
 
 export function moveProjectApi(projectId: string, workspaceId: string) {
@@ -935,4 +1007,73 @@ export async function restoreVersion(projectId: string, versionId: string): Prom
   });
   if (res.ok || res.status === 409) return (await res.json()) as RestoreVersionResult;
   throw new Error(await errorMessage(res));
+}
+
+// ─── Comments ───
+
+export interface CommentMeta {
+  id: string;
+  author: string;
+  guest: boolean;
+  body: string;
+  createdAt: string;
+  editedAt: string | null;
+  mine: boolean;
+}
+
+export interface CommentThreadMeta {
+  id: string;
+  path: string;
+  quote: string;
+  prefix: string;
+  suffix: string;
+  /** Where the quote is in the stored file now; null when it can no longer be found (orphaned). */
+  anchor: { from: number; to: number } | null;
+  orphaned: boolean;
+  /** The offsets the thread had when it was last placed. */
+  hint: { from: number; to: number };
+  resolved: boolean;
+  resolvedBy: string | null;
+  resolvedAt: string | null;
+  createdAt: string;
+  comments: CommentMeta[];
+}
+
+export interface CommentList {
+  canComment: boolean;
+  canModerate: boolean;
+  threads: CommentThreadMeta[];
+}
+
+const commentsBase = (projectId: string) => `/api/projects/${projectId}/comments`;
+
+export function listComments(projectId: string) {
+  return request<CommentList & { ok: boolean }>(commentsBase(projectId));
+}
+
+export async function createCommentThread(projectId: string, body: {
+  path: string; from: number; to: number; quote: string; prefix: string; suffix: string; body: string;
+}) {
+  return (await request<{ thread: CommentThreadMeta }>(commentsBase(projectId), { method: 'POST', body: JSON.stringify(body) })).thread;
+}
+
+export async function replyToThread(projectId: string, threadId: string, body: string) {
+  return (await request<{ thread: CommentThreadMeta }>(`${commentsBase(projectId)}/${threadId}/replies`, { method: 'POST', body: JSON.stringify({ body }) })).thread;
+}
+
+export async function setThreadResolved(projectId: string, threadId: string, resolved: boolean) {
+  return (await request<{ thread: CommentThreadMeta }>(`${commentsBase(projectId)}/${threadId}`, { method: 'PATCH', body: JSON.stringify({ resolved }) })).thread;
+}
+
+export async function deleteThread(projectId: string, threadId: string) {
+  await request<{ ok: boolean }>(`${commentsBase(projectId)}/${threadId}`, { method: 'DELETE' });
+}
+
+export async function editComment(projectId: string, threadId: string, commentId: string, body: string) {
+  return (await request<{ thread: CommentThreadMeta }>(`${commentsBase(projectId)}/${threadId}/replies/${commentId}`, { method: 'PATCH', body: JSON.stringify({ body }) })).thread;
+}
+
+/** Returns the thread, or null when that was its last comment (the thread is gone). */
+export async function deleteComment(projectId: string, threadId: string, commentId: string) {
+  return (await request<{ thread: CommentThreadMeta | null }>(`${commentsBase(projectId)}/${threadId}/replies/${commentId}`, { method: 'DELETE' })).thread;
 }
