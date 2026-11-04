@@ -17,11 +17,13 @@ interface VersionsPanelProps {
   onDeleted: (versionId: string) => void;
   /** Make the project's files this version's. The editor leaves its live rooms first and reloads afterwards. */
   onRestore: (version: ProjectVersionMeta) => Promise<RestoreVersionResult>;
+  /** Put one file back from a version (the Compare dialog's "Restore this file"). */
+  onRestoreFile: (version: ProjectVersionMeta, path: string) => Promise<RestoreVersionResult>;
 }
 
 const PAGE = 30;
 
-export default function VersionsPanel({ projectId, refreshKey, viewingId, onViewPdf, onDeleted, onRestore }: VersionsPanelProps) {
+export default function VersionsPanel({ projectId, refreshKey, viewingId, onViewPdf, onDeleted, onRestore, onRestoreFile }: VersionsPanelProps) {
   const { t } = useTranslation();
   const [versions, setVersions] = useState<ProjectVersionMeta[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -261,7 +263,14 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
         </div>
       )}
       {comparing && selected && (
-        <VersionCompareModal projectId={projectId} versions={versions} initialFrom={selected} onClose={() => setComparing(false)} />
+        <VersionCompareModal
+          projectId={projectId}
+          versions={versions}
+          initialFrom={selected}
+          canWrite={canWrite}
+          onRestoreFile={onRestoreFile}
+          onClose={() => setComparing(false)}
+        />
       )}
       {restore && selected && (
         <Modal

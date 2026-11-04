@@ -38,6 +38,7 @@ import {
   getProjectTree,
   fetchVersionPdf,
   restoreVersion,
+  restoreVersionFile,
   getWorkspaceLlm,
   getCollabToken,
   blobUrl,
@@ -1845,6 +1846,32 @@ export default function EditorPage() {
         if (activePath && items.some((item) => item.path === activePath)) await openFile(activePath, true).catch(() => undefined);
         setVersionsRefresh((n) => n + 1);
         setStatus(t('Restored version #{{from}} as version #{{n}}', { from: version.number, n: res.versionNumber }));
+      }
+      return res;
+    } finally {
+      if (wasLive) setCollabEnabled(true);
+    }
+  };
+
+  /** Restore one file from a version. Only this tab's own room for that file needs leaving (see restoreVersionInEditor). */
+  const restoreFileInEditor = async (version: { id: string; number: number }, path: string): Promise<RestoreVersionResult> => {
+    const wasLive = collabEnabled && collabActiveRef.current && activePath === path;
+    if (wasLive) {
+      await flushCollabFile(projectId, activePath).catch(() => undefined);
+      setCollabEnabled(false);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    try {
+      const res = await restoreVersionFile(projectId, version.id, path);
+      if (res.ok && res.restored) {
+        setFiles((prev) => {
+          const next = { ...prev };
+          delete next[path];
+          return next;
+        });
+        await refreshTree(true, true);
+        if (activePath === path) await openFile(path, true).catch(() => undefined);
+        setStatus(t('Restored {{path}} from version #{{n}}', { path, n: version.number }));
       }
       return res;
     } finally {
@@ -5757,6 +5784,7 @@ export default function EditorPage() {
                         if (showingVersion?.id === id) void viewVersionPdf(null);
                       }}
                       onRestore={restoreVersionInEditor}
+                      onRestoreFile={restoreFileInEditor}
                     />
                   </div>
                 </div>

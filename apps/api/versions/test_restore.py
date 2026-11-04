@@ -215,6 +215,90 @@ class RestoreTests(VersionApiBase):
         self.assertEqual(state(self.project), before)
 
 
+class RestoreFileTests(VersionApiBase):
+    """POST …/versions/:vid/restore-file {path}: one file back, nothing else touched, no version recorded."""
+    build_v1, drift = RestoreTests.build_v1, RestoreTests.drift
+
+    def restore_file(self, version, path, client=None):
+        return (client or self.c).post(self.url(version.id, 'restore-file'), {'path': path}, format='json')
+
+    def test_one_modified_file_comes_back_and_the_others_keep_their_changes(self):
+        v1 = self.build_v1()
+        self.drift()
+        before = state(self.project)
+        res = self.restore_file(v1, 'main.tex')
+        self.assertEqual((res.status_code, res.data['restored']), (200, True), res.content)
+        after = state(self.project)
+        self.assertEqual(after['main.tex'], ('text', 'version one'))
+        self.assertEqual({k: v for k, v in after.items() if k != 'main.tex'}, {k: v for k, v in before.items() if k != 'main.tex'})
+        self.assertEqual(ProjectVersion.objects.count(), 1)  # no version recorded
+
+    def test_a_deleted_file_comes_back_and_a_binary_is_byte_identical(self):
+        v1 = self.build_v1()
+        self.drift()
+        self.assertEqual(self.restore_file(v1, 'sec/a.tex').status_code, 200)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.restore_file(v1, 'figs/dot.png').data['restored'], True)
+        after = state(self.project)
+        self.assertEqual(after['sec/a.tex'], ('text', 'section a'))
+        self.assertEqual(after['figs/dot.png'], ('binary', make_png()))
+        self.assertEqual(after['extra.tex'], ('text', 'did not exist in v1'))
+
+    def test_a_file_that_already_matches_writes_nothing(self):
+        v1 = self.build_v1()
+        self.drift()
+        files.write_text(self.project, 'main.tex', 'version one')
+        res = self.restore_file(v1, 'main.tex')
+        self.assertEqual((res.status_code, res.data['restored']), (200, False))
+
+    def test_paths_must_be_files_of_the_version(self):
+        v1 = self.build_v1()
+        self.assertEqual(self.restore_file(v1, 'extra.tex').status_code, 404)  # not in the version
+        self.assertEqual(self.restore_file(v1, 'empty').status_code, 404)  # a folder is not a file
+        self.assertEqual(self.restore_file(v1, '../etc/passwd').status_code, 400)
+        self.assertEqual(self.restore_file(v1, '').status_code, 400)
+
+    def test_a_folder_now_at_that_path_is_not_replaced(self):
+        v1 = self.build_v1()
+        files.delete(self.project, 'main.tex')
+        files.write_text(self.project, 'main.tex/inner.tex', 'a folder now')
+        before = state(self.project)
+        res = self.restore_file(v1, 'main.tex')
+        self.assertFalse(res.data['ok'])
+        self.assertEqual(state(self.project), before)
+
+    def test_lost_content_is_refused(self):
+        v1 = self.build_v1()
+        self.drift()
+        VersionBlob.objects.filter(project=self.project, text='version one').delete()
+        self.assertEqual(self.restore_file(v1, 'main.tex').status_code, 409)
+
+    def test_file_permissions(self):
+        v1 = self.build_v1()
+        self.drift()
+        before = state(self.project)
+        for role in (Membership.VIEWER, Membership.COMMENTER):
+            user = make_user(f'{role}@example.com')
+            Membership.objects.create(workspace=self.project.workspace, user=user, role=role)
+            self.assertEqual(self.restore_file(v1, 'main.tex', client_for(user)).status_code, 403)
+        self.assertEqual(self.restore_file(v1, 'main.tex', self.guest('viewer')).status_code, 403)
+        self.assertEqual(self.restore_file(v1, 'main.tex', client_for(make_user('stranger@example.com'))).status_code, 404)
+        self.assertEqual(state(self.project), before)
+        self.assertEqual(self.restore_file(v1, 'main.tex', self.guest('editor')).status_code, 200)
+
+    def test_someone_with_the_file_open_blocks_it_and_other_open_files_do_not(self):
+        v1 = self.build_v1()
+        self.drift()
+        before = state(self.project)
+        with mock.patch('versions.views.live_room', side_effect=lambda project, path: path == 'main.tex'), \
+                mock.patch('versions.views.flush_room', return_value=True), \
+                mock.patch('versions.views.evict_idle_room', return_value=False):
+            res = self.restore_file(v1, 'main.tex')
+            self.assertEqual((res.status_code, res.data['files']), (409, ['main.tex']))
+            self.assertEqual(state(self.project), before)
+            self.assertEqual(self.restore_file(v1, 'sec/a.tex').status_code, 200)
+
+
 @override_settings(COLLAB_ROOM_EVICT_SECONDS=30)  # a room whose last client left lingers for a long time
 class RestoreWithRealRoomsTests(CollabTestBase):
     async def setup_versions(self):
