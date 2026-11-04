@@ -227,6 +227,8 @@ function MembersSection({
   }, [w.id]);
 
   const roleOptions: SelectOption<WorkspaceRole>[] = ASSIGNABLE_ROLES.map((r) => ({ value: r, label: t(r) }));
+  // Owners may also make a member an owner (ownership is shared; owners cannot be demoted afterwards).
+  const memberRoleOptions: SelectOption<WorkspaceRole>[] = ws.myRole() === 'Owner' ? [{ value: 'Owner', label: t('Owner') }, ...roleOptions] : roleOptions;
 
   const validateEmail = (value: string, required: boolean): string | null => {
     const v = value.trim();
@@ -336,9 +338,16 @@ function MembersSection({
                       <Select<WorkspaceRole>
                         size="sm"
                         value={m.role}
-                        options={roleOptions}
+                        options={m.invited ? roleOptions : memberRoleOptions}
                         ariaLabel={t('Role for {{name}}', { name: u.name })}
-                        onChange={(r) => ws.setMemberRole(m.userId, r).catch((err) => onStatus(err.message))}
+                        onChange={(r) => r === 'Owner'
+                          ? onConfirm({
+                              title: t('Make {{name}} an owner?', { name: u.name }),
+                              message: t('Owners have full control of the workspace, and an owner cannot be changed back to another role. You stay an owner too.'),
+                              confirmLabel: t('Make owner'),
+                              onConfirm: () => ws.setMemberRole(m.userId, r).catch((err) => onStatus(err.message))
+                            })
+                          : ws.setMemberRole(m.userId, r).catch((err) => onStatus(err.message))}
                       />
                     )}
                   </td>

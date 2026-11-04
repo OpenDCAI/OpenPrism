@@ -79,12 +79,13 @@ class WorkspaceApiTests(ApiBase):
         mid = str(user.id)
         self.assertEqual(self.c.patch(f'{self.base}/members/{mid}', {'role': 'Viewer'}, format='json').status_code, 200)
         self.assertEqual(self.roles()['m@example.com'], 'Viewer')
-        self.assertEqual(self.c.patch(f'{self.base}/members/{mid}', {'role': 'owner'}, format='json').status_code, 400)
+        self.assertEqual(self.c.patch(f'{self.base}/members/{mid}', {'role': 'superuser'}, format='json').status_code, 400)
         self.assertEqual(self.c.patch(f'{self.base}/members/{self.user.id}', {'role': 'viewer'}, format='json').status_code, 403)  # owner
         self.assertEqual(self.c.delete(f'{self.base}/members/{self.user.id}').status_code, 403)
         self.assertTrue(self.c.delete(f'{self.base}/members/{mid}').data['ok'])
         self.assertNotIn('m@example.com', self.roles())
         self.c.post(f'{self.base}/members', {'email': 'p@example.com', 'role': 'viewer'}, format='json')
+        self.assertEqual(self.c.patch(f'{self.base}/members/invite-p@example.com', {'role': 'owner'}, format='json').status_code, 400)  # members only
         self.assertTrue(self.c.patch(f'{self.base}/members/invite-p@example.com', {'role': 'editor'}, format='json').data['ok'])
         self.assertEqual(self.roles()['p@example.com'], 'Editor')
         self.assertTrue(self.c.delete(f'{self.base}/members/invite-p@example.com').data['ok'])
