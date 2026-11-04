@@ -1,5 +1,6 @@
 import importlib.util
 import json
+import uuid
 from unittest import mock, skipUnless
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -13,7 +14,7 @@ from projects import files, storage
 from projects.models import Membership, Project
 from projects.test_api import ApiBase, client_for, make_user
 
-from . import arxiv, llm, plot
+from . import agent, arxiv, llm, plot
 from . import tasks as ai_tasks
 from .i18n import get_lang, t
 from .patches import PatchError, apply_patch, extract_path, make_patch
@@ -243,6 +244,68 @@ class AiApiTests(ApiBase):
         viewer = make_user('v@example.com')
         Membership.objects.create(workspace=Project.objects.get(pk=pid).workspace, user=viewer, role=Membership.VIEWER)
         self.assertEqual(client_for(viewer).post('/api/agent/run', {'projectId': pid, 'editContext': ok}, format='json').status_code, 403)
+
+    def test_edit_progress_is_logged_and_the_client_picks_the_job_id(self):
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'main.tex', 'x\n')
+        fake = self.fake(tool_call('read_file', {'path': 'main.tex'}, 'a'), {'content': 'done'})
+        job_id = str(uuid.uuid4())
+        ctx = {'activeFile': 'main.tex', 'cursor': {'line': 1, 'col': 1}}
+        res = self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': ctx,
+                                             'jobId': job_id}, format='json').data
+        self.assertTrue(res['ok'])
+        job = Job.objects.get(pk=job_id)
+        self.assertEqual(job.progress_log, ['Thinking…', 'Reading main.tex', 'Thinking again…'])
+        bad = self.c.post('/api/agent/run', {'projectId': pid, 'llmConfig': self.cfg(fake), 'editContext': ctx, 'jobId': 'nope'}, format='json').data
+        self.assertFalse(bad['ok'])
+
+    def test_cancelling_stops_the_agent_before_its_next_step(self):
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'main.tex', 'x\n')
+        fake = self.fake(tool_call('read_file', {'path': 'main.tex'}, 'a'), {'content': 'should never be asked for'})
+        job_id = str(uuid.uuid4())
+        real_call = agent.ToolBox.call
+
+        def cancel_then_call(box, name, args):
+            self.assertEqual(self.c.post(f'/api/jobs/{job_id}/cancel').data, {'ok': True, 'status': 'failed'})
+            return real_call(box, name, args)
+
+        ctx = {'activeFile': 'main.tex', 'cursor': {'line': 1, 'col': 1}}
+        with mock.patch.object(agent.ToolBox, 'call', cancel_then_call):
+            res = self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': ctx,
+                                                 'jobId': job_id}, format='json').data
+        self.assertEqual(res, {'ok': False, 'error': 'Cancelled.', 'cancelled': True})
+        self.assertEqual(len(fake.requests), 1)  # the second model call never happened
+        job = Job.objects.get(pk=job_id)
+        self.assertEqual((job.status, job.error, job.result['cancelled']), ('failed', 'Cancelled.', True))
+
+    def test_cancel_is_for_the_owner_and_idempotent(self):
+        job = Job.objects.create(type=Job.AGENT, user=self.user, status=Job.RUNNING)
+        other = client_for(make_user('o2@example.com'))
+        self.assertEqual(other.post(f'/api/jobs/{job.id}/cancel').status_code, 404)
+        self.assertEqual(Job.objects.get(pk=job.id).status, 'running')
+        self.assertEqual(self.c.post(f'/api/jobs/{job.id}/cancel').data['status'], 'failed')
+        self.assertEqual(self.c.post(f'/api/jobs/{job.id}/cancel').data['status'], 'failed')
+        done = Job.objects.create(type=Job.AGENT, user=self.user, status=Job.SUCCESS, result={'body': {'ok': True}})
+        self.assertEqual(self.c.post(f'/api/jobs/{done.id}/cancel').data['status'], 'success')  # finished work is not rewritten
+
+    @override_settings(AI_EDIT_RATE_PER_MINUTE=2)
+    def test_edit_requests_are_rate_limited_per_user(self):
+        from django.core.cache import cache
+        pid = self.new_project()
+        files.write_text(Project.objects.get(pk=pid), 'main.tex', 'x\n')
+        cache.clear()
+        fake = self.fake({'content': 'a'}, {'content': 'b'}, {'content': 'c'})
+        ctx = {'activeFile': 'main.tex', 'cursor': {'line': 1, 'col': 1}}
+        post = lambda client: client.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': ctx}, format='json')
+        self.assertEqual([post(self.c).status_code for _ in range(2)], [200, 200])
+        limited = post(self.c)
+        self.assertEqual(limited.status_code, 429)
+        self.assertIn('Too many AI requests', limited.data['error'])
+        self.assertEqual(len(fake.requests), 2)  # the third never reached the model
+        # the plain assistant is not affected, and the limit is per user
+        self.assertEqual(self.c.post('/api/agent/run', {'prompt': 'hi', 'interaction': 'chat', 'llmConfig': self.cfg(fake)}, format='json').status_code, 200)
+        cache.clear()
 
     def test_agent_tools_mode_guards(self):
         fake = self.fake()

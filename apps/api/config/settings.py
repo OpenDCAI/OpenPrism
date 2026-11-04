@@ -191,6 +191,7 @@ COMPILE_MAX_FILE_BYTES = int(env('COMPILE_MAX_FILE_BYTES', str(200 * 1024 * 1024
 JOB_RUNNING_STALE_MINUTES = int(env('JOB_RUNNING_STALE_MINUTES', '10'))
 JOB_QUEUED_STALE_MINUTES = int(env('JOB_QUEUED_STALE_MINUTES', '30'))
 JOB_RETENTION_HOURS = int(env('JOB_RETENTION_HOURS', '24'))
+AI_EDIT_RATE_PER_MINUTE = int(env('AI_EDIT_RATE_PER_MINUTE', '1000' if TESTING else '20'))  # in-place AI edit requests per user
 VERSION_KEEP_UNNAMED = int(env('VERSION_KEEP_UNNAMED', '50'))  # unnamed versions kept per project; named ones are kept forever
 
 # The AWS_* names are what the deploy platform's object-storage Secret provides (boto3 / django-storages style).

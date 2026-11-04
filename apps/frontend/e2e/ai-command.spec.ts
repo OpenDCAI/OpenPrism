@@ -222,3 +222,56 @@ test('in a live session an accepted proposal reaches the other browser through t
   expect(await editorText(guest)).not.toContain('Beta line, by AI.');
   await guestContext.close();
 });
+
+test('Cancel stops waiting, tells the server and leaves the project untouched; a late answer is ignored', async ({ page }) => {
+  const session = await newAccount('ai');
+  const original = doc('Hello.');
+  const id = await newProject(session, 'Paper', { 'main.tex': original });
+  await openEditor(page, session, id);
+  await stubAgent(page, () => [{ path: 'main.tex', original, content: original.replace('Hello.', 'Hello, world.') }], [], 2500);
+  const cancelled = page.waitForRequest((r) => /\/api\/jobs\/[0-9a-f-]+\/cancel$/.test(r.url()) && r.method() === 'POST');
+  await ask(page, 'extend');
+  await expect(bar(page).getByRole('status')).toBeVisible(); // progress while it runs
+  await bar(page).getByRole('button', { name: 'Cancel' }).click();
+  await cancelled;
+  await expect(bar(page)).toContainText('Cancelled.');
+  await page.waitForTimeout(3000); // the stubbed answer arrives late
+  await expect(page.getByText(/Diff Preview/)).toHaveCount(0); // nothing was proposed
+  expect(await editorText(page)).not.toContain('Hello, world.');
+  await barInput(page).fill('try again'); // the bar is usable again
+  await expect(bar(page).getByRole('button', { name: 'Send' })).toBeEnabled();
+});
+
+test('a rate-limit answer is shown in the bar and the bar stays usable', async ({ page }) => {
+  const session = await newAccount('ai');
+  const id = await newProject(session, 'Paper', { 'main.tex': doc('Hello.') });
+  await openEditor(page, session, id);
+  await page.route('**/api/agent/run', (route) => route.fulfill({ status: 429, json: { ok: false, error: 'Too many AI requests. Try again in a minute.' } }));
+  await ask(page, 'extend');
+  await expect(bar(page)).toContainText('Too many AI requests');
+  await expect(barInput(page)).toBeEnabled();
+});
+
+test('Up arrow in an empty bar recalls the previous requests', async ({ page }) => {
+  const session = await newAccount('ai');
+  const id = await newProject(session, 'Paper', { 'main.tex': doc('Hello.') });
+  await openEditor(page, session, id);
+  await page.route('**/api/agent/run', (route) => route.fulfill({ json: { ok: true, reply: `Nothing to change for ${route.request().postDataJSON().prompt}.`, suggestion: '', patches: [] } }));
+  await ask(page, 'first request');
+  await expect(bar(page)).toContainText('Nothing to change for first request.');
+  await barInput(page).fill('second request');
+  await barInput(page).press('Enter');
+  await expect(bar(page)).toContainText('Nothing to change for second request.');
+  await page.keyboard.press('Escape');
+
+  await page.locator('.cm-content').click();
+  await page.keyboard.press('Control+k');
+  await barInput(page).press('ArrowUp');
+  await expect(barInput(page)).toHaveValue('second request');
+  await barInput(page).press('ArrowUp');
+  await expect(barInput(page)).toHaveValue('first request');
+  await barInput(page).press('ArrowDown');
+  await expect(barInput(page)).toHaveValue('second request');
+  await barInput(page).press('ArrowDown');
+  await expect(barInput(page)).toHaveValue('');
+});

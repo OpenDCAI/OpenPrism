@@ -48,8 +48,8 @@ export default function AiCommandBar({ onSubmit, onCancel, onClose, busy, progre
   const input = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
-    input.current?.focus();
-  }, []);
+    if (!busy) input.current?.focus(); // a disabled input loses focus, so take it back when the request ends
+  }, [busy]);
 
   const send = () => {
     const prompt = value.trim();

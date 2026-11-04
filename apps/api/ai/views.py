@@ -63,6 +63,14 @@ def llm_endpoint(request):
     return run_job(request, Job.LLM, {'messages': b.get('messages') or [], 'llmConfig': public}, secrets)
 
 
+def edit_rate_limited(user):
+    """True when `user` has used up this minute's in-place edit requests (each one can run a many-step agent)."""
+    from django.core.cache import cache
+    key = f'ai-edit-rate:{user.id}:{int(time.time() // 60)}'
+    cache.add(key, 0, 90)
+    return cache.incr(key) > settings.AI_EDIT_RATE_PER_MINUTE
+
+
 MAX_SELECTION = 20000
 MAX_EDIT_CONTENT = 400000
 
@@ -109,12 +117,18 @@ def agent_run(request):
         if error:
             return Response({'ok': False, 'error': error})
         b['mode'] = 'tools'
+        if edit_rate_limited(request.user):
+            return Response({'ok': False, 'error': 'Too many AI requests. Try again in a minute.'}, status=429)
+        try:  # the editor picks the job id so it can cancel the request while it is still running
+            job_id = uuid.UUID(str(b['jobId'])) if b.get('jobId') else None
+        except ValueError:
+            return Response({'ok': False, 'error': 'jobId must be a UUID.'})
     if project:
         public, secrets = workspace_first(request, project.workspace, public, secrets)
     params = {k: b.get(k) for k in ('task', 'prompt', 'selection', 'content', 'mode', 'activePath', 'compileLog',
                                     'interaction', 'history', 'editContext')}
     params.update({'llmConfig': public, 'lang': get_lang(request.headers.get('x-lang'))})
-    return run_job(request, Job.AGENT, params, secrets, project)
+    return run_job(request, Job.AGENT, params, secrets, project, job_id=job_id if edit else None)
 
 
 @api_view(['POST'])
