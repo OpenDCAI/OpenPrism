@@ -55,8 +55,8 @@ def compile_project(job_id):
 
     result = {'log': out['log'], 'exitStatus': out['status'], 'engine': params['engine'], 'mainFile': params['mainFile'],
               'focus': out.get('focus')}
-    if not out['pdf']:
-        return finish(job, Job.FAILED, out.get('error') or 'No PDF generated.', result)
+    if not out['pdf']:  # a failed compile is kept too, with its log, so users can see what broke it
+        return finish(job, Job.FAILED, out.get('error') or 'No PDF generated.', {**result, **save_version(job, out, params)})
     key = f'jobs/{job.id}/output.pdf'
     storage.put_bytes(key, out['pdf'], 'application/pdf')
     result.update(pdfKey=key, pdfSize=len(out['pdf']), **save_version(job, out, params))
@@ -64,12 +64,13 @@ def compile_project(job_id):
 
 
 def save_version(job, out, params):
-    """Record the project version this compile produced. Never fails the compile: no version is better than no PDF."""
+    """Record the project version this compile produced (failed when there is no PDF). Never fails the compile: no
+    version is better than no PDF."""
     if not out.get('snapshot'):
         return {}
     try:
         version, created = snapshot.record(job.project, out['snapshot'], out['pdf'], params['mainFile'], params['engine'],
-                                           job=job, user=job.user)
+                                           job=job, user=job.user, log=out.get('log', ''))
     except Exception:
         log.exception('could not save a version for compile job %s', job.id)
         return {}
