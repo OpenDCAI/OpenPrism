@@ -56,16 +56,6 @@ Moved to `docs/todo.md` (issues #32-#39). Decided: SMTP via environment variable
 still added to a workspace at once (now with an email), pending invites need a verified address, and commenting is built
 in this release.
 
-## v0.1.6 follow-ups (found while building account management and comments)
-
-- [ ] **No way to change the account's email address** (it would need re-verification and must not orphan invitations).
-- [ ] **Comment notifications.** Nobody is told about a new comment or reply (mail digest, @mentions, an unread count).
-- [ ] **Comment gutter markers** were left out; highlights only. Long files need a way to see where comments are.
-- [ ] **Permanently deleting a project leaves its compile jobs' storage** (`jobs/<id>/` prefixes) until the job rows age
-      out; account deletion inherits this. Delete the prefixes with the project.
-- [ ] **Comments on live text are placed against the stored file on the server**, which can lag the live document by
-      ~800 ms; the editor re-places them against its live text, but the API's `anchor` may briefly disagree.
-- [ ] **Two owners can no longer demote each other** (owners are fixed once made); decide whether an owner may step down.
 
 ## v0.0.7 - Misc
 
@@ -166,3 +156,27 @@ cluster. Do a full run on a local `kind` cluster, then fix whatever breaks.
 - Whether `worker-compile` and `worker-ai` should run under a sandboxed runtime (`runtimeClassName: gvisor` or Kata).
 - Whether to add PgBouncer in front of Postgres (connection count grows with API replicas).
 
+
+## v0.1.1 follow-ups (found while building in-place AI editing)
+
+- [ ] **Accepting a proposal writes other files by REST, even when someone has them open live** (known collaboration
+      limitation). A multi-file proposal only goes through the shared document for the active file.
+- [ ] **In-place AI undo in a live session** is the editor's own history; check that Ctrl+Z in a collaborative session undoes
+      only the local user's accept (y-codemirror's undo manager) and does not undo remote edits.
+- [ ] **No streaming.** The bar shows step names, not the model's text; long tasks look idle between steps.
+- [ ] **Cite and bibliography tasks** ("cite the Attention paper") need the Zotero/arXiv tools in edit mode and a recorded task.
+- [ ] **A configurable shortcut** (Ctrl/Cmd+K is fixed; browsers bind Ctrl+K to the address bar when the editor is not focused).
+- [ ] **A cancelled request can still finish its current model call** (the worker checks between calls), and a cancel sent
+      before the job row exists is lost.
+
+
+## v0.1.2 follow-ups (found while building account management and comments)
+
+- [ ] **No way to change the account's email address** (it would need re-verification and must not orphan invitations).
+- [ ] **Comment notifications.** Nobody is told about a new comment or reply (mail digest, @mentions, an unread count).
+- [ ] **Comment gutter markers** were left out; highlights only. Long files need a way to see where comments are.
+- [ ] **Permanently deleting a project leaves its compile jobs' storage** (`jobs/<id>/` prefixes) until the job rows age
+      out; account deletion inherits this. Delete the prefixes with the project.
+- [ ] **Comments on live text are placed against the stored file on the server**, which can lag the live document by
+      ~800 ms; the editor re-places them against its live text, but the API's `anchor` may briefly disagree.
+- [ ] **Two owners can no longer demote each other** (owners are fixed once made); decide whether an owner may step down.
