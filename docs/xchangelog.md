@@ -66,6 +66,10 @@
       diff, swap), restore with a confirmation that lists what changes, a 409 explanation when someone has a file open,
       and a shared `SplitDiff` component; Playwright specs incl. a second live browser.
 
+## v0.0.4.1 - Version history with diff Follow up
+
+- [x] #42 **Restore a single file** from an old version (API + Compare dialog). No new version is recorded.
+
 ## v0.0.5 - AI assistance for LaTeX tasks
 
 - [x] #27 **Give the agent editor context.** `editContext` (active file, caret, selection, main file, unsaved text) on
