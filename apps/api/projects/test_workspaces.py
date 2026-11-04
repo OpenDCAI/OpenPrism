@@ -113,7 +113,9 @@ class WorkspaceApiTests(ApiBase):
         pid = self.c.post('/api/projects', {'name': 'P', 'workspaceId': self.ws_id}, format='json').data['id']
         for role, can_write in (('editor', True), ('commenter', False), ('viewer', False)):
             _, client = self.member(f'{role}@example.com', role)
-            self.assertEqual(client.get(f'/api/projects/{pid}/tree').status_code, 200, role)
+            tree = client.get(f'/api/projects/{pid}/tree')
+            self.assertEqual(tree.status_code, 200, role)
+            self.assertEqual(tree.data['canWrite'], can_write, role)  # the editor hides write-only tools
             code = client.put(f'/api/projects/{pid}/file', {'path': 'a.tex', 'content': 'x'}, format='json').status_code
             self.assertEqual(code, 200 if can_write else 403, role)
 

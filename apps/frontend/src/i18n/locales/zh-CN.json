@@ -775,5 +775,19 @@
   "Files that go back to this version: {{count}}": "将回到此版本的文件：{{count}}",
   "Files added since that are deleted: {{count}}": "此后新增、将被删除的文件：{{count}}",
   "The restore is saved as a new version, so nothing is lost and you can restore again.": "恢复会保存为新版本，不会丢失任何内容，之后仍可再次恢复。",
-  "Restored version #{{from}} as version #{{n}}": "已将版本 #{{from}} 恢复为版本 #{{n}}"
+  "Restored version #{{from}} as version #{{n}}": "已将版本 #{{from}} 恢复为版本 #{{n}}",
+  "Ask AI": "询问 AI",
+  "What should change in the selection?": "选中的内容要怎么改？",
+  "Ask AI to edit here: add an author, a related work section, turn a list into a table…": "让 AI 在这里修改：添加作者、相关工作一节、把列表变成表格……",
+  "Send": "发送",
+  "Working…": "处理中……",
+  "Saving…": "保存中……",
+  "Asking the AI…": "正在询问 AI……",
+  "Cancelled.": "已取消。",
+  "Review the AI proposal and apply it.": "请查看 AI 的修改建议并应用。",
+  "The AI proposed no changes.": "AI 没有提出修改。",
+  "Ask AI…": "询问 AI……",
+  "{{count}} change(s) no longer apply because the file changed. Ask again.": "有 {{count}} 处修改因文件已变化而无法应用，请重新询问。",
+  "The file changed after this was proposed, so it no longer applies. Ask again.": "文件在提出此修改后已变化，无法应用，请重新询问。",
+  "Too many AI requests. Try again in a minute.": "AI 请求过多，请一分钟后再试。"
 }
