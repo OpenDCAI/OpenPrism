@@ -210,10 +210,13 @@ MINERU_POLL_INTERVAL_SECONDS = float(env('MINERU_POLL_INTERVAL_SECONDS', '3'))
 MINERU_MAX_POLL_ATTEMPTS = int(env('MINERU_MAX_POLL_ATTEMPTS', '200'))
 PLOT_TIMEOUT_SECONDS = int(env('PLOT_TIMEOUT_SECONDS', '60'))
 TEX_CACHE_DIR = env('TEX_CACHE_DIR', '/tmp/openprism-tex-cache')  # font/format caches shared by compiles in one worker
+# tectonic binary (bin/), offline package bundle (bundle/) and prebuilt format cache (cache/), from the worker-tex image
+TECTONIC_HOME = env('TECTONIC_HOME', '/opt/tectonic')
 COMPILE_TIMEOUT_SECONDS = int(env('COMPILE_TIMEOUT_SECONDS', '120'))  # per command (each pass / bibtex)
 COMPILE_MAX_FILE_BYTES = int(env('COMPILE_MAX_FILE_BYTES', str(200 * 1024 * 1024)))
 JOB_RUNNING_STALE_MINUTES = int(env('JOB_RUNNING_STALE_MINUTES', '10'))
 JOB_QUEUED_STALE_MINUTES = int(env('JOB_QUEUED_STALE_MINUTES', '30'))
+JOB_WAITING_STALE_MINUTES = int(env('JOB_WAITING_STALE_MINUTES', '60'))  # transfer left waiting for layout-check images
 JOB_RETENTION_HOURS = int(env('JOB_RETENTION_HOURS', '24'))
 AI_EDIT_RATE_PER_MINUTE = int(env('AI_EDIT_RATE_PER_MINUTE', '1000' if TESTING else '20'))  # in-place AI edit requests per user
 VERSION_KEEP_UNNAMED = int(env('VERSION_KEEP_UNNAMED', '50'))  # unnamed versions kept per project; named ones are kept forever

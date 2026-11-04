@@ -878,5 +878,7 @@
   "Comments people leave on this project appear here.": "大家在此项目中留下的评论会显示在这里。",
   "Hide resolved ({{count}})": "隐藏已解决（{{count}}）",
   "Show resolved ({{count}})": "显示已解决（{{count}}）",
-  "Can comment": "可评论"
+  "Can comment": "可评论",
+  "The transfer failed.": "模板转换失败。",
+  "The unfinished project was removed.": "未完成的项目已删除。"
 }

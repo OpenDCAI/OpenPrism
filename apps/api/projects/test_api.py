@@ -1,9 +1,11 @@
 """Contract tests for the endpoints used by apps/frontend/src/api/client.ts."""
 import base64
 import io
+import os
 import shutil
 import zipfile
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.test import TestCase
@@ -319,3 +321,16 @@ class BuiltinTemplateTests(ApiBase):
             pid = self.new_project(tid, template=tid)
             out = compile_project(Project.objects.get(pk=pid), Template.objects.get(pk=tid).main_file, 'pdflatex')
             self.assertTrue(out['pdf'], f'{tid} produced no PDF:\n{out["log"][-1500:]}')
+
+    @skipUnless(os.access(os.path.join(settings.TECTONIC_HOME, 'bin', 'tectonic'), os.X_OK),
+                'needs tectonic: docker compose run --rm worker-tex python manage.py test projects --noinput')
+    def test_every_builtin_template_compiles_with_tectonic(self):
+        from django.core.management import call_command
+        from jobs.compile import compile_project
+        if not os.path.isdir(self.TEMPLATES_DIR):
+            self.skipTest('templates/ is not mounted at /legacy/templates')
+        call_command('import_legacy', '--skip-projects', templates_dir=self.TEMPLATES_DIR, stdout=io.StringIO())
+        for tpl in Template.objects.filter(pk__in=['acl', 'arxiv', 'cvpr', 'icml', 'neurips']):
+            pid = self.new_project(f'{tpl.id} tectonic', template=tpl.id)
+            out = compile_project(Project.objects.get(pk=pid), tpl.main_file, 'tectonic')
+            self.assertTrue(out['pdf'], f'{tpl.id} produced no PDF with tectonic:\n{out["log"][-1500:]}')
