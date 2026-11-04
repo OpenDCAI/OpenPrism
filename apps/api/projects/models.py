@@ -10,6 +10,8 @@ class Workspace(models.Model):
     name = models.CharField(max_length=200)
     kind = models.CharField(max_length=10, choices=[(PERSONAL, 'Personal'), (TEAM, 'Team')], default=TEAM)
     color = models.CharField(max_length=9, blank=True, default='')  # '#rrggbb'; picked by the server for new workspaces
+    # Unnamed project versions older than this many days are pruned (each project's newest is kept); null: count only.
+    version_retention_days = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     members = models.ManyToManyField(settings.AUTH_USER_MODEL, through='Membership', related_name='workspaces')
 

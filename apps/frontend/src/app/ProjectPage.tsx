@@ -20,6 +20,7 @@ import {
 import type { ProjectMeta, TemplateMeta, TemplateCategory } from '../api/client';
 import TransferPanel from './TransferPanel';
 import WorkspaceAiBlock from './WorkspaceAiBlock';
+import WorkspaceStorageBlock from './WorkspaceStorageBlock';
 import {
   AppTopBar,
   Avatar,
@@ -475,6 +476,8 @@ function SettingsSection({
       </form>
 
       <WorkspaceAiBlock workspaceId={w.id} onStatus={onStatus} onConfirm={onConfirm} />
+
+      {admin && <WorkspaceStorageBlock workspaceId={w.id} onStatus={onStatus} />}
 
       {w.kind === 'Team' && role !== 'Owner' && (
         <div className="home-block is-danger">
