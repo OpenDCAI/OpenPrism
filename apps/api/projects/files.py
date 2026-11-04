@@ -46,6 +46,11 @@ def _drop_collab_state(project, path):
     CollabDoc.objects.filter(project=project, path__startswith=path + '/').delete()
 
 
+def _comments_under(project, path):
+    from comments.models import CommentThread  # imported lazily, like collab: comments depends on this module
+    return CommentThread.objects.filter(project=project, path=path) | CommentThread.objects.filter(project=project, path__startswith=path + '/')
+
+
 def write_text(project, path, content):
     path = safe_path(path)
     _assert_can_create(project, path)
@@ -140,6 +145,7 @@ def delete(project, path):
     with transaction.atomic():
         _subtree(project, path).delete()
         _drop_collab_state(project, path)
+        _comments_under(project, path).delete()  # their text is gone
         _touch(project)
     storage.delete_keys(keys)
 
@@ -158,6 +164,9 @@ def rename(project, src, dst):
             row.path = dst + row.path[len(src):]
             row.save(update_fields=['path', 'updated_at'])
         _drop_collab_state(project, src)  # live rooms for the old path are stale; the new path reseeds from the file
+        for thread in _comments_under(project, src):  # comments follow their file
+            thread.path = dst + thread.path[len(src):]
+            thread.save(update_fields=['path', 'updated_at'])
         _touch(project)
 
 

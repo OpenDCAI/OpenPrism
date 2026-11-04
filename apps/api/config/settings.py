@@ -78,6 +78,7 @@ INSTALLED_APPS = [
     'collab',
     'integrations',
     'versions',
+    'comments',
     'common',
 ]
 
