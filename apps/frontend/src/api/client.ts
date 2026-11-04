@@ -384,7 +384,11 @@ export async function compileProject(
       onProgress(job.progressLog[reported - 1]);
     }
     if (job.status === 'failed') {
-      return { ok: false, error: job.error, log: job.result?.log, status: job.result?.status ?? undefined, engine: job.result?.engine };
+      return {
+        ok: false, error: job.error, log: job.result?.log, status: job.result?.status ?? undefined, engine: job.result?.engine,
+        versionNumber: job.result?.versionNumber ?? null, // a failed compile is saved as a version too
+        versionCreated: job.result?.versionCreated ?? null
+      };
     }
     if (job.status === 'success') {
       const pdfUrl = job.result?.pdfUrl;
@@ -917,6 +921,10 @@ export interface ProjectVersionMeta {
   pdfSize: number;
   /** Number of the version this one was restored from. */
   restoredFrom: number | null;
+  /** A failed compile is kept as a version with no PDF, so users can see what broke it. */
+  status: 'success' | 'failed';
+  /** Whether the compile log was kept (versions from before v0.0.4.1 have none). */
+  hasLog: boolean;
 }
 export interface ProjectVersionDetail extends ProjectVersionMeta {
   manifest: Array<{ path: string; kind: 'text' | 'binary' | 'dir'; size: number; sha256: string }>;
@@ -955,6 +963,10 @@ export function diffVersions(projectId: string, from: string, to?: string, all =
   if (all) params.set('all', '1');
   return request<{ ok: boolean; files: VersionFileChange[] }>(`${versionsBase(projectId)}/diff?${params.toString()}`);
 }
+/** The compile log saved with a version. */
+export function getVersionLog(projectId: string, versionId: string) {
+  return request<{ ok: boolean; log: string }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}/log`);
+}
 /** A version's PDF as a Blob, fetched with the normal Authorization header (no token in a URL). */
 export async function fetchVersionPdf(projectId: string, versionId: string): Promise<Blob> {
   const res = await apiFetch(`${API_BASE}${versionsBase(projectId)}/${encodeURIComponent(versionId)}/pdf`);
@@ -985,6 +997,36 @@ export function deleteVersion(projectId: string, versionId: string) {
   return request<{ ok: boolean }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}`, { method: 'DELETE' });
 }
 
+export interface WorkspaceStorageRow {
+  id: string;
+  name: string;
+  trashed: boolean;
+  fileBytes: number;
+  versionBytes: number;
+  versionCount: number;
+}
+export interface WorkspaceStorage {
+  ok: boolean;
+  error?: string;
+  /** Unnamed versions older than this many days are pruned (each project's newest stays); null: by count only. */
+  versionRetentionDays: number | null;
+  totals: { fileBytes: number; versionBytes: number; versionCount: number };
+  projects: WorkspaceStorageRow[];
+}
+/** What the workspace's projects and their version history take up. Owners and admins only. */
+export function getWorkspaceStorage(workspaceId: string) {
+  return request<WorkspaceStorage>(`/api/workspaces/${encodeURIComponent(workspaceId)}/storage`);
+}
+export async function setVersionRetention(workspaceId: string, days: number | null): Promise<WorkspaceStorage> {
+  const res = await apiFetch(`${API_BASE}/api/workspaces/${encodeURIComponent(workspaceId)}/storage`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ versionRetentionDays: days })
+  });
+  if (res.ok || res.status === 400) return (await res.json()) as WorkspaceStorage; // 400: a readable validation error
+  throw new Error(await errorMessage(res));
+}
+
 export interface RestoreVersionResult {
   ok: boolean;
   error?: string;
@@ -1006,6 +1048,20 @@ export async function restoreVersion(projectId: string, versionId: string): Prom
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: '{}'
+  });
+  if (res.ok || res.status === 409) return (await res.json()) as RestoreVersionResult;
+  throw new Error(await errorMessage(res));
+}
+
+/**
+ * Put one file back as it was in a version; nothing else changes and no version is recorded. A 409 (someone has the
+ * file open, or live edits could not be saved) comes back as a result, like `restoreVersion`.
+ */
+export async function restoreVersionFile(projectId: string, versionId: string, path: string): Promise<RestoreVersionResult> {
+  const res = await apiFetch(`${API_BASE}${versionsBase(projectId)}/${encodeURIComponent(versionId)}/restore-file`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ path })
   });
   if (res.ok || res.status === 409) return (await res.json()) as RestoreVersionResult;
   throw new Error(await errorMessage(res));

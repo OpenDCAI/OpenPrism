@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { diffVersions, getFile, getVersionFile } from '../api/client';
-import type { ProjectVersionMeta, VersionFileChange } from '../api/client';
-import { Badge, Button, FieldError, Modal, Select } from '@design';
+import type { ProjectVersionMeta, RestoreVersionResult, VersionFileChange } from '../api/client';
+import { Badge, Button, FieldError, Modal, SegmentedControl, Select } from '@design';
 import type { SelectOption } from '@design';
 import { SplitDiffView, buildSplitDiff } from './SplitDiff';
+import PdfCompareView from './PdfCompareView';
 
 const CURRENT = '__current__';
 
@@ -14,12 +15,17 @@ interface VersionCompareModalProps {
   versions: ProjectVersionMeta[];
   /** The version the user started from. */
   initialFrom: ProjectVersionMeta;
+  /** Whether "Restore this file" is offered. */
+  canWrite: boolean;
+  onRestoreFile: (version: ProjectVersionMeta, path: string) => Promise<RestoreVersionResult>;
+  /** The preview's current build (blob URL), compared when To is the current project; null if there is none. */
+  currentPdf: string | null;
   onClose: () => void;
 }
 
 const label = (v: ProjectVersionMeta) => `#${v.number}${v.name ? ` · ${v.name}` : ''}`;
 
-export default function VersionCompareModal({ projectId, versions, initialFrom, onClose }: VersionCompareModalProps) {
+export default function VersionCompareModal({ projectId, versions, initialFrom, canWrite, onRestoreFile, currentPdf, onClose }: VersionCompareModalProps) {
   const { t } = useTranslation();
   const [from, setFrom] = useState(initialFrom.id);
   const [to, setTo] = useState(CURRENT);
@@ -27,6 +33,10 @@ export default function VersionCompareModal({ projectId, versions, initialFrom, 
   const [selected, setSelected] = useState('');
   const [texts, setTexts] = useState<{ before: string; after: string } | null>(null);
   const [error, setError] = useState('');
+  const [reload, setReload] = useState(0);
+  const [view, setView] = useState<'files' | 'pdf'>('files');
+  /** "Restore this file": asking → busy → done, or blocked by someone who has it open. */
+  const [fileRestore, setFileRestore] = useState<{ path: string; busy: boolean; blocked: RestoreVersionResult | null; error: string } | null>(null);
 
   const options: SelectOption[] = useMemo(
     () => [{ value: CURRENT, label: t('Current project') }, ...versions.map((v) => ({ value: v.id, label: label(v) }))],
@@ -37,22 +47,42 @@ export default function VersionCompareModal({ projectId, versions, initialFrom, 
   useEffect(() => {
     let live = true;
     setChanges(null);
-    setSelected('');
     setError('');
     diffVersions(projectId, from, to === CURRENT ? undefined : to)
       .then((res) => {
         if (!live) return;
         setChanges(res.files);
         const firstText = res.files.find((f) => f.kind === 'text');
-        setSelected(firstText?.path ?? res.files[0]?.path ?? '');
+        setSelected((prev) => (res.files.some((f) => f.path === prev) ? prev : firstText?.path ?? res.files[0]?.path ?? ''));
       })
       .catch((err) => live && setError(String((err as Error).message || err)));
     return () => {
       live = false;
     };
-  }, [projectId, from, to]);
+  }, [projectId, from, to, reload]);
 
   const change = changes?.find((c) => c.path === selected) ?? null;
+  const fromVersion = versions.find((v) => v.id === from) ?? null;
+  // Only a file that exists in the From version can be put back, and only into the project as it is now.
+  const canRestoreFile = canWrite && to === CURRENT && fromVersion !== null && change !== null && change.kind !== 'dir'
+    && (change.status === 'modified' || change.status === 'removed');
+  useEffect(() => setFileRestore(null), [selected, from, to]);
+
+  const restoreFile = async () => {
+    if (!fromVersion || !change) return;
+    setFileRestore({ path: change.path, busy: true, blocked: null, error: '' });
+    try {
+      const res = await onRestoreFile(fromVersion, change.path);
+      if (res.ok) {
+        setFileRestore(null);
+        setReload((n) => n + 1);
+      } else {
+        setFileRestore({ path: change.path, busy: false, blocked: res, error: '' });
+      }
+    } catch (err) {
+      setFileRestore({ path: change.path, busy: false, blocked: null, error: String((err as Error).message || err) });
+    }
+  };
   useEffect(() => {
     setTexts(null);
     if (!change || change.kind !== 'text') return;
@@ -71,7 +101,7 @@ export default function VersionCompareModal({ projectId, versions, initialFrom, 
     return () => {
       live = false;
     };
-  }, [projectId, from, to, change?.path, change?.status, change?.kind]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [projectId, from, to, change?.path, change?.status, change?.kind, reload]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const rows = useMemo(() => (texts ? buildSplitDiff(texts.before, texts.after) : []), [texts]);
   const tone = (status: VersionFileChange['status']) => (status === 'added' ? 'success' : status === 'removed' ? 'danger' : 'warning');
@@ -102,10 +132,22 @@ export default function VersionCompareModal({ projectId, versions, initialFrom, 
             <Select id="compare-to" value={to} options={options} onChange={setTo} />
           </div>
         </div>
-        <FieldError message={error} />
-        {changes === null && !error && <div className="muted" role="status">{t('Loading…')}</div>}
-        {changes !== null && changes.length === 0 && <div className="muted" data-testid="compare-empty">{t('No differences')}</div>}
-        {changes !== null && changes.length > 0 && (
+        <SegmentedControl
+          label={t('Compare')}
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'files', label: t('Files') },
+            { value: 'pdf', label: t('PDF') }
+          ]}
+        />
+        {view === 'pdf' && fromVersion && (
+          <PdfCompareView projectId={projectId} from={fromVersion} to={versions.find((v) => v.id === to) ?? null} currentPdf={currentPdf} />
+        )}
+        {view === 'files' && <FieldError message={error} />}
+        {view === 'files' && changes === null && !error && <div className="muted" role="status">{t('Loading…')}</div>}
+        {view === 'files' && changes !== null && changes.length === 0 && <div className="muted" data-testid="compare-empty">{t('No differences')}</div>}
+        {view === 'files' && changes !== null && changes.length > 0 && (
           <div className="version-compare-body">
             <div className="version-compare-files" data-testid="compare-files">
               {changes.map((c) => (
@@ -126,6 +168,36 @@ export default function VersionCompareModal({ projectId, versions, initialFrom, 
               ))}
             </div>
             <div className="version-compare-diff" data-testid="compare-diff">
+              {canRestoreFile && fromVersion && change && (
+                <div className="version-compare-restore" data-testid="compare-restore-file">
+                  {fileRestore ? (
+                    <>
+                      <span>{t('Replace {{path}} with its version #{{n}}?', { path: change.path, n: fromVersion.number })}</span>
+                      <Button variant="secondary" size="sm" data-testid="compare-restore-file-confirm" loading={fileRestore.busy} onClick={() => void restoreFile()}>
+                        {fileRestore.blocked ? t('Try again') : t('Restore')}
+                      </Button>
+                      <Button variant="ghost" size="sm" disabled={fileRestore.busy} onClick={() => setFileRestore(null)}>{t('Cancel')}</Button>
+                      {fileRestore.blocked && (
+                        <div role="alert" data-testid="compare-restore-file-blocked">
+                          <FieldError message={fileRestore.blocked.error} />
+                          {fileRestore.blocked.files?.map((f) => <code key={f}>{f}</code>)}
+                        </div>
+                      )}
+                      <FieldError message={fileRestore.error} />
+                    </>
+                  ) : (
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      icon="rotate-ccw"
+                      data-testid="compare-restore-file-button"
+                      onClick={() => setFileRestore({ path: change.path, busy: false, blocked: null, error: '' })}
+                    >
+                      {t('Restore this file')}
+                    </Button>
+                  )}
+                </div>
+              )}
               {change?.kind === 'text' && texts && <SplitDiffView rows={rows} />}
               {change && change.kind !== 'text' && (
                 <div className="muted">{change.kind === 'dir' ? t('Folder {{status}}.', { status: t(change.status === 'added' ? 'added' : change.status === 'removed' ? 'removed' : 'changed') }) : t('Binary file, contents not shown.')}</div>

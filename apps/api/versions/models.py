@@ -5,9 +5,12 @@ from django.db import models
 
 
 class ProjectVersion(models.Model):
-    """What the project looked like when a compile succeeded: a manifest of its files plus the PDF it produced.
+    """What the project looked like when it was compiled: a manifest of its files plus the PDF it produced (none for a
+    failed compile) and the compile log.
 
     File contents are not stored here; the manifest points at `VersionBlob`s by hash."""
+    SUCCESS, FAILED = 'success', 'failed'
+
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     project = models.ForeignKey('projects.Project', on_delete=models.CASCADE, related_name='versions')
     number = models.PositiveIntegerField()  # 1, 2, 3... per project
@@ -20,6 +23,9 @@ class ProjectVersion(models.Model):
     manifest_hash = models.CharField(max_length=64)
     pdf_key = models.CharField(max_length=1200, blank=True, default='')
     pdf_size = models.BigIntegerField(default=0)
+    status = models.CharField(max_length=7, choices=[(SUCCESS, 'Success'), (FAILED, 'Failed')], default=SUCCESS)
+    log_key = models.CharField(max_length=1200, blank=True, default='')  # the compile log (text/plain); blank before v0.0.4.1
+    log_size = models.BigIntegerField(default=0)
     name = models.CharField(max_length=100, blank=True, default='')  # a named version is pinned: retention keeps it forever
     restored_from = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
 

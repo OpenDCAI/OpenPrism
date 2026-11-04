@@ -66,6 +66,14 @@
       diff, swap), restore with a confirmation that lists what changes, a 409 explanation when someone has a file open,
       and a shared `SplitDiff` component; Playwright specs incl. a second live browser.
 
+## v0.0.4.1 - Version history with diff Follow up
+
+- [x] #42 **Restore a single file** from an old version (API + Compare dialog). No new version is recorded.
+- [x] #43 **Save failed compiles as versions**, with their log; newest 10 unnamed failed versions kept separately.
+- [x] #44 **Versions panel shows failed versions** (Failed badge, Open log).
+- [x] #45 **Workspace storage report and time-based retention** (optional per-workspace days; newest version always kept).
+- [x] #46 **Visual PDF comparison** between two versions (side by side and highlighted pixel differences).
+
 ## v0.0.5 - AI assistance for LaTeX tasks
 
 - [x] #27 **Give the agent editor context.** `editContext` (active file, caret, selection, main file, unsaved text) on

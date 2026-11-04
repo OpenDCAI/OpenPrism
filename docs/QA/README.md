@@ -11,6 +11,7 @@ release sign-off, a look at a real deployment, and anything a spec cannot judge 
 | v0.0.2 | [v0.0.2-zotero.md](v0.0.2-zotero.md) | Zotero: connect, search, cite, add to the bibliography |
 | v0.0.3 / v0.0.3.1 | [v0.0.3-workspace-ai-provider.md](v0.0.3-workspace-ai-provider.md) | Workspace AI provider; web image build fix |
 | v0.0.4 | [v0.0.4-version-history.md](v0.0.4-version-history.md) | Version history: save, view, name, delete, compare, restore |
+| v0.0.4.1 | [v0.0.4.1-version-history-follow-ups.md](v0.0.4.1-version-history-follow-ups.md) | Single-file restore, failed compiles as versions, storage report and retention, visual PDF comparison |
 | v0.0.5 | [v0.0.5-ask-ai.md](v0.0.5-ask-ai.md) | Ask AI in place (Ctrl/Cmd+K) |
 | v0.0.6 | [v0.0.6-accounts-and-comments.md](v0.0.6-accounts-and-comments.md) | Mail, password reset/change, delete account, email verification, invitation mail, invite-link roles, comments |
 | v0.0.7 | [v0.0.7-tectonic-and-transfer-cleanup.md](v0.0.7-tectonic-and-transfer-cleanup.md) | Tectonic compiles offline; a failed template transfer removes its project |
@@ -19,7 +20,7 @@ release sign-off, a look at a real deployment, and anything a spec cannot judge 
 
 1. Start the stack and the dev server (see `README.md`): `docker compose up -d --wait`, `deploy/garage-init.sh` once,
    `npm run dev`.
-2. Check the version: `curl localhost:8000/healthz` returns the release you are testing, and the account menu shows the
+2. Check the version: `curl localhost:8000/healthz` returns the release you are testing (note: v0.0.4.1 was released after v0.0.7, so versions are not in release order), and the account menu shows the
    same version at the bottom.
 3. Load the built-in templates once into an account: register it in the UI, then
    `docker compose exec api python manage.py import_legacy --owner you@example.com`.

@@ -2,6 +2,7 @@ import shutil
 import threading
 from unittest import mock, skipUnless
 
+from django.conf import settings
 from django.db import connection
 from django.test import TestCase, TransactionTestCase
 
@@ -15,6 +16,10 @@ from projects.test_api import make_user
 
 from . import snapshot
 from .models import ProjectVersion, VersionBlob
+
+
+def list_keys(prefix):
+    return [o['Key'] for o in storage.get_client().list_objects_v2(Bucket=settings.S3_BUCKET, Prefix=prefix).get('Contents', [])]
 
 HAS_TEX = shutil.which('pdflatex') is not None
 
@@ -113,9 +118,32 @@ class SnapshotTests(VersionTestBase, TestCase):
         self.compile_job()
         self.assertEqual(VersionBlob.objects.filter(kind='text').count(), 2)
 
-    def test_a_failed_compile_creates_no_version(self):
-        job = self.compile_job(pdf=None)
+    def test_a_failed_compile_is_kept_as_a_failed_version_with_its_log(self):
+        self.compile_job(pdf=b'%PDF-good')
+        files.write_text(self.project, 'main.tex', DOC + '\\broken')
+        job = self.compile_job(pdf=None, log='! Undefined control sequence.')
         self.assertEqual(job.status, 'failed')
+        failed = ProjectVersion.objects.get(number=2)
+        self.assertEqual((failed.status, failed.pdf_key, failed.pdf_size), ('failed', '', 0))
+        self.assertEqual(storage.get_bytes(failed.log_key), b'! Undefined control sequence.')
+        self.assertEqual((job.result['versionId'], job.result['versionNumber'], job.result['versionCreated']),
+                         (str(failed.id), 2, True))
+        self.assertEqual(ProjectVersion.objects.get(number=1).status, 'success')
+
+    def test_repeating_a_failure_adds_nothing_and_fixing_it_adds_a_success(self):
+        self.compile_job(pdf=None, log='first')
+        again = self.compile_job(pdf=None, log='second')
+        self.assertEqual((ProjectVersion.objects.count(), again.result['versionCreated']), (1, False))
+        fixed = self.compile_job(pdf=b'%PDF-fixed')  # same files (e.g. a flaky package), but it worked this time
+        self.assertEqual((fixed.result['versionNumber'], ProjectVersion.objects.get(number=2).status), (2, 'success'))
+
+    def test_a_compile_refused_before_running_records_nothing(self):
+        job = Job.objects.create(type='compile', user=self.user, project=self.project,
+                                 params={'mainFile': 'missing.tex', 'engine': 'pdflatex'})
+        with mock.patch('jobs.compile.run_command', return_value=0):
+            tasks.compile_project(str(job.id))
+        job.refresh_from_db()
+        self.assertEqual((job.status, job.error), ('failed', 'Main file not found: missing.tex'))
         self.assertFalse(ProjectVersion.objects.exists())
 
     def test_the_compiler_alone_never_records_a_version(self):
@@ -140,6 +168,7 @@ class SnapshotTests(VersionTestBase, TestCase):
         self.assertEqual(job.status, 'success')
         self.assertFalse(ProjectVersion.objects.exists())
         self.assertFalse(VersionBlob.objects.exists())
+        self.assertEqual(list_keys(f'versions/{self.project.id}/'), [])  # neither the PDF nor the log was left behind
 
     def test_the_snapshot_is_what_the_compiler_saw_not_a_later_read(self):
         """Edits made after the files were materialised (e.g. while TeX runs) are not in the version."""
@@ -212,7 +241,20 @@ class RealCompileVersionTests(VersionTestBase, TestCase):
         self.assertEqual(job.status, 'success')
         v = ProjectVersion.objects.get()
         self.assertEqual(job.result['versionId'], str(v.id))
+        self.assertIn('pdfTeX', storage.get_bytes(v.log_key).decode())
         self.assertTrue(storage.get_bytes(v.pdf_key).startswith(b'%PDF'))
         self.assertEqual(sorted(m['path'] for m in v.manifest), ['figs/dot.png', 'main.tex'])
         again = tex.compile_project(self.project, 'main.tex', 'pdflatex')
         self.assertEqual(snapshot.hash_manifest(snapshot.manifest_of(again['snapshot'])), v.manifest_hash)
+
+
+    def test_a_real_failure_is_saved_with_the_log_naming_the_error(self):
+        files.write_text(self.project, 'main.tex', '\\documentclass{article}\\begin{document}\\undefinedmacro\\end{document}')
+        job = Job.objects.create(type='compile', user=self.user, project=self.project,
+                                 params={'mainFile': 'main.tex', 'engine': 'pdflatex'})
+        self.addCleanup(storage.delete_prefix, f'jobs/{job.id}/')
+        tasks.compile_project(str(job.id))
+        job.refresh_from_db()
+        v = ProjectVersion.objects.get()
+        self.assertEqual((job.status, v.status, job.result['versionId']), ('failed', 'failed', str(v.id)))
+        self.assertIn('Undefined control sequence', storage.get_bytes(v.log_key).decode())

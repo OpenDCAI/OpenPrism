@@ -10,6 +10,7 @@ from projects.models import Membership, Project
 from projects.test_api import ApiBase, client_for, make_user
 
 from . import snapshot
+from .models import ProjectVersion
 
 
 class VersionApiBase(ApiBase):
@@ -18,11 +19,12 @@ class VersionApiBase(ApiBase):
         self.pid = self.new_project()
         self.project = Project.objects.get(pk=self.pid)
 
-    def save_version(self, project=None, pdf=b'%PDF-test', engine='pdflatex'):
+    def save_version(self, project=None, pdf=b'%PDF-test', engine='pdflatex', log=None):
+        """Record a version of the project as it is now; pdf=None records a failed compile."""
         project = project or self.project
         root = tempfile.mkdtemp()
         self.addCleanup(shutil.rmtree, root, True)
-        version, _ = snapshot.record(project, tex.materialise(project, root), pdf, 'main.tex', engine, user=self.user)
+        version, _ = snapshot.record(project, tex.materialise(project, root), pdf, 'main.tex', engine, user=self.user, log=log)
         return version
 
     def url(self, *parts, pid=None):
@@ -220,3 +222,40 @@ class DiffTests(VersionApiBase):
         self.assertEqual(self.c.get(self.url('diff'), {'from': theirs.id}).status_code, 404)
         self.assertEqual(self.c.get(self.url('diff')).status_code, 400)
         self.assertEqual(self.c.get(self.url('diff'), {'from': 'junk'}).status_code, 404)
+
+
+class FailedVersionApiTests(VersionApiBase):
+    def setUp(self):
+        super().setUp()
+        files.write_text(self.project, 'main.tex', DOC)
+        self.good = self.save_version(log='good log')
+        files.write_text(self.project, 'main.tex', DOC + '\\broken')
+        self.bad = self.save_version(pdf=None, log='! Undefined control sequence.')
+
+    def test_the_list_says_which_failed_and_that_both_have_logs(self):
+        rows = self.c.get(self.url()).data['versions']
+        self.assertEqual([(r['number'], r['status'], r['hasLog'], r['pdfSize']) for r in rows],
+                         [(2, 'failed', True, 0), (1, 'success', True, len(b'%PDF-test'))])
+
+    def test_the_log_is_readable_by_members_and_guests_and_the_pdf_of_a_failure_is_404(self):
+        res = self.c.get(self.url(self.bad.id, 'log'))
+        self.assertEqual(res.data, {'ok': True, 'log': '! Undefined control sequence.'})
+        self.assertEqual(self.guest('viewer').get(self.url(self.bad.id, 'log')).data['log'], '! Undefined control sequence.')
+        self.assertEqual(self.c.get(self.url(self.bad.id, 'pdf')).status_code, 404)
+        stranger = client_for(make_user('stranger@example.com'))
+        self.assertEqual(stranger.get(self.url(self.bad.id, 'log')).status_code, 404)
+
+    def test_a_version_without_a_log_answers_404(self):
+        ProjectVersion.objects.filter(pk=self.good.pk).update(log_key='')  # recorded before logs were kept
+        self.assertEqual(self.c.get(self.url(self.good.id, 'log')).status_code, 404)
+        self.assertFalse(self.c.get(self.url()).data['versions'][1]['hasLog'])
+
+    def test_restoring_a_failed_version_keeps_it_failed_with_its_own_log_copy(self):
+        files.write_text(self.project, 'main.tex', DOC + '% fixed')
+        self.save_version(log='fixed')
+        res = self.c.post(self.url(self.bad.id, 'restore'), {}, format='json')
+        self.assertEqual(res.status_code, 200, res.content)
+        restored = ProjectVersion.objects.get(pk=res.data['versionId'])
+        self.assertEqual((restored.status, restored.pdf_key, restored.restored_from_id), ('failed', '', self.bad.id))
+        self.assertNotEqual(restored.log_key, self.bad.log_key)
+        self.assertEqual(self.c.get(self.url(restored.id, 'log')).data['log'], '! Undefined control sequence.')

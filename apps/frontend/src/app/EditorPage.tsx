@@ -38,6 +38,7 @@ import {
   getProjectTree,
   fetchVersionPdf,
   restoreVersion,
+  restoreVersionFile,
   getWorkspaceLlm,
   getCollabToken,
   blobUrl,
@@ -66,6 +67,8 @@ import { yCollab } from 'y-codemirror.next';
 import { CollabProvider } from '../collab/provider';
 import ZoteroPanel from './ZoteroPanel';
 import VersionsPanel from './VersionsPanel';
+import { parseCompileErrors } from './compileLog';
+import type { CompileError } from './compileLog';
 import AiCommandBar from './AiCommandBar';
 import InviteLinks from './InviteLinks';
 import CommentsPanel from './CommentsPanel';
@@ -1090,56 +1093,6 @@ const latexHighlight = HighlightStyle.define([
   { tag: hlTags.bracket, color: 'var(--text-3)' }
 ]);
 
-type CompileError = {
-  message: string;
-  line?: number;
-  file?: string;
-  raw?: string;
-};
-
-function parseCompileErrors(log: string): CompileError[] {
-  if (!log) return [];
-  const lines = log.split('\n');
-  const errors: CompileError[] = [];
-  const seen = new Set<string>();
-
-  const pushError = (error: CompileError) => {
-    const key = `${error.file || ''}:${error.line || ''}:${error.message}`;
-    if (seen.has(key)) return;
-    seen.add(key);
-    errors.push(error);
-  };
-
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i];
-    const fileLineMatch = line.match(/([A-Za-z0-9_./-]+\.tex):(\d+)/);
-    if (fileLineMatch) {
-      pushError({
-        message: line.trim(),
-        file: fileLineMatch[1],
-        line: Number(fileLineMatch[2]),
-        raw: line
-      });
-    }
-    if (line.startsWith('!')) {
-      const message = line.replace(/^!+\s*/, '').trim();
-      // Follow-on noise from the first real error; the log below still has it.
-      if (/^(Emergency stop|==> Fatal error)/.test(message)) continue;
-      let lineNo: number | undefined;
-      for (let j = i + 1; j < Math.min(i + 4, lines.length); j += 1) {
-        const match = lines[j].match(/l\.(\d+)/);
-        if (match) {
-          lineNo = Number(match[1]);
-          break;
-        }
-      }
-      pushError({ message, line: lineNo, raw: line });
-    }
-  }
-
-  return errors;
-}
-
 function findLineOffset(text: string, line: number) {
   if (line <= 1) return 0;
   let offset = 0;
@@ -1845,6 +1798,32 @@ export default function EditorPage() {
         if (activePath && items.some((item) => item.path === activePath)) await openFile(activePath, true).catch(() => undefined);
         setVersionsRefresh((n) => n + 1);
         setStatus(t('Restored version #{{from}} as version #{{n}}', { from: version.number, n: res.versionNumber }));
+      }
+      return res;
+    } finally {
+      if (wasLive) setCollabEnabled(true);
+    }
+  };
+
+  /** Restore one file from a version. Only this tab's own room for that file needs leaving (see restoreVersionInEditor). */
+  const restoreFileInEditor = async (version: { id: string; number: number }, path: string): Promise<RestoreVersionResult> => {
+    const wasLive = collabEnabled && collabActiveRef.current && activePath === path;
+    if (wasLive) {
+      await flushCollabFile(projectId, activePath).catch(() => undefined);
+      setCollabEnabled(false);
+      await new Promise((resolve) => setTimeout(resolve, 500));
+    }
+    try {
+      const res = await restoreVersionFile(projectId, version.id, path);
+      if (res.ok && res.restored) {
+        setFiles((prev) => {
+          const next = { ...prev };
+          delete next[path];
+          return next;
+        });
+        await refreshTree(true, true);
+        if (activePath === path) await openFile(path, true).catch(() => undefined);
+        setStatus(t('Restored {{path}} from version #{{n}}', { path, n: version.number }));
       }
       return res;
     } finally {
@@ -3605,6 +3584,7 @@ export default function EditorPage() {
     const target = viewTarget;
     const views = compiledViewsRef.current;
     const stillViewing = () => viewTargetRef.current === target; // the reader may have switched files meanwhile
+    let failedVersion = 0; // a failed compile saved as a version, reported in the status bar
     try {
       // The server compiles what is saved; autosave waits 1.5 s, so write the open file now.
       if (!collabActiveRef.current && isDirty && activePath) {
@@ -3646,6 +3626,7 @@ export default function EditorPage() {
         if (res.pdf) engineOverridesRef.current.set(target, engine);
       }
       if (!res.ok || !res.pdf) {
+        if (res.versionCreated && res.versionNumber) failedVersion = res.versionNumber;
         const detail = [res.error, res.log].filter(Boolean).join('\n');
         throw new Error(detail || t('后端编译失败'));
       }
@@ -3686,7 +3667,10 @@ export default function EditorPage() {
         setCompileLog(log);
         setRightView('log'); // otherwise the previous PDF stays up and looks like this compile's result
       }
-      setStatus(t('编译失败: {{error}}', { error: String(err) }));
+      // the note goes first: the error that follows can be a whole log, cut off by the status bar
+      const saved = failedVersion ? `${t('Saved as version #{{n}} (failed)', { n: failedVersion })} · ` : '';
+      setStatus(`${saved}${t('编译失败: {{error}}', { error: String(err) })}`);
+      if (failedVersion) setVersionsRefresh((n) => n + 1);
     } finally {
       setIsCompiling(false);
     }
@@ -5757,6 +5741,8 @@ export default function EditorPage() {
                         if (showingVersion?.id === id) void viewVersionPdf(null);
                       }}
                       onRestore={restoreVersionInEditor}
+                      onRestoreFile={restoreFileInEditor}
+                      currentPdf={(showingVersion ? showingVersion.backUrl : pdfUrl) || null}
                     />
                   </div>
                 </div>

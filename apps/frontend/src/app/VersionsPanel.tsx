@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { deleteVersion, diffVersions, listVersions, renameVersion } from '../api/client';
+import { deleteVersion, diffVersions, getVersionLog, listVersions, renameVersion } from '../api/client';
 import type { ProjectVersionMeta, RestoreVersionResult, VersionFileChange } from '../api/client';
 import { Badge, Button, EmptyState, FieldError, Modal } from '@design';
 import VersionCompareModal from './VersionCompareModal';
+import { parseCompileErrors } from './compileLog';
 
 interface VersionsPanelProps {
   projectId: string;
@@ -17,11 +18,15 @@ interface VersionsPanelProps {
   onDeleted: (versionId: string) => void;
   /** Make the project's files this version's. The editor leaves its live rooms first and reloads afterwards. */
   onRestore: (version: ProjectVersionMeta) => Promise<RestoreVersionResult>;
+  /** Put one file back from a version (the Compare dialog's "Restore this file"). */
+  onRestoreFile: (version: ProjectVersionMeta, path: string) => Promise<RestoreVersionResult>;
+  /** The preview's current build (blob URL) for the PDF comparison, or null. */
+  currentPdf: string | null;
 }
 
 const PAGE = 30;
 
-export default function VersionsPanel({ projectId, refreshKey, viewingId, onViewPdf, onDeleted, onRestore }: VersionsPanelProps) {
+export default function VersionsPanel({ projectId, refreshKey, viewingId, onViewPdf, onDeleted, onRestore, onRestoreFile, currentPdf }: VersionsPanelProps) {
   const { t } = useTranslation();
   const [versions, setVersions] = useState<ProjectVersionMeta[]>([]);
   const [hasMore, setHasMore] = useState(false);
@@ -34,6 +39,7 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
   const [error, setError] = useState('');
   const [comparing, setComparing] = useState(false);
   const [restore, setRestore] = useState<{ changes: VersionFileChange[] | null; blocked: RestoreVersionResult | null; error: string; busy: boolean } | null>(null);
+  const [logView, setLogView] = useState<{ number: number; log: string | null; error: string } | null>(null);
   const seq = useRef(0);
 
   const load = useCallback(async () => {
@@ -119,6 +125,17 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
     }
   };
 
+  const openLog = async (version: ProjectVersionMeta) => {
+    setLogView({ number: version.number, log: null, error: '' });
+    try {
+      const res = await getVersionLog(projectId, version.id);
+      setLogView((prev) => prev && prev.number === version.number ? { ...prev, log: res.log } : prev);
+    } catch (err) {
+      setLogView((prev) => prev && { ...prev, error: String((err as Error).message || err) });
+    }
+  };
+  const logErrors = useMemo(() => parseCompileErrors(logView?.log ?? ''), [logView?.log]);
+
   const remove = async () => {
     if (!selected) return;
     setBusy(true);
@@ -142,7 +159,7 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
       <div data-testid="versions-panel">
         <FieldError message={error} />
         <EmptyState icon="history" title={t('No versions yet')}>
-          {t('A version is saved every time a compile succeeds, so you can look back at an earlier PDF.')}
+          {t('A version is saved every time you compile, so you can look back at an earlier PDF, or at the log of a compile that failed.')}
         </EmptyState>
       </div>
     );
@@ -163,6 +180,7 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
           >
             <span className="version-row-head">
               <strong>#{v.number}</strong>
+              {v.status === 'failed' && <Badge tone="danger" icon="alert-circle">{t('Failed')}</Badge>}
               {v.name && <Badge tone="accent" icon="star">{v.name}</Badge>}
               {v.restoredFrom !== null && <Badge>{t('restored from #{{n}}', { n: v.restoredFrom })}</Badge>}
               {v.id === viewingId && <Badge tone="info">{t('Viewing')}</Badge>}
@@ -182,15 +200,28 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
           <div className="tool-title">{t('Version #{{n}}', { n: selected.number })}</div>
           <div className="muted">{selected.fileCount === 1 ? t('1 file') : t('{{count}} files', { count: selected.fileCount })}</div>
           <div className="row">
-            <Button
-              variant="primary"
-              size="sm"
-              icon="file-text"
-              data-testid="version-open-pdf"
-              onClick={() => onViewPdf(viewing ? null : selected)}
-            >
-              {viewing ? t('Back to current build') : t('Open PDF')}
-            </Button>
+            {selected.status === 'failed' ? (
+              <Button variant="primary" size="sm" icon="alert-circle" data-testid="version-open-log" onClick={() => void openLog(selected)} disabled={!selected.hasLog}>
+                {t('Open log')}
+              </Button>
+            ) : (
+              <>
+                <Button
+                  variant="primary"
+                  size="sm"
+                  icon="file-text"
+                  data-testid="version-open-pdf"
+                  onClick={() => onViewPdf(viewing ? null : selected)}
+                >
+                  {viewing ? t('Back to current build') : t('Open PDF')}
+                </Button>
+                {selected.hasLog && (
+                  <Button variant="secondary" size="sm" data-testid="version-open-log" onClick={() => void openLog(selected)}>
+                    {t('Open log')}
+                  </Button>
+                )}
+              </>
+            )}
           </div>
           <div className="row">
             <Button variant="secondary" size="sm" icon="diff" data-testid="version-compare" onClick={() => setComparing(true)}>
@@ -215,7 +246,7 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
                   placeholder={t('e.g. submitted to ACL')}
                   onChange={(e) => setNameDraft(e.target.value)}
                 />
-                <span className="muted">{t('A named version is kept forever. Unnamed versions beyond the newest 50 are removed.')}</span>
+                <span className="muted">{t('A named version is kept forever. Unnamed versions beyond the newest 50, and failed ones beyond the newest 10, are removed.')}</span>
               </div>
               <div className="row">
                 <Button
@@ -261,7 +292,34 @@ export default function VersionsPanel({ projectId, refreshKey, viewingId, onView
         </div>
       )}
       {comparing && selected && (
-        <VersionCompareModal projectId={projectId} versions={versions} initialFrom={selected} onClose={() => setComparing(false)} />
+        <VersionCompareModal
+          projectId={projectId}
+          versions={versions}
+          initialFrom={selected}
+          canWrite={canWrite}
+          onRestoreFile={onRestoreFile}
+          currentPdf={currentPdf}
+          onClose={() => setComparing(false)}
+        />
+      )}
+      {logView && (
+        <Modal title={t('Log of version #{{n}}', { n: logView.number })} onClose={() => setLogView(null)} size="lg" closeLabel={t('Close')}>
+          <div className="version-log" data-testid="version-log-modal">
+            {logView.log === null && !logView.error && <div className="muted" role="status">{t('Loading…')}</div>}
+            <FieldError message={logView.error} />
+            {logErrors.length > 0 && (
+              <ul className="version-log-errors" data-testid="version-log-errors">
+                {logErrors.map((e, i) => (
+                  <li key={`${e.message}-${i}`}>
+                    <span>{e.message}</span>
+                    {e.line && <span className="muted">{`L${e.line}`}</span>}
+                  </li>
+                ))}
+              </ul>
+            )}
+            {logView.log !== null && <pre className="version-log-text">{logView.log || t('No log')}</pre>}
+          </div>
+        </Modal>
       )}
       {restore && selected && (
         <Modal
