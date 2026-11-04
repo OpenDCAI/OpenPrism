@@ -27,14 +27,12 @@ Moved to `docs/todo.md` (issues #21-#26). Decided: only successful compiles are 
 50, named versions are kept forever, restore replaces the files and records a new version (blocked while an affected
 file is open live). 
 
-## v0.0.4.1  - Version history with diff Follow up
+## v0.0.4.1 - Version history with diff Follow up
 
-Left for later:
-- [ ] **Visual PDF comparison** between two versions (page-by-page overlay or side by side with highlighted changes).
-- [ ] **Save failed compiles as versions** ("what broke it"), shown with their log instead of a PDF.
-- [ ] **Per-workspace storage accounting and a time-based retention option** for versions (blobs are deduplicated per
-      project, so a workspace total needs its own query and a limit policy).
-- [ ] **Restore a single file** from an old version.
+Moved to `docs/todo.md` (issues #42-#46). Decided: a single-file restore records no version; failed compiles are kept
+with their log (newest 10 unnamed, separately from the 50 successful); storage is a report, not a quota, and time-based
+retention is an optional per-workspace setting that always keeps each project's newest version; PDF comparison is done
+in the browser by pixel diff.
 
 ## v0.0.5 - AI Assistance for LaTeX tasks
 
