@@ -16,6 +16,7 @@ class GuestUser:
     def __init__(self, invite):
         self.project_id = str(invite.project_id)
         self.role = invite.role
+        self.invite_id = str(invite.id)  # a guest's identity for "my comments"
 
     @property
     def can_write(self):

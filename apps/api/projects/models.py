@@ -20,7 +20,8 @@ class Workspace(models.Model):
 class Membership(models.Model):
     OWNER, ADMIN, EDITOR, COMMENTER, VIEWER = 'owner', 'admin', 'editor', 'commenter', 'viewer'
     ROLES = [(OWNER, 'Owner'), (ADMIN, 'Admin'), (EDITOR, 'Editor'), (COMMENTER, 'Commenter'), (VIEWER, 'Viewer')]
-    WRITE_ROLES = (OWNER, ADMIN, EDITOR)  # commenters (no commenting feature yet) and viewers are read-only
+    WRITE_ROLES = (OWNER, ADMIN, EDITOR)  # commenters and viewers cannot change files
+    COMMENT_ROLES = WRITE_ROLES + (COMMENTER,)  # may write comments (viewers only read them)
     ADMIN_ROLES = (OWNER, ADMIN)
     ASSIGNABLE = (ADMIN, EDITOR, COMMENTER, VIEWER)  # ownership is not handed out through invitations
 
