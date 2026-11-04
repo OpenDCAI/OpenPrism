@@ -25,6 +25,9 @@ export interface WorkspaceMember {
   role: WorkspaceRole;
   /** Pending invitation: the address has no account yet. */
   invited?: boolean;
+  /** Pending invitations: when the mail was last sent, and whether it could not be delivered. ISO timestamps. */
+  lastSentAt?: string | null;
+  sendFailed?: boolean;
 }
 
 export interface Workspace {
@@ -53,6 +56,8 @@ export interface WorkspaceContextValue {
   inviteMember: (email: string, role: WorkspaceRole) => Promise<void>;
   setMemberRole: (userId: string, role: WorkspaceRole) => Promise<void>;
   removeMember: (userId: string) => Promise<void>;
+  /** Send a pending invitation's mail again. */
+  resendInvite: (userId: string) => Promise<void>;
   /** Move a project to another workspace (the caller then reloads its project list). */
   moveProject: (projectId: string, workspaceId: string) => Promise<void>;
   /** Sign out of the account, or leave the shared session when `guest`. */

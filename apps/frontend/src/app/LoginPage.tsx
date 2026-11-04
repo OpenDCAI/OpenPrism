@@ -33,7 +33,9 @@ export default function LoginPage() {
       onSubmit={submit}
       onForgotPassword={() => navigate('/forgot-password')}
       initialEmail={params.get('email') || undefined}
-      notice={next && /^\/(editor|collab)/.test(next) ? t('Sign in to continue to your project.') : undefined}
+      notice={params.get('invited') && mode === 'register'
+        ? t('Create your account with the invited address. You join the workspace once you confirm it from the email we send.')
+        : next && /^\/(editor|collab)/.test(next) ? t('Sign in to continue to your project.') : undefined}
     />
   );
 }

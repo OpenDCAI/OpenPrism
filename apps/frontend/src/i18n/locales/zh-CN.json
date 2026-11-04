@@ -833,5 +833,9 @@
   "I have confirmed it": "我已确认",
   "Send the link again": "重新发送链接",
   "Confirm {{email}}: open the link we sent you. Workspace invitations wait until you do.": "请确认 {{email}}：打开我们发送的链接。确认之前，工作区邀请不会生效。",
-  "Resend": "重新发送"
+  "Resend": "重新发送",
+  "Email not sent": "邮件未发送",
+  "Sent {{when}}": "发送于 {{when}}",
+  "Invitation sent again to {{email}}": "已重新向 {{email}} 发送邀请",
+  "Create your account with the invited address. You join the workspace once you confirm it from the email we send.": "请用受邀的邮箱创建账户。确认我们发送的邮件后即加入工作区。"
 }

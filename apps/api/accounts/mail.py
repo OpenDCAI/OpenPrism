@@ -32,9 +32,14 @@ def deliver(to, template, context):
     message.send()
 
 
-def send_template(to, template, context):
-    """Queue a templated mail. Returns at once; delivery is retried by the task."""
-    if settings.MAIL_SEND_INLINE:
-        return deliver(to, template, context)
+def send_template(to, template, context, invite_id=None):
+    """Queue a templated mail. Returns at once; delivery is retried by the task. `invite_id` ties the outcome to a
+    WorkspaceInvite (`send_failed`)."""
     from .tasks import send_email
-    send_email.delay(to, template, context)
+    if settings.MAIL_SEND_INLINE:  # tests: like the real task, a failure is recorded and never fails the request
+        try:
+            send_email.run(to, template, context, invite_id)
+        except Exception:  # noqa: BLE001 - logged by the task
+            pass
+        return
+    send_email.delay(to, template, context, invite_id)

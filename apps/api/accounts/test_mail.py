@@ -28,7 +28,7 @@ class MailTests(SimpleTestCase):
     def test_send_template_queues_the_task(self):
         with mock.patch('accounts.tasks.send_email.delay') as delay:
             mail.send_template('ada@example.org', 'test', {'a': 1})
-        delay.assert_called_once_with('ada@example.org', 'test', {'a': 1})
+        delay.assert_called_once_with('ada@example.org', 'test', {'a': 1}, None)
 
     def test_smtp_failure_is_retried_and_the_body_is_not_logged(self):
         with mock.patch('accounts.mail.deliver', side_effect=smtplib.SMTPServerDisconnected('gone')), \

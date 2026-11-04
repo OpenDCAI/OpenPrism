@@ -746,7 +746,7 @@ export interface WorkspaceDto {
   name: string;
   kind: 'Personal' | 'Team';
   color: string;
-  members: { userId: string; role: WorkspaceRoleName; invited?: boolean }[];
+  members: { userId: string; role: WorkspaceRoleName; invited?: boolean; invitedAt?: string | null; lastSentAt?: string | null; sendFailed?: boolean }[];
   users: Record<string, { id: string; name: string; email: string; color: string }>;
 }
 
@@ -776,6 +776,10 @@ export async function setMemberRoleApi(id: string, userId: string, role: Workspa
 
 export async function removeMemberApi(id: string, userId: string) {
   return (await request<{ workspace: WorkspaceDto }>(`/api/workspaces/${id}/members/${encodeURIComponent(userId)}`, { method: 'DELETE' })).workspace;
+}
+
+export async function resendInviteApi(id: string, userId: string) {
+  return (await request<{ workspace: WorkspaceDto }>(`/api/workspaces/${id}/members/${encodeURIComponent(userId)}/resend`, { method: 'POST' })).workspace;
 }
 
 export function moveProjectApi(projectId: string, workspaceId: string) {

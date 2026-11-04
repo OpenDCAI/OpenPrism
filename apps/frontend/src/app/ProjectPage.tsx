@@ -352,7 +352,17 @@ function MembersSection({
                     )}
                   </td>
                   <td>
-                    {m.invited ? <Badge tone="info">{t('Invited')}</Badge> : <span className="home-muted">{isMe ? t('Now') : t('Not tracked')}</span>}
+                    {m.invited ? (
+                      <span className="home-invite-status">
+                        {m.sendFailed ? <Badge tone="danger">{t('Email not sent')}</Badge> : <Badge tone="info">{t('Invited')}</Badge>}
+                        {m.lastSentAt && <span className="home-muted">{t('Sent {{when}}', { when: new Date(m.lastSentAt).toLocaleString() })}</span>}
+                        {admin && (
+                          <Button size="sm" variant="ghost" onClick={() => ws.resendInvite(m.userId)
+                            .then(() => onStatus(t('Invitation sent again to {{email}}', { email: u.email })))
+                            .catch((err) => onStatus(err.message))}>{t('Resend')}</Button>
+                        )}
+                      </span>
+                    ) : <span className="home-muted">{isMe ? t('Now') : t('Not tracked')}</span>}
                   </td>
                   <td className="home-cell-end">
                     {!locked && (

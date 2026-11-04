@@ -220,3 +220,4 @@
   display: flex; align-items: center; gap: var(--sp-2); padding: var(--sp-2) var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md);
   background: var(--surface); box-shadow: var(--shadow-2); color: var(--text); font-size: var(--fs-sm); }
 .verify-banner > span { flex: 1; min-width: 0; }
+.home-invite-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }

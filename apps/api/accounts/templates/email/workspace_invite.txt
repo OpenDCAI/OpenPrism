@@ -1,0 +1,9 @@
+Hello,
+
+{{ inviter }} invited you to the workspace "{{ workspace }}" on OpenPrism as {{ role }}.
+
+Create your account with this email address to join:
+
+{{ link }}
+
+You join the workspace as soon as you confirm your email address. If you were not expecting this, ignore this message.
