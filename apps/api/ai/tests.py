@@ -189,7 +189,7 @@ class AiApiTests(ApiBase):
         # the failed read_file was reported back to the model rather than aborting the run
         tool_msgs = [m['content'] for m in fake.requests[1]['body']['messages'] if m['role'] == 'tool']
         self.assertEqual(tool_msgs, ['Error: File not found: missing.tex'])
-        self.assertEqual(len(fake.requests[0]['body']['tools']), 7)
+        self.assertEqual(len(fake.requests[0]['body']['tools']), 8)
         self.assert_key_not_persisted()
 
     def test_edit_context_prompt_and_multi_file_patches(self):
@@ -306,6 +306,32 @@ class AiApiTests(ApiBase):
         # the plain assistant is not affected, and the limit is per user
         self.assertEqual(self.c.post('/api/agent/run', {'prompt': 'hi', 'interaction': 'chat', 'llmConfig': self.cfg(fake)}, format='json').status_code, 200)
         cache.clear()
+
+    def test_replace_text_stages_cumulative_exact_edits_and_edit_mode_refuses_rewrites(self):
+        pid = self.new_project()
+        project = Project.objects.get(pk=pid)
+        files.write_text(project, 'main.tex', 'one\ntwo\ntwo\nthree\n')
+        fake = self.fake(
+            tool_call('replace_text', {'path': 'main.tex', 'old_text': 'missing', 'new_text': 'x'}, 'a'),
+            tool_call('replace_text', {'path': 'main.tex', 'old_text': 'two', 'new_text': 'x'}, 'b'),      # occurs twice
+            tool_call('replace_text', {'path': 'main.tex', 'old_text': 'one', 'new_text': 'ONE'}, 'c'),
+            tool_call('replace_text', {'path': 'main.tex', 'old_text': 'three', 'new_text': 'THREE'}, 'd'),  # same file again
+            tool_call('propose_patch', {'path': 'main.tex', 'content': 'rewritten'}, 'e'),                 # refused in edit mode
+            tool_call('propose_patch', {'path': 'new.tex', 'content': 'fresh\n'}, 'f'),
+            {'content': 'ok'})
+        ctx = {'activeFile': 'main.tex', 'cursor': {'line': 1, 'col': 1}}
+        res = self.c.post('/api/agent/run', {'projectId': pid, 'prompt': 'x', 'llmConfig': self.cfg(fake), 'editContext': ctx}, format='json').data
+        by_path = {p['path']: p for p in res['patches']}
+        self.assertEqual(set(by_path), {'main.tex', 'new.tex'})
+        self.assertEqual(by_path['main.tex']['content'], 'ONE\ntwo\ntwo\nTHREE\n')  # both edits are in the one patch
+        self.assertEqual(by_path['main.tex']['original'], 'one\ntwo\ntwo\nthree\n')  # relative to the stored text
+        self.assertIn('+ONE', by_path['main.tex']['diff'])
+        self.assertIn('+THREE', by_path['main.tex']['diff'])
+        results = [m['content'] for m in fake.requests[-1]['body']['messages'] if m['role'] == 'tool']
+        self.assertIn('not found', results[0])
+        self.assertIn('occurs 2 times', results[1])
+        self.assertIn('not a full rewrite', results[4])
+        self.assertEqual(files.read_text(project, 'main.tex'), 'one\ntwo\ntwo\nthree\n')  # still only proposals
 
     def test_agent_tools_mode_guards(self):
         fake = self.fake()
