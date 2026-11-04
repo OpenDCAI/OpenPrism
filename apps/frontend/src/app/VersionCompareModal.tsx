@@ -2,9 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { diffVersions, getFile, getVersionFile } from '../api/client';
 import type { ProjectVersionMeta, RestoreVersionResult, VersionFileChange } from '../api/client';
-import { Badge, Button, FieldError, Modal, Select } from '@design';
+import { Badge, Button, FieldError, Modal, SegmentedControl, Select } from '@design';
 import type { SelectOption } from '@design';
 import { SplitDiffView, buildSplitDiff } from './SplitDiff';
+import PdfCompareView from './PdfCompareView';
 
 const CURRENT = '__current__';
 
@@ -17,12 +18,14 @@ interface VersionCompareModalProps {
   /** Whether "Restore this file" is offered. */
   canWrite: boolean;
   onRestoreFile: (version: ProjectVersionMeta, path: string) => Promise<RestoreVersionResult>;
+  /** The preview's current build (blob URL), compared when To is the current project; null if there is none. */
+  currentPdf: string | null;
   onClose: () => void;
 }
 
 const label = (v: ProjectVersionMeta) => `#${v.number}${v.name ? ` · ${v.name}` : ''}`;
 
-export default function VersionCompareModal({ projectId, versions, initialFrom, canWrite, onRestoreFile, onClose }: VersionCompareModalProps) {
+export default function VersionCompareModal({ projectId, versions, initialFrom, canWrite, onRestoreFile, currentPdf, onClose }: VersionCompareModalProps) {
   const { t } = useTranslation();
   const [from, setFrom] = useState(initialFrom.id);
   const [to, setTo] = useState(CURRENT);
@@ -31,6 +34,7 @@ export default function VersionCompareModal({ projectId, versions, initialFrom, 
   const [texts, setTexts] = useState<{ before: string; after: string } | null>(null);
   const [error, setError] = useState('');
   const [reload, setReload] = useState(0);
+  const [view, setView] = useState<'files' | 'pdf'>('files');
   /** "Restore this file": asking → busy → done, or blocked by someone who has it open. */
   const [fileRestore, setFileRestore] = useState<{ path: string; busy: boolean; blocked: RestoreVersionResult | null; error: string } | null>(null);
 
@@ -128,10 +132,22 @@ export default function VersionCompareModal({ projectId, versions, initialFrom, 
             <Select id="compare-to" value={to} options={options} onChange={setTo} />
           </div>
         </div>
-        <FieldError message={error} />
-        {changes === null && !error && <div className="muted" role="status">{t('Loading…')}</div>}
-        {changes !== null && changes.length === 0 && <div className="muted" data-testid="compare-empty">{t('No differences')}</div>}
-        {changes !== null && changes.length > 0 && (
+        <SegmentedControl
+          label={t('Compare')}
+          value={view}
+          onChange={setView}
+          options={[
+            { value: 'files', label: t('Files') },
+            { value: 'pdf', label: t('PDF') }
+          ]}
+        />
+        {view === 'pdf' && fromVersion && (
+          <PdfCompareView projectId={projectId} from={fromVersion} to={versions.find((v) => v.id === to) ?? null} currentPdf={currentPdf} />
+        )}
+        {view === 'files' && <FieldError message={error} />}
+        {view === 'files' && changes === null && !error && <div className="muted" role="status">{t('Loading…')}</div>}
+        {view === 'files' && changes !== null && changes.length === 0 && <div className="muted" data-testid="compare-empty">{t('No differences')}</div>}
+        {view === 'files' && changes !== null && changes.length > 0 && (
           <div className="version-compare-body">
             <div className="version-compare-files" data-testid="compare-files">
               {changes.map((c) => (

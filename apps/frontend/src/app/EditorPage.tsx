@@ -5742,6 +5742,7 @@ export default function EditorPage() {
                       }}
                       onRestore={restoreVersionInEditor}
                       onRestoreFile={restoreFileInEditor}
+                      currentPdf={(showingVersion ? showingVersion.backUrl : pdfUrl) || null}
                     />
                   </div>
                 </div>
