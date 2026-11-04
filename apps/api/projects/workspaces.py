@@ -71,7 +71,8 @@ def _duplicate_name(user, name, exclude=None):
 
 
 def accept_pending_invites(user):
-    """Called at registration: invitations sent to this address become memberships."""
+    """Called when the address is verified: invitations sent to it become memberships. Never at registration alone:
+    anyone can register with any address, so only a verified one proves the invitation reached its owner."""
     for inv in WorkspaceInvite.objects.filter(email=user.email.lower()):
         Membership.objects.get_or_create(workspace=inv.workspace, user=user, defaults={'role': inv.role})
         inv.delete()

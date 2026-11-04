@@ -74,6 +74,7 @@ class ResetPasswordView(APIView):
 
 
 class ChangePasswordView(APIView):
+    allow_unverified = True
     throttle_scope = 'auth'
 
     def post(self, request):

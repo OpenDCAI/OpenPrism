@@ -820,5 +820,18 @@
   "Open each workspace’s Members page and make another member an owner, then try again.": "请在每个工作区的成员页面把另一位成员设为所有者，然后重试。",
   "Make {{name}} an owner?": "要把 {{name}} 设为所有者吗？",
   "Owners have full control of the workspace, and an owner cannot be changed back to another role. You stay an owner too.": "所有者拥有工作区的全部权限，且所有者无法再改回其他角色。你也仍是所有者。",
-  "Make owner": "设为所有者"
+  "Make owner": "设为所有者",
+  "Your address is already confirmed.": "你的邮箱已确认。",
+  "Sent. Check your inbox (and the spam folder).": "已发送，请查看收件箱（以及垃圾邮件）。",
+  "{{email}} is confirmed. Invitations to it have been accepted.": "{{email}} 已确认，发给它的邀请已接受。",
+  "Confirming your email…": "正在确认邮箱……",
+  "Email confirmed": "邮箱已确认",
+  "Could not confirm your email": "无法确认邮箱",
+  "Go to your projects": "前往你的项目",
+  "Check your email": "请查看邮箱",
+  "We sent a link to {{email}}. Open it to confirm your address, then come back here.": "我们已向 {{email}} 发送了链接。打开它确认邮箱后再回到这里。",
+  "I have confirmed it": "我已确认",
+  "Send the link again": "重新发送链接",
+  "Confirm {{email}}: open the link we sent you. Workspace invitations wait until you do.": "请确认 {{email}}：打开我们发送的链接。确认之前，工作区邀请不会生效。",
+  "Resend": "重新发送"
 }

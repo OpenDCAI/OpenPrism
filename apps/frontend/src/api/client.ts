@@ -648,6 +648,10 @@ export interface Account {
   id: string;
   email: string;
   name: string;
+  /** False until the link in the verification mail is opened. */
+  emailVerified?: boolean;
+  /** The server requires a verified address before anything else works (REQUIRE_EMAIL_VERIFICATION). */
+  verificationRequired?: boolean;
 }
 
 async function authCall<T>(url: string, body: unknown): Promise<T> {
@@ -675,6 +679,16 @@ export async function fetchMe(): Promise<Account> {
 
 export async function updateProfile(name: string): Promise<Account> {
   return (await request<{ user: Account }>('/api/auth/me', { method: 'PATCH', body: JSON.stringify({ name }) })).user;
+}
+
+/** Confirm the email address with the token from the verification mail (works signed in or not). */
+export async function verifyEmail(token: string) {
+  return authCall<{ ok: boolean; email: string }>('/api/auth/verify-email', { token });
+}
+
+/** Send the verification mail again. */
+export async function resendVerification() {
+  return request<{ ok: boolean; alreadyVerified?: boolean }>('/api/auth/verify-email/resend', { method: 'POST' });
 }
 
 /** Ask for a password-reset mail. The answer is the same whether or not the address has an account. */

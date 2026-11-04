@@ -24,6 +24,7 @@ class MailTests(SimpleTestCase):
     def test_links_use_the_app_url(self):
         self.assertEqual(mail.app_link('/reset-password?x=1'), 'https://prism.example.edu/reset-password?x=1')
 
+    @override_settings(MAIL_SEND_INLINE=False)
     def test_send_template_queues_the_task(self):
         with mock.patch('accounts.tasks.send_email.delay') as delay:
             mail.send_template('ada@example.org', 'test', {'a': 1})

@@ -1,0 +1,8 @@
+Hello {{ name }},
+
+Please confirm that this is your email address by opening this link:
+
+{{ link }}
+
+The link is valid for 3 days. Workspace invitations sent to this address are accepted once it is confirmed.
+If you did not create an OpenPrism account, ignore this message.
