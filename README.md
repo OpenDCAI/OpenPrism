@@ -18,7 +18,7 @@ OpenPrism is a set of containers, orchestrated locally by Docker Compose and in 
 |---|---|---|
 | `web` | nginx + built React SPA | Serves the frontend; proxies `/api` (including websockets and SSE) to the API |
 | `api` | Django + DRF + Channels (uvicorn) | Stateless REST API and the real-time collaboration websocket (`/api/collab`) |
-| `worker-tex` | Celery (queues `compile`, `transfer`) | LaTeX compilation (TeX Live) and template transfer |
+| `worker-tex` | Celery (queues `compile`, `transfer`) | LaTeX compilation (TeX Live; Tectonic with an offline TeX Live 2022 bundle, so the image is about 3 GB larger and the first build downloads it) and template transfer |
 | `worker-ai` | Celery (queues `ai`, `import`) | LLM calls, agent, plots, arXiv import |
 | `beat` | Celery beat | Housekeeping: reaps dead jobs, deletes old ones |
 | `postgres` | PostgreSQL | Accounts, workspaces, projects, text files, job state |

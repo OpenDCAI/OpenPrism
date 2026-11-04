@@ -109,3 +109,15 @@
       resolve/reopen, own edit/delete; commenters and editor/commenter links comment, viewers read; threads follow renames.
 - [x] #39 **Comments in the editor.** Comment button / Ctrl+Alt+M, highlights that follow edits and open their thread,
       Comments tool (file or project, resolved collapsed, orphaned listed) refreshed every 15 s.
+
+## v0.0.7 - Misc
+
+- [x] #40 **Tectonic engine.** `worker-tex` carries tectonic 0.17.0 and its TeX Live 2022 bundle unpacked to a directory
+      (pinned SHA-256s, own Dockerfile stage, prebuilt read-only format cache; about 3 GB), run with `--untrusted
+      --bundle <dir>`, so it never downloads. All built-in templates compile with `--network none`. A package missing
+      from the bundle names itself in the job error. Found on the way: a document's `.run.xml` makes tectonic run biber
+      with arguments it chooses, so biber is kept off tectonic's PATH (biblatex documents are told to use another
+      engine); tectonic records absolute paths in SyncTeX, so caret-to-PDF lookups use them.
+- [x] #41 **Failed transfers clean up.** A failed template transfer (error, compile give-up, timeout, dead worker, or a
+      layout check left unanswered for an hour) deletes its unfinished target project; the job keeps its error and the
+      panel says the project was removed.

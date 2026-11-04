@@ -56,7 +56,7 @@ def compile_project(job_id):
     result = {'log': out['log'], 'exitStatus': out['status'], 'engine': params['engine'], 'mainFile': params['mainFile'],
               'focus': out.get('focus')}
     if not out['pdf']:
-        return finish(job, Job.FAILED, 'No PDF generated.', result)
+        return finish(job, Job.FAILED, out.get('error') or 'No PDF generated.', result)
     key = f'jobs/{job.id}/output.pdf'
     storage.put_bytes(key, out['pdf'], 'application/pdf')
     result.update(pdfKey=key, pdfSize=len(out['pdf']), **save_version(job, out, params))

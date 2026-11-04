@@ -210,6 +210,8 @@ MINERU_POLL_INTERVAL_SECONDS = float(env('MINERU_POLL_INTERVAL_SECONDS', '3'))
 MINERU_MAX_POLL_ATTEMPTS = int(env('MINERU_MAX_POLL_ATTEMPTS', '200'))
 PLOT_TIMEOUT_SECONDS = int(env('PLOT_TIMEOUT_SECONDS', '60'))
 TEX_CACHE_DIR = env('TEX_CACHE_DIR', '/tmp/openprism-tex-cache')  # font/format caches shared by compiles in one worker
+# tectonic binary (bin/), offline package bundle (bundle/) and prebuilt format cache (cache/), from the worker-tex image
+TECTONIC_HOME = env('TECTONIC_HOME', '/opt/tectonic')
 COMPILE_TIMEOUT_SECONDS = int(env('COMPILE_TIMEOUT_SECONDS', '120'))  # per command (each pass / bibtex)
 COMPILE_MAX_FILE_BYTES = int(env('COMPILE_MAX_FILE_BYTES', str(200 * 1024 * 1024)))
 JOB_RUNNING_STALE_MINUTES = int(env('JOB_RUNNING_STALE_MINUTES', '10'))
