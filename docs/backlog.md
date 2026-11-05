@@ -64,27 +64,12 @@ no internet in Kubernetes); delete a failed transfer's unfinished target project
 
 ## v0.0.8 - Security issues
 
-- [ ] **No 2.
-audit trail for stored credentials.** Workspace LLM keys and Zotero keys record only who last changed them.
-      Keep an event log (who set, rotated or removed, when) visible to workspace admins, and consider per-workspace
-      usage accounting and limits for LLM spend.
-- [ ] **No limits on the expensive endpoints.** Only the auth endpoints are rate limited. Any registered user can run
-      unlimited LLM, vision, plot and compile-heavy work, and with `OPENPRISM_LLM_API_KEY` set server-side that spends
-      the operator's money. Add per-user rate limits and/or quotas, and decide whether the server-side key should be
-      usable by everyone.
-- [ ] **Credentials travel in URLs.** Images, PDFs, the arXiv import stream and the collaboration websocket authenticate
-      with `?token=` (browsers cannot set headers there). nginx keeps query strings out of its logs and suppresses
-      `Referer`, but other proxies/CDNs may log them. Option: short-lived, narrowly scoped URL tokens minted on demand.
-- [ ] **Account tokens are in localStorage**, readable by any script that runs on the page (XSS). Option: httpOnly
-      cookies, which means CSRF protection and a different websocket/blob auth story.
-- [ ] **The plot sandbox is defence in depth, not a real sandbox** (AST check, builtin whitelist, scrubbed environment,
-      non-dumpable worker, rlimits). LaTeX and plot code also share a user with the worker process, and LuaTeX can read
-      any file that user can read. Run these workers under gVisor/Kata and cap pids (see the Kubernetes item).
-- [ ] **LLM/MinerU keys the user enters are stored in the browser's localStorage** in plain text *(pre-existing)*.
-- [ ] **Large uploads are buffered by the API** (up to 200 MB in memory). Presigned direct-to-S3 uploads would remove
-      that memory pressure.
-- [ ] **AI endpoints hold a web thread for up to 5 minutes** while they wait for the worker. Fine at small scale; move
-      the clients to polling `/api/jobs/:id` before serving many users.
+Moved to `docs/todo.md` (issues #47-#53). Decided: AI clients poll jobs; per-user rate limits, a policy
+(`SERVER_LLM_KEY_USERS`) and a daily quota for the server-side key, and per-workspace daily limits (requests, not
+tokens); an append-only credential event log; users' own AI keys stored encrypted on the server (changing an endpoint
+needs the key again); short-lived scoped URL tokens are the only `?token=` credential; the refresh token in an httpOnly
+cookie and the access token in memory; presigned direct uploads for binary project files. The gVisor/Kata item moved to
+v0.1.0.
 
 ## v0.0.9 - Collaboration Enhancements
 
@@ -152,6 +137,10 @@ cluster. Do a full run on a local `kind` cluster, then fix whatever breaks.
 - [ ] The `migrate` Job and the init containers that wait for it, including a second `deploy.sh` run (Job recreation).
 - [ ] Production overlay placeholders (CIDRs, hostname, ingress-controller namespace label) against a real cluster.
 
+- [ ] **The plot sandbox is defence in depth, not a real sandbox** (moved from v0.0.8): AST check, builtin whitelist,
+      scrubbed environment, non-dumpable worker, rlimits. LaTeX and plot code also share a user with the worker process,
+      and LuaTeX can read any file that user can read. Run these workers under gVisor/Kata and cap pids.
+
 **Decisions to make along the way**
 - Whether `worker-compile` and `worker-ai` should run under a sandboxed runtime (`runtimeClassName: gvisor` or Kata).
 - Whether to add PgBouncer in front of Postgres (connection count grows with API replicas).
@@ -180,3 +169,9 @@ cluster. Do a full run on a local `kind` cluster, then fix whatever breaks.
 - [ ] **Comments on live text are placed against the stored file on the server**, which can lag the live document by
       ~800 ms; the editor re-places them against its live text, but the API's `anchor` may briefly disagree.
 - [ ] **Two owners can no longer demote each other** (owners are fixed once made); decide whether an owner may step down.
+
+## v0.1.3 follow-ups (security follow ups)
+
+- [ ] **The plot sandbox is defence in depth, not a real sandbox** (AST check, builtin whitelist, scrubbed environment,
+      non-dumpable worker, rlimits). LaTeX and plot code also share a user with the worker process, and LuaTeX can read
+      any file that user can read. Run these workers under gVisor/Kata and cap pids (see the Kubernetes item)
