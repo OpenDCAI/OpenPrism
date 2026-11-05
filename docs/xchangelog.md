@@ -158,3 +158,5 @@
 
 - [x] #54 **REST writes to a file someone has open are overwritten by the next live-editing save.** Every text write
       becomes a CRDT edit of the file's stored Yjs state and is published to the live room.
+- [x] #55 **Renaming or deleting a file that has a live room can recreate it.** Rooms track their stored document; a
+      rename moves it, a delete makes the room close (code 4404) without writing, and the editor follows.
