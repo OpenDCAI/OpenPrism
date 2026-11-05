@@ -139,3 +139,5 @@
       policy (`SERVER_LLM_KEY_USERS`) and a per-user daily quota; workspace providers can have a daily limit; jobs are
       counted per day by the key that paid (admins see today and 30 days). Found and fixed: a request naming its own
       endpoint without a key had the operator's LLM key (and MinerU token) sent to that endpoint.
+- [x] #49 **Credential audit log.** Who set, replaced, changed or removed a workspace AI provider or a Zotero key, and
+      when; shown as Key history to workspace admins and, for one's own keys, on the Account page.
