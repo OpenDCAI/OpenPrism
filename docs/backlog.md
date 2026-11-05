@@ -77,9 +77,8 @@ v0.1.0.
       over SSE). Move it to the same job polling as the AI endpoints.
 - [ ] **Template ZIP upload and project ZIP import still pass through the API** (direct uploads cover project files
       only).
-- [ ] **The dev clock steps make every page load's cookie refresh a chance to be refused** (`iat` in the future); the
-      client retries once after 1.5 s. Fixing the clock (or a deliberate leeway decision) would remove the retry. See
-      the v0.0.10 flaky-401 item.
+- [ ] **The client's refresh retry after 1.5 s (`api/auth.ts`) was for the dev clock steps**, which `JWT_LEEWAY_SECONDS`
+      (#57) now absorbs in the compose stack. Remove the retry once browser runs show it is never taken.
 - [ ] **The dev api's hot reload can hang** ("Waiting for connections to close") while a browser holds an SSE stream or
       websocket open; `docker compose up -d --force-recreate api` recovers. Consider `--timeout-graceful-shutdown`.
 - [ ] **AI usage counts requests, not tokens.** Record the providers' reported `usage` per job for spend accounting.

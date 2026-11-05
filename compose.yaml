@@ -75,6 +75,7 @@ services:
       ZOTERO_API_BASE: ${ZOTERO_API_BASE:-https://api.zotero.org}
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,api}
       LLM_ALLOW_PRIVATE_ENDPOINTS: ${LLM_ALLOW_PRIVATE_ENDPOINTS:-0} # 1 lets workspace admins point at a local model (Ollama, vLLM)
+      JWT_LEEWAY_SECONDS: ${JWT_LEEWAY_SECONDS:-5} # the devcontainer clock steps back ~1 s; 0 (the default) in production
       TRUSTED_PROXY_COUNT: "1" # the nginx web container: rate limits must key on the real client, not on it
       AI_RATE_PER_MINUTE: ${AI_RATE_PER_MINUTE:-30} # per user: llm, agent, vision, plot, transfer, arXiv import
       COMPILE_RATE_PER_MINUTE: ${COMPILE_RATE_PER_MINUTE:-30}
