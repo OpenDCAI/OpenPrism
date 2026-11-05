@@ -171,10 +171,12 @@ class FileTests(ApiBase):
         r = self.c.get(f'{self.base}/blob', {'path': 'a.svg'})
         self.assertEqual(r['Content-Type'], 'image/svg+xml')
         self.assertEqual(r['Content-Security-Policy'], 'sandbox')
-        token = str(RefreshToken.for_user(self.user).access_token)
+        jwt = str(RefreshToken.for_user(self.user).access_token)
+        token = self.c.post('/api/url-token', {'scope': 'project', 'projectId': self.pid}, format='json').data['token']
         anon = APIClient()
         self.assertEqual(anon.get(f'{self.base}/blob', {'path': 'a.svg'}).status_code, 401)
         self.assertEqual(anon.get(f'{self.base}/blob', {'path': 'a.svg', 'token': token}).status_code, 200)
+        self.assertEqual(anon.get(f'{self.base}/blob', {'path': 'a.svg', 'token': jwt}).status_code, 401)  # never a full token
         self.assertEqual(anon.get(f'{self.base}/tree', {'token': token}).status_code, 401)  # query token only on blob
 
     def test_files_endpoint_encodings(self):

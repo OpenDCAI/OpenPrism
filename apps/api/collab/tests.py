@@ -107,6 +107,23 @@ class Client:
         await self.comm.disconnect()
 
 
+def url_token_for(credential, project_id):
+    """The websocket takes a URL token (common.urltokens), as the browser mints with POST /api/url-token. Tests name the
+    person by their invite token or access token; this mints for them. Anything else is passed through as is."""
+    from common import urltokens
+    from rest_framework_simplejwt.tokens import AccessToken
+    from .auth import GuestUser
+    if credential.startswith(tokens.PREFIX):
+        invite = CollabInvite.objects.filter(token_hash=tokens.hash_token(credential)).first()
+        return urltokens.mint(GuestUser(invite), urltokens.PROJECT, project_id)[0] if invite else credential
+    try:
+        user_id = AccessToken(credential)['user_id']
+    except Exception:
+        return credential
+    from django.contrib.auth import get_user_model
+    return urltokens.mint(get_user_model().objects.get(pk=user_id), urltokens.PROJECT, project_id)[0]
+
+
 async def settle(*clients, rounds=3):
     for _ in range(rounds):
         for c in clients:
@@ -143,8 +160,12 @@ class CollabTestBase(TransactionTestCase):
     def file_text(self, path='main.tex'):
         return files.read_text(self.project, path)
 
-    async def join(self, manager, token=None, path='main.tex', name='anon', project=None):
-        return await Client(manager, project or self.pid, path, token or self.editor_token, name).connect()
+    async def join(self, manager, token=None, path='main.tex', name='anon', project=None, raw=False):
+        project = project or self.pid
+        token = token or self.editor_token
+        if not raw:
+            token = await self.db(url_token_for, token, project)
+        return await Client(manager, project, path, token, name).connect()
 
 
 class SyncTests(CollabTestBase):
@@ -228,8 +249,11 @@ class SyncTests(CollabTestBase):
 
 
 class AuthTests(CollabTestBase):
-    async def closes_with(self, manager, **kw):
-        c = Client(manager, kw.pop('project', self.pid), kw.pop('path', 'main.tex'), kw.pop('token', self.editor_token))
+    async def closes_with(self, manager, raw=False, **kw):
+        project, token = kw.pop('project', self.pid), kw.pop('token', self.editor_token)
+        if not raw and token:
+            token = await self.db(url_token_for, token, project)
+        c = Client(manager, project, kw.pop('path', 'main.tex'), token)
         connected, _ = await c.comm.connect()
         self.assertTrue(connected)
         out = await c.comm.receive_output()
@@ -255,6 +279,25 @@ class AuthTests(CollabTestBase):
         self.assertEqual(await self.closes_with(m, project='00000000-0000-0000-0000-000000000000'), 1008)
         self.assertEqual(await self.closes_with(m, project='not-a-uuid'), 1008)
         self.assertEqual(m.rooms, {})                                                      # rejected clients never create rooms
+
+    async def test_only_url_tokens_for_this_project_are_accepted(self):
+        from common import urltokens
+        m = self.manager()
+        # full credentials in the URL are refused, even valid ones
+        self.assertEqual(await self.closes_with(m, token=self.editor_token, raw=True), 1008)
+        self.assertEqual(await self.closes_with(m, token=await self.jwt(self.user), raw=True), 1008)
+        other = await self.db(Project.objects.create, workspace=self.workspace, name='Other')
+        for_other = await self.db(lambda: urltokens.mint(self.user, urltokens.PROJECT, other.id)[0])
+        self.assertEqual(await self.closes_with(m, token=for_other, raw=True), 1008)      # minted for another project
+        for_import = await self.db(lambda: urltokens.mint(self.user, urltokens.IMPORT)[0])
+        self.assertEqual(await self.closes_with(m, token=for_import, raw=True), 1008)     # wrong scope
+        with override_settings(URL_TOKEN_SECONDS=1):
+            stale = await self.db(lambda: urltokens.mint(self.user, urltokens.PROJECT, self.pid)[0])
+            await asyncio.sleep(2.1)
+            self.assertEqual(await self.closes_with(m, token=stale, raw=True), 1008)      # expired
+        fresh = await self.db(lambda: urltokens.mint(self.user, urltokens.PROJECT, self.pid)[0])
+        await self.db(Membership.objects.filter(user=self.user).delete)
+        self.assertEqual(await self.closes_with(m, token=fresh, raw=True), 1008)          # removed after minting
 
     async def test_member_jwt_is_accepted(self):
         m = self.manager()
@@ -282,7 +325,7 @@ class AuthTests(CollabTestBase):
 
     async def test_viewer_joining_with_local_edits_cannot_push_them(self):
         m = self.manager()
-        viewer = Client(m, self.pid, 'main.tex', self.viewer_token, 'view')
+        viewer = Client(m, self.pid, 'main.tex', await self.db(url_token_for, self.viewer_token, self.pid), 'view')
         viewer.insert(0, 'local-only text')                                       # e.g. typed offline before connecting
         viewer.outgoing.clear()
         await viewer.connect()
@@ -402,10 +445,11 @@ class RestTests(CollabTestBase):
         self.assertTrue(res.data['ok'])
         self.assertTrue(res.data['token'].startswith('op2.'))
         self.assertEqual(res.data['role'], 'editor')
-        resolved = APIClient().get('/api/collab/resolve', {'token': res.data['token']})
+        resolved = APIClient().post('/api/collab/resolve', {'token': res.data['token']}, format='json')
         self.assertEqual(resolved.data, {'ok': True, 'projectId': self.pid, 'projectName': 'Collab', 'role': 'editor'})
-        self.assertEqual(APIClient().get('/api/collab/resolve', {'token': 'op2.nope'}).status_code, 401)
-        self.assertEqual(APIClient().get('/api/collab/resolve').status_code, 401)
+        self.assertEqual(APIClient().post('/api/collab/resolve', {'token': 'op2.nope'}, format='json').status_code, 401)
+        self.assertEqual(APIClient().post('/api/collab/resolve', {}, format='json').status_code, 401)
+        self.assertEqual(APIClient().get('/api/collab/resolve', {'token': res.data['token']}).status_code, 405)  # not in a URL
         self.assertEqual(self.owner.post(f'/api/projects/{self.pid}/collab/invite', {'role': 'admin'}, format='json').status_code, 400)
         raw = CollabInvite.objects.get(token_hash=tokens.hash_token(res.data['token']))
         self.assertNotIn(res.data['token'], json.dumps(raw.token_hash))             # only the hash is stored
@@ -451,10 +495,20 @@ class RestTests(CollabTestBase):
             own = self.owner.post('/api/compile', {'projectId': str(elsewhere.id)}, format='json')
         self.assertEqual(g.get(f"/api/jobs/{own.data['jobId']}").status_code, 404)       # someone else's project's job
 
-    def test_invite_token_works_as_query_token_for_blob(self):
+    def test_a_guest_mints_url_tokens_for_its_own_project_only(self):
         files.write_binary(self.project, 'a.png', b'\x89PNG')
-        self.assertEqual(APIClient().get(f'/api/projects/{self.pid}/blob', {'path': 'a.png', 'token': self.viewer_token}).status_code, 200)
+        g = self.guest(self.viewer_token)
+        token = g.post('/api/url-token', {'scope': 'project', 'projectId': self.pid}, format='json').data['token']
+        self.assertEqual(APIClient().get(f'/api/projects/{self.pid}/blob', {'path': 'a.png', 'token': token}).status_code, 200)
+        other = Project.objects.create(workspace=self.workspace, name='Private')
+        self.assertEqual(g.post('/api/url-token', {'scope': 'project', 'projectId': str(other.id)}, format='json').status_code, 404)
+        self.assertEqual(g.post('/api/url-token', {'scope': 'import'}, format='json').status_code, 403)
+        # the invite token itself is a full credential: never accepted in a URL
+        self.assertEqual(APIClient().get(f'/api/projects/{self.pid}/blob', {'path': 'a.png', 'token': self.viewer_token}).status_code, 401)
         self.assertEqual(APIClient().get(f'/api/projects/{self.pid}/blob', {'path': 'a.png', 'token': 'op2.bad'}).status_code, 401)
+        # revoking the link stops its URL tokens at once
+        CollabInvite.objects.filter(token_hash=tokens.hash_token(self.viewer_token)).delete()
+        self.assertEqual(APIClient().get(f'/api/projects/{self.pid}/blob', {'path': 'a.png', 'token': token}).status_code, 401)
 
     def test_expired_invites_are_cleaned_up_and_unusable(self):
         token, invite = tokens.create_invite(self.project, self.user, 'viewer')

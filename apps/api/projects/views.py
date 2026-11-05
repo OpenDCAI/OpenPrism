@@ -17,7 +17,7 @@ from rest_framework.response import Response
 from ai import arxiv
 from ai.i18n import get_lang
 from collab.auth import IsUserOrGuest
-from common import ratelimit
+from common import ratelimit, urltokens
 from common.uploads import PathMultiPartParser, upload_path
 from common.zips import iter_zip_files
 from jobs.models import Job
@@ -26,7 +26,7 @@ from templates_app.models import Template
 
 from . import files as pfiles
 from .tasks import import_arxiv
-from .access import QueryTokenJWTAuthentication, get_project, user_projects
+from .access import UrlTokenAuthentication, get_project, user_projects
 from .models import Membership, Project, ProjectFile, Workspace
 from .paths import InvalidPath, safe_path
 from .tex import extract_document_body, merge_template_body
@@ -264,7 +264,7 @@ def file_item(request, pk):
 
 
 @api_view(['GET'])
-@authentication_classes([QueryTokenJWTAuthentication])
+@authentication_classes([UrlTokenAuthentication])
 @permission_classes([IsUserOrGuest])
 def blob(request, pk):
     project = get_project(request, pk)
@@ -393,17 +393,41 @@ def convert_template(request, pk):
 
 # ---- arXiv import (server-sent events) --------------------------------------------------------------
 
+@api_view(['POST'])
+@permission_classes([IsUserOrGuest])
+def url_token(request):
+    """Mint a short-lived token for `?token=` URLs: scope `project` (that project's files, PDFs, versions, job PDFs and
+    collaboration websocket; members and that project's invite guests) or `import` (the arXiv import stream; accounts).
+    Header credentials only: a URL token cannot mint another."""
+    b = request.data if isinstance(request.data, dict) else {}
+    scope = b.get('scope') or urltokens.PROJECT
+    if scope == urltokens.IMPORT:
+        if getattr(request.user, 'is_guest', False):
+            raise PermissionDenied('Guests cannot import projects.')
+        token, expires = urltokens.mint(request.user, urltokens.IMPORT)
+    elif scope == urltokens.PROJECT:
+        project = get_project(request, b.get('projectId'))
+        token, expires = urltokens.mint(request.user, urltokens.PROJECT, project.id)
+    else:
+        return fail('scope must be project or import.')
+    return Response({'ok': True, 'token': token, 'expiresAt': expires.isoformat().replace('+00:00', 'Z'),
+                     'expiresIn': settings.URL_TOKEN_SECONDS})  # clients count from receipt: their clock may be off
+
+
 def _sse(event, data):
     return f'event: {event}\ndata: {json.dumps(data)}\n\n'.encode()
 
 
 @api_view(['GET'])
-@authentication_classes([QueryTokenJWTAuthentication])
+@authentication_classes([UrlTokenAuthentication])
 def import_arxiv_sse(request):
     """Create a project from an arXiv paper. EventSource cannot set headers, so auth is `?token=`.
 
     The download/extract runs in a worker (queue `import`); this response just relays its progress.
     """
+    claims = urltokens.claims_of(request)
+    if getattr(request.user, 'is_guest', False) or (claims and claims.scope != urltokens.IMPORT):
+        raise PermissionDenied('This link cannot start an import.')
     arxiv_id = arxiv.extract_id(request.query_params.get('arxivIdOrUrl'))
     headers = {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}  # no proxy buffering, or events arrive in a lump
     if not arxiv_id:

@@ -12,7 +12,7 @@ from collab.auth import IsUserOrGuest
 from collab.views import evict_idle_room, flush_room, live_room
 from projects import files as pfiles
 from projects import storage
-from projects.access import QueryTokenJWTAuthentication, get_project
+from projects.access import UrlTokenAuthentication, get_project
 from projects.models import ProjectFile
 from projects.paths import InvalidPath, safe_path
 from projects.views import BLOB_TYPES, INERT_TYPES, iso
@@ -103,7 +103,7 @@ def version_detail(request, pk, version_id):
 
 
 @api_view(['GET'])
-@authentication_classes([QueryTokenJWTAuthentication])
+@authentication_classes([UrlTokenAuthentication])
 @permission_classes([IsUserOrGuest])
 def version_pdf(request, pk, version_id):
     project = get_project(request, pk)
@@ -116,7 +116,7 @@ def version_pdf(request, pk, version_id):
 
 
 @api_view(['GET'])
-@authentication_classes([QueryTokenJWTAuthentication])
+@authentication_classes([UrlTokenAuthentication])
 @permission_classes([IsUserOrGuest])
 def version_log(request, pk, version_id):
     """The compile log recorded with the version (the job's capped log)."""
@@ -128,7 +128,7 @@ def version_log(request, pk, version_id):
 
 
 @api_view(['GET'])
-@authentication_classes([QueryTokenJWTAuthentication])
+@authentication_classes([UrlTokenAuthentication])
 @permission_classes([IsUserOrGuest])
 def version_file(request, pk, version_id):
     """One file as it was in the version: JSON for text, the bytes (sandboxed like /blob) for binaries."""

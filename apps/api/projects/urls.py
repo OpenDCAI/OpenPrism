@@ -10,6 +10,7 @@ urlpatterns = [
     path('workspaces/<uuid:pk>/members', w.invite_member),
     path('workspaces/<uuid:pk>/members/<str:member_id>', w.member),
     path('workspaces/<uuid:pk>/members/<str:member_id>/resend', w.resend_invite),
+    path('url-token', v.url_token),
     path('projects', v.projects_collection),
     path('projects/import-zip', v.import_zip),
     path('projects/import-arxiv-sse', v.import_arxiv_sse),

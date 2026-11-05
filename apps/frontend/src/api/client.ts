@@ -1,4 +1,4 @@
-import { apiFetch, clearInviteToken, clearSession, getInviteToken, getSession, setInviteToken, setSession, tokenForUrl } from './auth';
+import { apiFetch, cachedUrlToken, clearInviteToken, clearSession, ensureUrlToken, getInviteToken, getSession, setInviteToken, setSession } from './auth';
 
 export interface ProjectMeta {
   id: string;
@@ -262,8 +262,10 @@ export async function revokeCollabInvite(id: string, inviteId: string) {
 }
 
 export function resolveCollabToken(token: string) {
-  const qs = new URLSearchParams({ token }).toString();
-  return request<{ ok: boolean; projectId: string; projectName: string; role: string }>(`/api/collab/resolve?${qs}`);
+  return request<{ ok: boolean; projectId: string; projectName: string; role: string }>('/api/collab/resolve', {
+    method: 'POST',
+    body: JSON.stringify({ token })
+  });
 }
 
 export function flushCollabFile(id: string, filePath: string) {
@@ -551,8 +553,8 @@ export function importArxivSSE(
     const params = new URLSearchParams({ arxivIdOrUrl: payload.arxivIdOrUrl });
     if (payload.projectName) params.set('projectName', payload.projectName);
     if (payload.workspaceId) params.set('workspaceId', payload.workspaceId);
-    const token = tokenForUrl();
-    if (token) params.set('token', token);
+    ensureUrlToken('import').then((token) => {
+    params.set('token', token);
     const es = new EventSource(`/api/projects/import-arxiv-sse?${params.toString()}`);
 
     es.addEventListener('progress', (e) => {
@@ -576,6 +578,7 @@ export function importArxivSSE(
       }
       reject(new Error('SSE connection failed'));
     });
+    }, reject);
   });
 }
 
@@ -697,10 +700,13 @@ export async function mineruTransferUploadPdf(jobId: string, pdfFile: File) {
   return res.json() as Promise<{ ok: boolean; pdfPath?: string }>;
 }
 
-/** URL for a project file's raw bytes, usable in <img>/<object> (they cannot send an Authorization header). */
+/**
+ * URL for a project file's raw bytes, usable in <img>/<object> (they cannot send an Authorization header). It carries
+ * the project's URL token, so call ensureUrlToken(projectId) first and re-render on subscribeUrlTokens (useUrlToken).
+ */
 export function blobUrl(projectId: string, path: string) {
   const params = new URLSearchParams({ path });
-  const token = tokenForUrl();
+  const token = cachedUrlToken(projectId);
   if (token) params.set('token', token);
   return `/api/projects/${projectId}/blob?${params.toString()}`;
 }
@@ -1035,7 +1041,7 @@ export function listVersions(projectId: string, opts: { limit?: number; before?:
 export function getVersion(projectId: string, versionId: string) {
   return request<{ ok: boolean; version: ProjectVersionDetail }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}`);
 }
-/** A text file as it was in a version. Binaries are fetched with `versionFileUrl`. */
+/** A text file as it was in a version. */
 export function getVersionFile(projectId: string, versionId: string, path: string) {
   const params = new URLSearchParams({ path });
   return request<{ ok: boolean; kind: 'text'; path: string; content: string }>(
@@ -1059,18 +1065,6 @@ export async function fetchVersionPdf(projectId: string, versionId: string): Pro
   if (!res.ok) throw new Error(await errorMessage(res));
   return res.blob();
 }
-/** URLs for <object>/<img>, which cannot send an Authorization header. */
-export function versionPdfUrl(projectId: string, versionId: string) {
-  const token = tokenForUrl();
-  return `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-}
-export function versionFileUrl(projectId: string, versionId: string, path: string) {
-  const params = new URLSearchParams({ path });
-  const token = tokenForUrl();
-  if (token) params.set('token', token);
-  return `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/file?${params.toString()}`;
-}
-
 /** Name a version (pins it) or clear its name with ''. Needs write access. */
 export function renameVersion(projectId: string, versionId: string, name: string) {
   return request<{ ok: boolean; error?: string; version?: ProjectVersionDetail }>(

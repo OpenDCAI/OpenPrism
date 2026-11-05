@@ -12,8 +12,9 @@ export type CollabStatus = 'disconnected' | 'connecting' | 'connected';
 
 type ProviderOptions = {
   serverUrl: string;
-  /** The credential, or a function returning it. A function is called on every (re)connect, so it can track token refresh. */
-  token?: string | (() => string);
+  /** The credential, or a function returning it (or a promise of it). A function is called on every (re)connect, so it
+   * can fetch a fresh URL token. */
+  token?: string | (() => string | Promise<string>);
   projectId: string;
   filePath: string;
   doc: Y.Doc;
@@ -24,13 +25,15 @@ type ProviderOptions = {
 
 export class CollabProvider {
   private serverUrl: string;
-  private token: string | (() => string);
+  private token: string | (() => string | Promise<string>);
   private projectId: string;
   private filePath: string;
   private doc: Y.Doc;
   private awareness: Awareness;
   private ws: WebSocket | null = null;
   private shouldReconnect = false;
+  /** bumped by connect/disconnect, so a socket whose token arrives after either is not opened */
+  private generation = 0;
   private reconnectAttempts = 0;
   private onStatus?: (status: CollabStatus) => void;
   private onError?: (error: string) => void;
@@ -51,12 +54,14 @@ export class CollabProvider {
   }
 
   connect() {
+    this.generation += 1;
     this.shouldReconnect = true;
-    this.openWebSocket();
+    void this.openWebSocket();
     this.attachDocListeners();
   }
 
   disconnect() {
+    this.generation += 1;
     this.shouldReconnect = false;
     this.detachDocListeners();
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
@@ -109,7 +114,14 @@ export class CollabProvider {
     }
   }
 
-  private openWebSocket() {
+  private scheduleReconnect() {
+    if (!this.shouldReconnect) return;
+    const retryDelay = Math.min(10_000, 800 * Math.pow(2, this.reconnectAttempts));
+    this.reconnectAttempts += 1;
+    window.setTimeout(() => void this.openWebSocket(), retryDelay);
+  }
+
+  private async openWebSocket() {
     if (!this.serverUrl) {
       this.onError?.('Missing server url');
       return;
@@ -119,7 +131,16 @@ export class CollabProvider {
       projectId: this.projectId,
       file: this.filePath
     });
-    const token = typeof this.token === 'function' ? this.token() : this.token;
+    const generation = this.generation;
+    let token: string;
+    try {
+      token = await (typeof this.token === 'function' ? this.token() : this.token);
+    } catch {
+      this.onStatus?.('disconnected');
+      this.scheduleReconnect(); // could not get a token (offline, signed out): try again later
+      return;
+    }
+    if (!this.shouldReconnect || generation !== this.generation) return; // disconnected (or reconnected) meanwhile
     if (token) {
       qs.set('token', token);
     }
@@ -152,11 +173,7 @@ export class CollabProvider {
     };
     ws.onclose = () => {
       this.onStatus?.('disconnected');
-      if (this.shouldReconnect) {
-        const retryDelay = Math.min(10_000, 800 * Math.pow(2, this.reconnectAttempts));
-        this.reconnectAttempts += 1;
-        window.setTimeout(() => this.openWebSocket(), retryDelay);
-      }
+      this.scheduleReconnect();
     };
     this.ws = ws;
   }

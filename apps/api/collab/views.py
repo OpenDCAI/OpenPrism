@@ -61,12 +61,13 @@ def revoke_invite(request, pk, invite_id):
     return Response({'ok': True})
 
 
-@api_view(['GET'])
+@api_view(['POST'])
 @authentication_classes([])
 @permission_classes([AllowAny])
 def resolve(request):
-    """Used by the invite page before it has any credentials."""
-    invite = tokens.lookup(request.query_params.get('token'))
+    """Used by the invite page before it has any credentials. POST {token}: the invite token is a full credential, so
+    it never travels in an API URL (only in the link people share)."""
+    invite = tokens.lookup((request.data or {}).get('token') if isinstance(request.data, dict) else None)
     if invite is None:
         return Response({'ok': False, 'error': 'Invalid token'}, status=401)
     return Response({'ok': True, 'projectId': str(invite.project_id), 'projectName': invite.project.name, 'role': invite.role})
