@@ -17,6 +17,7 @@ release sign-off, a look at a real deployment, and anything a spec cannot judge 
 | v0.0.7 | [v0.0.7-tectonic-and-transfer-cleanup.md](v0.0.7-tectonic-and-transfer-cleanup.md) | Tectonic compiles offline; a failed template transfer removes its project |
 | v0.0.8 | [v0.0.8-security.md](v0.0.8-security.md) | Session cookie, scoped URL tokens, AI keys on the server, limits and usage, credential history, AI polling, direct uploads |
 | v0.0.9 | [v0.0.9-collaboration.md](v0.0.9-collaboration.md) | Uploads/saves/templates reach open editors; renaming or deleting an open file; crash-safe live editing, expiring cursors |
+| v0.0.10 | [v0.0.10-testing.md](v0.0.10-testing.md) | JWT clock leeway, clean typecheck, lean production images, new browser specs, CI |
 
 ## Before you start
 
