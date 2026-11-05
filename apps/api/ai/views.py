@@ -1,5 +1,7 @@
-"""AI endpoints. Each queues a Job for the `ai` queue and waits (bounded) so the Node-era response shapes still work.
-If the wait runs out the job keeps going and the reply carries its id: poll GET /api/jobs/<id>."""
+"""AI endpoints. Each queues a Job for the `ai` queue. With `async: true` in the body the reply is `{ok, jobId}` at once
+and the client polls GET /api/jobs/<id> (its `result` is the body below); the frontend always does this. Without it the
+view waits (bounded, holding a web thread; deprecated) so the Node-era response shapes still work, and if the wait runs
+out the job keeps going and the reply carries its id."""
 import json
 import time
 import uuid
@@ -36,9 +38,17 @@ def workspace_first(request, workspace, public, secrets):
     return workspace_llm_for(workspace, request.user) or (public, secrets)
 
 
+def wants_async(request):
+    """`async: true` in a JSON body, or `async=1|true` as a multipart field."""
+    value = request.data.get('async') if hasattr(request.data, 'get') else None
+    return value is True or str(value).lower() in ('1', 'true')
+
+
 def run_job(request, job_type, params, secrets, project=None, job_id=None):
     job = Job.objects.create(id=job_id or uuid.uuid4(), type=job_type, user=request.user, project=project, params=params)
     run_ai_job.delay(str(job.id), secrets)
+    if wants_async(request):
+        return Response({'ok': True, 'jobId': str(job.id), 'status': job.status})
     deadline = time.monotonic() + settings.AI_WAIT_SECONDS
     while time.monotonic() < deadline:
         job.refresh_from_db()

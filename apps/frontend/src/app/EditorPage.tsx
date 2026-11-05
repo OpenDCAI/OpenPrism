@@ -34,7 +34,6 @@ import {
   listComments,
   replyToThread,
   setThreadResolved,
-  jobProgress,
   getProjectTree,
   fetchVersionPdf,
   restoreVersion,
@@ -1423,7 +1422,7 @@ export default function EditorPage() {
   );
   const aiRunRef = useRef(0);
   const aiAbortRef = useRef<AbortController | null>(null);
-  const aiJobRef = useRef<{ id: string; timer: number } | null>(null);
+  const aiJobRef = useRef<{ id: string } | null>(null);
   const openAiBarRef = useRef<() => boolean>(() => false);
   // Comments: every thread of the project, what the caller may do, and a selection waiting for its first comment.
   const [commentThreads, setCommentThreads] = useState<CommentThreadMeta[]>([]);
@@ -4050,7 +4049,7 @@ export default function EditorPage() {
   };
 
   useEffect(() => () => {
-    if (aiJobRef.current) window.clearInterval(aiJobRef.current.timer); // leaving the editor ends the progress polling
+    aiAbortRef.current?.abort(); // leaving the editor ends the polling
   }, []);
 
   // People who cannot write (viewers, viewer links) get a read-only editor; the server drops their edits anyway.
@@ -4147,7 +4146,6 @@ export default function EditorPage() {
     const job = aiJobRef.current;
     aiJobRef.current = null;
     if (!job) return;
-    window.clearInterval(job.timer);
     if (cancel) void cancelJob(job.id).catch(() => {}); // the request was aborted anyway; this stops the worker
   };
 
@@ -4182,13 +4180,7 @@ export default function EditorPage() {
       const sel = state.selection.main;
       setAiBar((bar) => ({ ...bar, progress: t('Asking the AI…') }));
       const jobId = crypto.randomUUID();
-      const timer = window.setInterval(() => {
-        jobProgress(jobId).then((job) => {
-          const last = job.progressLog[job.progressLog.length - 1];
-          if (last && aiRunRef.current === run) setAiBar((bar) => (bar.busy ? { ...bar, progress: last } : bar));
-        }).catch(() => {}); // not created yet, or already gone
-      }, 1000);
-      aiJobRef.current = { id: jobId, timer };
+      aiJobRef.current = { id: jobId };
       const res = await runAgent({
         jobId,
         task: 'edit',
@@ -4207,7 +4199,9 @@ export default function EditorPage() {
           selection: sel.empty ? null : { text: state.sliceDoc(sel.from, sel.to) },
           content: state.doc.toString()
         }
-      }, controller.signal);
+      }, controller.signal, (last) => {
+        if (aiRunRef.current === run) setAiBar((bar) => (bar.busy ? { ...bar, progress: last } : bar));
+      });
       stopAiJob(false);
       if (run !== aiRunRef.current) return; // cancelled or closed meanwhile: drop the late answer
       if (!res.ok && !res.reply && res.error) throw new Error(res.error);
