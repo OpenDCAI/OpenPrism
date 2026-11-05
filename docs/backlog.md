@@ -71,6 +71,12 @@ needs the key again); short-lived scoped URL tokens are the only `?token=` crede
 cookie and the access token in memory; presigned direct uploads for binary project files. The gVisor/Kata item moved to
 v0.1.0.
 
+## v0.0.8 follow-ups (found while building it)
+
+- [ ] **The arXiv import stream holds a web thread for up to 16 minutes** (`import_arxiv_sse` relays the job's progress
+      over SSE). Move it to the same job polling as the AI endpoints.
+- [ ] **AI usage counts requests, not tokens.** Record the providers' reported `usage` per job for spend accounting.
+
 ## v0.0.9 - Collaboration Enhancements
 
 - [ ] **REST writes to a file someone has open are overwritten by the next live-editing save** *(pre-existing behaviour)*.

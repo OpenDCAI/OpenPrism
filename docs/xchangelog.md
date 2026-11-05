@@ -135,3 +135,7 @@
 - [x] #47 **AI clients poll the job.** The AI endpoints answer `{jobId}` at once with `async: true` and the frontend polls
       `/api/jobs/:id` through one helper (`runAiJob`), so no AI request holds a web thread; blocking stays, deprecated,
       for old clients.
+- [x] #48 **Limits on expensive work.** Per-user rate limits on AI endpoints and compiles; the server's AI key has a
+      policy (`SERVER_LLM_KEY_USERS`) and a per-user daily quota; workspace providers can have a daily limit; jobs are
+      counted per day by the key that paid (admins see today and 30 days). Found and fixed: a request naming its own
+      endpoint without a key had the operator's LLM key (and MinerU token) sent to that endpoint.
