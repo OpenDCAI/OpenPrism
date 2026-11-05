@@ -1,10 +1,5 @@
 # Completed features and their release
 
-## v0.0.9 - Collaboration Enhancements
-
-- [x] #54 **REST writes to a file someone has open are overwritten by the next live-editing save.** Every text write
-      becomes a CRDT edit of the file's stored Yjs state and is published to the live room.
-
 ## v0.0.1 - Templates
 
 - [x] #8 **Built-in ACL and arXiv templates (and uploaded templates) have no compilable main file.** ACL's manifest
@@ -158,3 +153,8 @@
 - [x] #53 **Direct uploads.** Binary project files go from the browser straight to object storage with presigned
       PUT URLs (size checked before they join the project; abandoned uploads cleaned up); text files still go through
       the API. Bucket CORS is set by `garage-init.sh`.
+
+## v0.0.9 - Collaboration Enhancements
+
+- [x] #54 **REST writes to a file someone has open are overwritten by the next live-editing save.** Every text write
+      becomes a CRDT edit of the file's stored Yjs state and is published to the live room.
