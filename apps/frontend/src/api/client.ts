@@ -217,21 +217,70 @@ export function updateFileOrder(id: string, folder: string, order: string[]) {
   });
 }
 
-export async function uploadFiles(projectId: string, files: File[], basePath?: string) {
+type UploadPlan = { path: string; direct: false } | { path: string; direct: true; uploadId: string; url: string; headers: Record<string, string> };
+
+function relativePath(file: File, basePath?: string) {
+  const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+  return basePath ? `${basePath}/${rel}` : rel;
+}
+
+/** PUT one file to its presigned URL (S3), reporting bytes sent. */
+function putToStorage(url: string, headers: Record<string, string>, file: File, onBytes?: (sent: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+    xhr.upload.onprogress = (e) => onBytes?.(e.loaded);
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload of ${file.name} failed (${xhr.status})`)));
+    xhr.onerror = () => reject(new Error(`Upload of ${file.name} failed`));
+    xhr.send(file);
+  });
+}
+
+/** The multipart upload through the API: text files always, and everything when direct uploads are off. */
+async function uploadThroughApi(projectId: string, entries: { file: File; path: string }[]) {
   const form = new FormData();
-  files.forEach((file) => {
-    const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-    const finalPath = basePath ? `${basePath}/${rel}` : rel;
-    form.append('files', file, finalPath);
-  });
-  const res = await apiFetch(`/api/projects/${projectId}/upload`, {
-    method: 'POST',
-    body: form,
-  });
-  if (!res.ok) {
-    throw new Error(await errorMessage(res));
+  entries.forEach(({ file, path }) => form.append('files', file, path));
+  const res = await apiFetch(`/api/projects/${projectId}/upload`, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return res.json() as Promise<{ ok: boolean; files?: string[]; error?: string }>;
+}
+
+/**
+ * Upload files (keeping folder-relative paths). Binary files go straight to object storage with presigned URLs when
+ * the server offers them (S3_DIRECT_UPLOADS), so their bytes never pass through the API; text files, and everything
+ * when direct uploads are off, use the multipart endpoint.
+ */
+export async function uploadFiles(projectId: string, files: File[], basePath?: string, onProgress?: (fraction: number) => void) {
+  const entries = files.map((file) => ({ file, path: relativePath(file, basePath) }));
+  const start = await request<{ ok: boolean; direct?: boolean; files?: UploadPlan[]; error?: string }>(
+    `/api/projects/${projectId}/uploads`,
+    { method: 'POST', body: JSON.stringify({ files: entries.map(({ file, path }) => ({ path, size: file.size, contentType: file.type || 'application/octet-stream' })) }) }
+  );
+  if (!start.ok) throw new Error(start.error || 'Upload failed.');
+  if (!start.direct || !start.files) return uploadThroughApi(projectId, entries);
+  const plans = new Map(start.files.map((p) => [p.path, p]));
+  const viaApi = entries.filter((e) => !plans.get(e.path)?.direct);
+  const direct = entries.filter((e) => plans.get(e.path)?.direct);
+  const total = direct.reduce((n, e) => n + e.file.size, 0) || 1;
+  const sent = new Map<string, number>();
+  const report = () => onProgress?.([...sent.values()].reduce((a, b) => a + b, 0) / total);
+  const saved: string[] = [];
+  if (viaApi.length) saved.push(...((await uploadThroughApi(projectId, viaApi)).files || []));
+  const uploaded: string[] = [];
+  for (const { file, path } of direct) {
+    const plan = plans.get(path) as Extract<UploadPlan, { direct: true }>;
+    await putToStorage(plan.url, plan.headers, file, (n) => { sent.set(path, n); report(); });
+    uploaded.push(plan.uploadId);
   }
-  return res.json() as Promise<{ ok: boolean; files?: string[] }>;
+  if (uploaded.length) {
+    const done = await request<{ ok: boolean; files: string[]; failed: { path: string; error: string }[] }>(
+      `/api/projects/${projectId}/uploads/complete`, { method: 'POST', body: JSON.stringify({ uploadIds: uploaded }) }
+    );
+    saved.push(...done.files);
+    if (done.failed.length) throw new Error(done.failed.map((f) => `${f.path}: ${f.error}`).join('; '));
+  }
+  return { ok: true, files: saved };
 }
 
 export type InviteRole = 'editor' | 'commenter' | 'viewer';

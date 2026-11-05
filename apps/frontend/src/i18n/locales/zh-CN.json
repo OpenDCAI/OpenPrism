@@ -960,5 +960,8 @@
   "Key removed": "密钥已移除",
   "Your keys are stored encrypted on the server and are never shown again; this browser does not keep them.": "你的密钥加密保存在服务器上，不会再次显示；此浏览器不保存它们。",
   "Your own AI keys, used when the workspace provides none.": "你自己的 AI 密钥，在工作区未提供服务商时使用。",
-  "Your AI keys are now stored encrypted on the server, not in this browser.": "你的 AI 密钥现已加密保存在服务器上，而不在此浏览器中。"
+  "Your AI keys are now stored encrypted on the server, not in this browser.": "你的 AI 密钥现已加密保存在服务器上，而不在此浏览器中。",
+  "Uploading… {{percent}}%": "上传中… {{percent}}%",
+  "Uploaded {{count}} files": "已上传 {{count}} 个文件",
+  "Upload failed: {{error}}": "上传失败：{{error}}"
 }

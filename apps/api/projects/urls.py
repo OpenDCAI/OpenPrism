@@ -27,6 +27,8 @@ urlpatterns = [
     path('projects/<uuid:pk>/file', v.file_item),
     path('projects/<uuid:pk>/blob', v.blob),
     path('projects/<uuid:pk>/upload', v.upload),
+    path('projects/<uuid:pk>/uploads', v.uploads_start),
+    path('projects/<uuid:pk>/uploads/complete', v.uploads_complete),
     path('projects/<uuid:pk>/files', v.all_files),
     path('projects/<uuid:pk>/folder', v.create_folder),
     path('projects/<uuid:pk>/rename', v.rename_path),

@@ -84,3 +84,17 @@ class ProjectFile(models.Model):
     class Meta:
         constraints = [models.UniqueConstraint(fields=['project', 'path'], name='uniq_project_path')]
         indexes = [models.Index(fields=['project', 'path'])]
+
+
+class PendingUpload(models.Model):
+    """A direct upload in flight: a presigned PUT was handed out for `s3_key`, and the file becomes `path` once
+    POST …/uploads/complete has checked the object's size. Rows (and their objects) left over an hour are removed."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    project = models.ForeignKey(Project, on_delete=models.CASCADE, related_name='pending_uploads')
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name='+')
+    invite_id = models.UUIDField(null=True, blank=True)  # an invite-link guest's uploads
+    path = models.CharField(max_length=1024)
+    s3_key = models.CharField(max_length=1200)
+    size = models.PositiveBigIntegerField()
+    content_type = models.CharField(max_length=200)
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)

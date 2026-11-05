@@ -59,3 +59,23 @@ def presigned_url(key, expires=3600, filename=None):
     if filename:
         params['ResponseContentDisposition'] = f'inline; filename="{filename}"'
     return _public_client().generate_presigned_url('get_object', Params=params, ExpiresIn=expires)
+
+
+def presigned_put_url(key, content_type, expires=900):
+    """A URL the browser can PUT one object to (signed for S3_PUBLIC_ENDPOINT_URL, Content-Type included)."""
+    return _public_client().generate_presigned_url(
+        'put_object', Params={'Bucket': settings.S3_BUCKET, 'Key': key, 'ContentType': content_type}, ExpiresIn=expires)
+
+
+def head(key):
+    """The object's metadata (ContentLength, ContentType…); raises botocore ClientError when it does not exist."""
+    return get_client().head_object(Bucket=settings.S3_BUCKET, Key=key)
+
+
+def put_bucket_cors(origins):
+    """Let pages from `origins` PUT objects straight to the bucket (direct uploads). One rule per origin: Garage answers
+    a preflight with the matching rule's AllowedOrigins joined, which browsers refuse unless it is a single origin; and
+    it matches header names case-sensitively, so any request header is allowed (presigned URLs fix what they sign)."""
+    get_client().put_bucket_cors(Bucket=settings.S3_BUCKET, CORSConfiguration={'CORSRules': [
+        {'AllowedOrigins': [origin], 'AllowedMethods': ['PUT'], 'AllowedHeaders': ['*'], 'ExposeHeaders': ['ETag'],
+         'MaxAgeSeconds': 3600} for origin in origins]})
