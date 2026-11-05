@@ -1,0 +1,37 @@
+name: Compose stack
+description: Build the given compose services with a layer cache, start them, and set up the Garage bucket.
+inputs:
+  services:
+    description: Space-separated compose services to build and start.
+    required: true
+runs:
+  using: composite
+  steps:
+    - name: CI .env from the sample, with fresh secrets
+      shell: bash
+      run: |
+        set -euo pipefail
+        cp .env.sample .env
+        key=$(python3 -c 'import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())')
+        sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$(openssl rand -hex 32)|; s|^CREDENTIAL_ENCRYPTION_KEY=.*|CREDENTIAL_ENCRYPTION_KEY=$key|" .env
+        mkdir -p data
+    - uses: docker/setup-buildx-action@v3
+    - name: Build images (cached in the GitHub Actions cache, one scope per service)
+      shell: bash
+      run: |
+        set -euo pipefail
+        # compose names its images <project>-<service>; tagging them that way makes `up` use these instead of rebuilding.
+        targets=(); sets=()
+        for s in ${{ inputs.services }}; do
+          case " api worker-tex worker-ai beat web " in *" $s "*) ;; *) continue ;; esac
+          targets+=("$s")
+          sets+=(--set "$s.tags=$COMPOSE_PROJECT_NAME-$s"
+                 --set "$s.cache-from=type=gha,scope=$s" --set "$s.cache-to=type=gha,scope=$s,mode=max")
+        done
+        docker buildx bake -f compose.yaml --load "${sets[@]}" "${targets[@]}"
+    - name: Start
+      shell: bash
+      run: docker compose up -d --wait ${{ inputs.services }}
+    - name: Garage layout, bucket, key and CORS
+      shell: bash
+      run: deploy/garage-init.sh

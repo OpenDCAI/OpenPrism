@@ -1,5 +1,7 @@
 # OpenPrism2
 
+[![CI](https://github.com/cent-ischool/OpenPrism/actions/workflows/ci.yml/badge.svg)](https://github.com/cent-ischool/OpenPrism/actions/workflows/ci.yml)
+
 A local-first LaTeX + AI workspace for academic writing: a three-panel web app (file tree / LaTeX editor / PDF preview) with an LLM assistant, LaTeX compilation, conference-template management and transfer, real-time multi-user editing, and peer-review tooling.
 
 This is a reboot of OpenPrism. Project north-star goals:
