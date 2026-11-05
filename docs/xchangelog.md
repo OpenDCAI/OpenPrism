@@ -162,3 +162,17 @@
       rename moves it, a delete makes the room close (code 4404) without writing, and the editor follows.
 - [x] #56 **A hard server crash can lose up to ~800 ms of typing; a crashed replica's cursors linger.** A per-replica
       Redis update log replayed on load and by a beat task; awareness entries expire after 30 s.
+
+## v0.0.10 - Better testing
+
+- [x] #57 **Random 401s from the devcontainer's clock steps.** `JWT_LEEWAY_SECONDS`: 5 s under tests and in compose,
+      0 (unset) in production and Kubernetes.
+- [x] #58 **`tsc --noEmit` reported 6 errors.** Now clean (`npm run typecheck`), without casts or ignores; the ghost-text
+      field read a property that never existed.
+- [x] #59 **Test-only dependencies in the production API image.** `daphne` moved to `requirements-dev.txt` (compose
+      builds a `dev` stage); production images carry no test modules.
+- [x] #60 **Browser specs:** registration and sign-in through the forms (including the `next` link), workspaces and
+      members, two people typing at once, and file rename/delete/move.
+- [x] #61 **CI** on GitHub Actions: typecheck, the k8s render and the API and AI-worker suites on every push; the TeX
+      worker and the full browser suite (web image on :8080) on `main` and `release/*`.
+- [x] #62 **`design/reference/` untracked.** It was already tracked; it is now kept out of the web build context.

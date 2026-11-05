@@ -7,7 +7,7 @@ export interface Session {
 }
 
 const baseUrl = () => process.env.E2E_BASE_URL || 'http://localhost:5173';
-const PASSWORD = 'correct-horse-battery';
+export const PASSWORD = 'correct-horse-battery';
 
 async function api<T>(path: string, token: string | null, method = 'GET', body?: unknown): Promise<T> {
   const res = await fetch(baseUrl() + path, {
@@ -39,8 +39,8 @@ export async function newAccount(prefix = 'e2e'): Promise<Session> {
   throw new Error('registration stayed rate limited');
 }
 
-export async function newProject(session: Session, name: string, files: Record<string, string> = {}, template?: string): Promise<string> {
-  const project = await api<{ id: string }>('/api/projects', session.access, 'POST', { name, ...(template ? { template } : {}) });
+export async function newProject(session: Session, name: string, files: Record<string, string> = {}, template?: string, workspaceId?: string): Promise<string> {
+  const project = await api<{ id: string }>('/api/projects', session.access, 'POST', { name, ...(template ? { template } : {}), ...(workspaceId ? { workspaceId } : {}) });
   for (const [path, content] of Object.entries(files)) {
     await api(`/api/projects/${project.id}/file`, session.access, 'PUT', { path, content });
   }

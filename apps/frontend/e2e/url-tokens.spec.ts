@@ -95,7 +95,8 @@ test('a tab left open renews its URL token before it expires, and images it show
   await page.getByText('a.png').first().click();
   const firstToken = new URL((await first).url()).searchParams.get('token');
 
-  await page.waitForTimeout(1500); // real time too: the server signs tokens with a one-second timestamp
+  // Real time too: the server signs tokens with a one-second timestamp, and the devcontainer clock can step back ~1 s.
+  await page.waitForTimeout(3000);
   const renewed = page.waitForResponse((r) => r.url().endsWith('/api/url-token') && r.request().method() === 'POST');
   await page.clock.fastForward('52:00'); // tokens live an hour; the client renews 10 minutes before expiry
   const newToken = ((await (await renewed).json()) as { token: string }).token;

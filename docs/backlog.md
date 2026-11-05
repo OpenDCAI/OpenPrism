@@ -77,9 +77,8 @@ v0.1.0.
       over SSE). Move it to the same job polling as the AI endpoints.
 - [ ] **Template ZIP upload and project ZIP import still pass through the API** (direct uploads cover project files
       only).
-- [ ] **The dev clock steps make every page load's cookie refresh a chance to be refused** (`iat` in the future); the
-      client retries once after 1.5 s. Fixing the clock (or a deliberate leeway decision) would remove the retry. See
-      the v0.0.10 flaky-401 item.
+- [ ] **The client's refresh retry after 1.5 s (`api/auth.ts`) was for the dev clock steps**, which `JWT_LEEWAY_SECONDS`
+      (#57) now absorbs in the compose stack. Remove the retry once browser runs show it is never taken.
 - [ ] **The dev api's hot reload can hang** ("Waiting for connections to close") while a browser holds an SSE stream or
       websocket open; `docker compose up -d --force-recreate api` recovers. Consider `--timeout-graceful-shutdown`.
 - [ ] **AI usage counts requests, not tokens.** Record the providers' reported `usage` per job for spend accounting.
@@ -90,35 +89,18 @@ Moved to `docs/todo.md` (issues #54-#56). Decided: REST text writes go through t
 rooms are tied to their stored document, so rename follows the file and delete closes the room; edits are logged in
 Redis until flushed, and awareness entries expire.
 
-## v0.0.9 follow-ups (found while building it)
-
-- [ ] **Zotero's `applied: false` hand-back and version restore's 409 for open files predate #54.** Now that REST text
-      writes reach open rooms, the Zotero add could always write, and restore could write text files behind live rooms
-      (binary/removed files still need thought). Simplify both and their editor code.
-- [ ] **The k8s/compose docs don't mention that tests now use Redis database 15** beyond CLAUDE.md; a CI setup with a
-      Redis that has only one database (some managed offerings) needs `TEST_REDIS_URL`.
 
 ## v0.0.10 - Better testing
 
-- [ ] **Grow the browser test suite.** `apps/frontend/e2e` (Playwright, `npm run e2e`, against a running stack) now covers
-      the editor shortcut and the PDF preview. Still to add: sign-in and registration, workspaces and invitations, invite
-      links, two browsers editing live, and the file-panel actions. Then run it in CI.
-- [ ] **Seven pre-existing TypeScript errors** (`EditorPage.tsx` ×6 and `latex/lang.ts`: CodeMirror/Blob/event-listener
-      typings). `tsc --noEmit` should be clean so it can gate CI.
-- [ ] **No CI.** Nothing runs the three test suites (API, TeX worker, AI worker), `tsc`, or a render of the Kubernetes
-      overlays on push.
-- [ ] **Split test-only dependencies.** `daphne` is in `requirements.txt` only because `channels.testing` imports it;
-      the production API image does not need it (nor the test code).
-- [ ] **Random 401s ("Token is invalid") make the full test suites flaky.** Cause found: in the devcontainer (WSL2)
-      the wall clock steps backwards by about a second several times a minute, so a token minted just before a step
-      has an `iat` in the future and SimpleJWT rejects it. Different unrelated tests fail each run and pass alone;
-      with `SIMPLE_JWT['LEEWAY'] = 5` the API suite (301) and worker-tex suite (130) pass every time. Add a small
-      leeway under the test settings (not production) or fix the clock sync, and note it in CLAUDE.md.
-      Browser runs show the same thing as 2-minute timeouts (a rejected token signs the page out before the editor
-      loads); a v0.0.6 run with a 5 s leeway had none. A second, separate cause of fast browser failures was the auth
-      rate limit (20/min per address) tripped by test registrations; `newAccount` and the accounts spec now wait out
-      429s (Retry-After), which fixed it.
-- [ ] **`design/reference/` is untracked** (and `design/README.md` already links to it).
+Moved to `docs/todo.md` (issues #57-#62). Decided: a `JWT_LEEWAY_SECONDS` setting (0 in production, 5 s in tests and the
+compose dev stack) for the devcontainer's clock steps; CI on GitHub Actions runs typecheck, the k8s render and the API and
+AI-worker suites on every push, and adds the TeX-worker and browser suites on `main` and `release/*`.
+
+## v0.0.10 follow-ups (found while building it)
+
+- [ ] **Signed-in people show up as "Guest" to each other in live editing** (bug, collab): the editor's display name
+      defaults to `loadCollabName() || 'Guest'` (localStorage), not the account's name. Default to the account's name
+      (and the invite guest's chosen name), keeping the field to override it. Found by `e2e/collab-typing.spec.ts`.
 
 ## v0.0.11 - Operations
 
@@ -193,3 +175,10 @@ cluster. Do a full run on a local `kind` cluster, then fix whatever breaks.
 - [ ] **The plot sandbox is defence in depth, not a real sandbox** (AST check, builtin whitelist, scrubbed environment,
       non-dumpable worker, rlimits). LaTeX and plot code also share a user with the worker process, and LuaTeX can read
       any file that user can read. Run these workers under gVisor/Kata and cap pids (see the Kubernetes item)
+
+## v0.1.4 follow-ups (found while building it)
+
+- [ ] **Zotero's `applied: false` hand-back and version restore's 409 for open files predate #54.** Now that REST text
+      writes reach open rooms, the Zotero add could always write, and restore could write text files behind live rooms
+      (binary/removed files still need thought). Simplify both and their editor code.
+

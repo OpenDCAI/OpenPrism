@@ -103,6 +103,13 @@ interface Message {
   content: string;
 }
 
+/** The last turns of a conversation as the AI endpoints take them (system notes stay in the panel). */
+function chatHistory(messages: Message[]) {
+  return messages
+    .filter((m): m is Message & { role: 'user' | 'assistant' } => m.role !== 'system')
+    .slice(-8);
+}
+
 interface WebsearchItem {
   id: string;
   title: string;
@@ -921,7 +928,7 @@ const ghostField = StateField.define<DecorationSet>({
         return Decoration.set([widget.range(pos)]);
       }
     }
-    if (tr.docChanged || tr.selectionSet) {
+    if (tr.docChanged || tr.selection) {
       return Decoration.none;
     }
     return next;
@@ -3881,7 +3888,7 @@ export default function EditorPage() {
         compileLog,
         llmConfig: effectiveLlmConfig,
         interaction: isChat ? 'chat' : 'agent',
-        history: nextHistory.slice(-8)
+        history: chatHistory(nextHistory)
       });
       const replyText = res.reply || t('已生成建议。');
       setHistory((prev) => [...prev, { role: 'assistant', content: '' }]);
@@ -3931,7 +3938,7 @@ export default function EditorPage() {
         compileLog,
         llmConfig,
         interaction: 'agent',
-        history: nextHistory.slice(-8)
+        history: chatHistory(nextHistory)
       });
       const assistant: Message = {
         role: 'assistant',
@@ -4246,7 +4253,7 @@ export default function EditorPage() {
       const container = editorSplitRef.current;
       if (!container) return;
 
-      const onMove = (moveEvent: MouseEvent) => {
+      const onMove = (moveEvent: globalThis.MouseEvent) => {
         const rect = container.getBoundingClientRect();
         const offsetY = moveEvent.clientY - rect.top;
         const ratio = Math.min(0.85, Math.max(0.35, offsetY / rect.height));

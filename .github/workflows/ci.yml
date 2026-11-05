@@ -1,0 +1,106 @@
+# What runs when (#61): every push and pull request gets the quick checks (typecheck, the Kubernetes render, the API and
+# AI-worker suites); pushes and pull requests to main and release/* also build the TeX worker (TeX Live plus the
+# tectonic bundle, ~6 GB) and run its suite and the full browser suite against the compose stack.
+name: CI
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  COMPOSE_PROJECT_NAME: openprism
+
+jobs:
+  typecheck:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: {node-version: 20, cache: npm}
+      - run: npm ci
+      - run: npm run typecheck
+
+  k8s-render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Render every overlay, and production with the KEDA component
+        run: |
+          set -euo pipefail
+          for overlay in local production; do
+            kubectl kustomize "deploy/k8s/overlays/$overlay" > "/tmp/$overlay.yaml"
+            echo "$overlay: $(grep -c '^kind:' "/tmp/$overlay.yaml") objects"
+          done
+          # kustomize only loads paths inside the kustomization's tree, so the combination lives next to the overlays.
+          mkdir -p deploy/k8s/overlays/ci-keda
+          printf '%s\n' 'apiVersion: kustomize.config.k8s.io/v1beta1' 'kind: Kustomization' \
+            'resources: [../production]' 'components: [../../components/keda]' > deploy/k8s/overlays/ci-keda/kustomization.yaml
+          kubectl kustomize deploy/k8s/overlays/ci-keda > /tmp/keda.yaml
+          echo "production+keda: $(grep -c '^kind:' /tmp/keda.yaml) objects"
+
+  api-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/stack
+        with: {services: postgres redis garage api}
+      - run: docker compose run --rm api python manage.py test --noinput
+      - if: failure()
+        run: docker compose logs --no-color > compose.log
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: {name: api-tests-logs, path: compose.log}
+
+  ai-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/stack
+        with: {services: postgres redis garage api worker-ai}
+      - run: docker compose run --rm worker-ai python manage.py test ai --noinput
+      - if: failure()
+        run: docker compose logs --no-color > compose.log
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with: {name: ai-tests-logs, path: compose.log}
+
+  # The TeX image is built once and used by both its suite and the browser suite, so they share a job.
+  tex-and-browser:
+    if: >-
+      github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') ||
+      (github.event_name == 'pull_request' && (github.base_ref == 'main' || startsWith(github.base_ref, 'release/')))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Free disk space for the TeX image
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          docker system prune -af >/dev/null
+          df -h /
+      - uses: actions/checkout@v4
+      - uses: ./.github/actions/stack
+        with: {services: postgres redis garage mailpit api worker-tex worker-ai beat web}
+      - run: docker compose run --rm worker-tex python manage.py test jobs transfer --noinput
+      - name: Load the built-in templates (template and transfer specs use them)
+        run: docker compose exec -T api python manage.py import_legacy --skip-projects
+      - uses: actions/setup-node@v4
+        with: {node-version: 20, cache: npm}
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium
+      # The production web image (nginx) on :8080 rather than the Vite dev server: what users get, and no file polling.
+      - run: npm run e2e -- --reporter=line,html
+        env: {E2E_BASE_URL: 'http://localhost:8080', CI: '1'}
+      - if: failure()
+        run: docker compose logs --no-color > compose.log
+      - if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-report
+          path: |
+            apps/frontend/playwright-report
+            apps/frontend/test-results
+            compose.log

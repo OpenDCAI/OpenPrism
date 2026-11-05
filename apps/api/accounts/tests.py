@@ -1,3 +1,7 @@
+import os
+import time
+from unittest import mock
+
 from django.test import TestCase, override_settings
 from rest_framework.test import APIClient
 
@@ -40,6 +44,40 @@ class AuthTests(TestCase):
         res = self.client.get('/api/auth/me')
         self.assertEqual(res.status_code, 401)
         self.assertFalse(res.data['ok'])
+
+
+class ClockLeewayTests(TestCase):
+    """The devcontainer's clock steps back about a second at times, so a token can look issued in the future."""
+
+    def token_from_the_future(self, seconds=2):
+        from rest_framework_simplejwt.tokens import AccessToken
+        from accounts.models import User
+        token = AccessToken.for_user(User.objects.create_user(email='c@example.com', password='correct-horse-battery'))
+        token['iat'] = int(time.time()) + seconds
+        return str(token)
+
+    def me(self, token):
+        client = APIClient()
+        client.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        return client.get('/api/auth/me')
+
+    def test_tests_and_dev_tolerate_a_small_clock_step(self):
+        self.assertEqual(self.me(self.token_from_the_future()).status_code, 200)
+
+    def test_without_leeway_a_future_token_is_refused(self):
+        from rest_framework_simplejwt.state import token_backend
+        with mock.patch.object(token_backend, 'leeway', 0):
+            self.assertEqual(self.me(self.token_from_the_future()).status_code, 401)
+
+    def test_production_default_is_no_leeway(self):
+        import subprocess
+        import sys
+        env = {k: v for k, v in os.environ.items() if k != 'JWT_LEEWAY_SECONDS'}
+        out = subprocess.run([sys.executable, '-c', 'import django; django.setup(); from django.conf import settings; '
+                              'print(settings.SIMPLE_JWT["LEEWAY"])'],
+                             env={**env, 'DJANGO_SETTINGS_MODULE': 'config.settings', 'DJANGO_SECRET_KEY': 'x'},
+                             capture_output=True, text=True, check=True)
+        self.assertEqual(out.stdout.strip(), '0')
 
 
 class SessionTests(TestCase):
