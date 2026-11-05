@@ -40,10 +40,32 @@ def assert_can_create(project, path):
         raise IsADirectoryError(f'{path} is a directory')
 
 
-def _drop_collab_state(project, path):
+def _collab_docs(project, path):
     from collab.models import CollabDoc  # imported lazily: collab depends on this module
-    CollabDoc.objects.filter(project=project, path=path).delete()
-    CollabDoc.objects.filter(project=project, path__startswith=path + '/').delete()
+    return CollabDoc.objects.filter(project=project, path=path) | CollabDoc.objects.filter(project=project, path__startswith=path + '/')
+
+
+def _drop_collab_state(project, path):
+    """The file (or folder) is gone: drop its Yjs state, and have open rooms close instead of writing it back. Call it
+    before changing file rows (it takes the rooms' locks)."""
+    from collab import store
+    docs = _collab_docs(project, path)
+    store.lock_paths(project.id, docs.values_list('path', flat=True))
+    store.closed_paths(project, list(docs.values_list('path', flat=True)))
+    docs.delete()
+
+
+def _move_collab_state(project, src, dst):
+    """Renamed: the Yjs state moves with the file, and open rooms for the old path flush into it and close. Call it
+    before changing file rows (it takes the rooms' locks)."""
+    from collab import store
+    docs = list(_collab_docs(project, src))
+    store.lock_paths(project.id, [d.path for d in docs])
+    _collab_docs(project, dst).delete()  # left over from an earlier file at the destination
+    store.closed_paths(project, [d.path for d in docs])
+    for d in docs:
+        d.path = dst + d.path[len(src):]
+        d.save(update_fields=['path', 'updated_at'])
 
 
 def _comments_under(project, path):
@@ -169,8 +191,8 @@ def delete(project, path):
         raise FileNotFound(path)
     keys = [r.s3_key for r in rows if r.s3_key]
     with transaction.atomic():
-        _subtree(project, path).delete()
         _drop_collab_state(project, path)
+        _subtree(project, path).delete()
         _comments_under(project, path).delete()  # their text is gone
         _touch(project)
     storage.delete_keys(keys)
@@ -186,10 +208,10 @@ def rename(project, src, dst):
     if project.files.filter(path=dst).exists() or project.files.filter(path__startswith=dst + '/').exists():
         raise FileExistsError(dst)
     with transaction.atomic():
+        _move_collab_state(project, src, dst)
         for row in rows:
             row.path = dst + row.path[len(src):]
             row.save(update_fields=['path', 'updated_at'])
-        _drop_collab_state(project, src)  # live rooms for the old path are stale; the new path reseeds from the file
         for thread in _comments_under(project, src):  # comments follow their file
             thread.path = dst + thread.path[len(src):]
             thread.save(update_fields=['path', 'updated_at'])
@@ -242,11 +264,14 @@ def apply_changes(project, writes, removals):
                 storage.copy(w['source_key'], staged[w['path']])
         old_keys = []
         with transaction.atomic():
+            from collab import store
+            store.lock_paths(project.id, [safe_path(p) for p in removals]
+                             + [safe_path(w['path']) for w in writes if w['kind'] == 'text'])
             for path in removals:
                 path = safe_path(path)
+                _drop_collab_state(project, path)
                 old_keys += project.files.filter(path=path).exclude(s3_key='').values_list('s3_key', flat=True)
                 project.files.filter(path=path).delete()
-                _drop_collab_state(project, path)
             for w in sorted(writes, key=lambda w: (w['kind'] != 'dir', w['path'])):
                 path = safe_path(w['path'])
                 existing = project.files.filter(path=path).first()
