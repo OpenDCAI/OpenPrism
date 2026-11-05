@@ -8,6 +8,7 @@
   "scripts": {
     "dev": "npm --workspace apps/frontend run dev",
     "e2e": "npm --workspace apps/frontend run e2e --",
+    "typecheck": "npm --workspace apps/frontend run typecheck",
     "build": "npm --workspace apps/frontend run build",
     "preview": "npm --workspace apps/frontend run preview"
   },
