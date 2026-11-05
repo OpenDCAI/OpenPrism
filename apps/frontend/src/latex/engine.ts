@@ -1,5 +1,5 @@
 export interface CompileOutcome {
-  pdf: Uint8Array;
+  pdf: Uint8Array<ArrayBuffer>;
   log: string;
   status: number;
   engine: string;
