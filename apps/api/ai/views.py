@@ -27,9 +27,10 @@ MAX_IMAGE_BYTES = 20 * 1024 * 1024
 
 
 def split_llm_config(cfg):
-    """Separate the secret from the rest: only non-secret settings may be stored on the Job row."""
+    """Separate the secret from the rest: only non-secret settings may be stored on the Job row. `profile` names the
+    user's saved key to use (llm, search or vision) when the request brings no key."""
     cfg = cfg if isinstance(cfg, dict) else {}
-    public = {k: str(cfg[k]) for k in ('model', 'endpoint') if cfg.get(k)}
+    public = {k: str(cfg[k]) for k in ('model', 'endpoint', 'profile') if cfg.get(k)}
     return public, {'apiKey': str(cfg.get('apiKey') or '')}
 
 

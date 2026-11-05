@@ -313,11 +313,12 @@ test('the request does not wait for the answer: it returns a job at once and the
 test('against the real API the request answers with a queued job and the outcome arrives by polling', async ({ page }) => {
   const session = await newAccount('ai');
   const id = await newProject(session, 'Paper', { 'main.tex': doc('Hello.') });
-  await page.addInitScript(() => {
-    // the worker refuses this endpoint (SSRF guard) once the job runs, so the outcome is a failure that only the job reports
-    localStorage.setItem('openprism-settings-v1', JSON.stringify({ llmEndpoint: 'http://127.0.0.1:9/v1', llmApiKey: 'sk-unused', llmModel: 'm' }));
-  });
   await openEditor(page, session, id);
+  // A request that brings its own key and endpoint (as API clients may): the worker refuses the endpoint (SSRF guard)
+  // once the job runs, so the outcome is a failure only the job reports, and no model is ever called.
+  await page.route('**/api/agent/run', (route) => route.continue({
+    postData: JSON.stringify({ ...route.request().postDataJSON(), llmConfig: { endpoint: 'http://127.0.0.1:9/v1', apiKey: 'sk-unused', model: 'm' } })
+  }));
   const started = page.waitForResponse((r) => r.url().endsWith('/api/agent/run'));
   await ask(page, 'extend');
   const first = await (await started).json() as { ok: boolean; jobId?: string; status?: string };

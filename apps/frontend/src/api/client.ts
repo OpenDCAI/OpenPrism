@@ -26,6 +26,8 @@ export interface LLMConfig {
   endpoint: string;
   apiKey: string;
   model: string;
+  /** the UI sends only this: which of the user's saved keys to use (the server holds them) */
+  profile: 'llm' | 'search' | 'vision';
 }
 
 export interface TemplateMeta {
@@ -942,6 +944,24 @@ export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: stri
 }
 export function removeWorkspaceLlm(workspaceId: string) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, { method: 'DELETE' });
+}
+
+// ─── Your own AI keys (stored encrypted on the server) ───
+
+/** llm: assistant and agent; search and vision fall back to llm when unset; mineru: template transfer (endpoint = API base). */
+export type AiKeyProfile = 'llm' | 'search' | 'vision' | 'mineru';
+export interface AiKeyStatus { endpoint: string; model: string; lastFour: string; updatedAt: string }
+export interface AiKeys { ok: boolean; error?: string; profiles?: Record<AiKeyProfile, AiKeyStatus | null> }
+
+export function getAiKeys() {
+  return request<AiKeys>('/api/integrations/ai-keys');
+}
+/** A key is needed the first time and whenever the endpoint changes; the model can change on its own. */
+export function saveAiKey(profile: AiKeyProfile, payload: { endpoint?: string; model?: string; apiKey?: string }) {
+  return request<AiKeys>(`/api/integrations/ai-keys/${profile}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+export function removeAiKey(profile: AiKeyProfile) {
+  return request<AiKeys>(`/api/integrations/ai-keys/${profile}`, { method: 'DELETE' });
 }
 
 // ─── Credential history ───
