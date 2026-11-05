@@ -147,3 +147,6 @@
 - [x] #51 **Scoped URL tokens.** `?token=` takes only an hour-long token for one project (or the arXiv import),
       minted on demand and re-checked on every use; account and invite tokens no longer appear in any URL (invite
       links are resolved by POST).
+- [x] #52 **Session cookie.** The refresh token is an httpOnly, SameSite=Strict cookie (refresh and logout need a
+      custom header and a trusted Origin) and the access token lives in memory; tabs take turns refreshing and share
+      tokens and sign-outs; older builds' stored tokens move into the cookie once.
