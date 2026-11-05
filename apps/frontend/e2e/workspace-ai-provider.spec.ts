@@ -62,3 +62,39 @@ test('an editor sees the provider status but cannot change it', async ({ page })
   await expect(page.getByTestId('ws-ai').getByRole('button')).toHaveCount(0);
   expect(await page.content()).not.toContain('1234');
 });
+
+test('an admin sets a daily limit, sees it kept and sees the usage line; an editor sees neither', async ({ page, browser }) => {
+  const admin = await newAccount('wsai-limit');
+  const editor = await newAccount('wsai-limit-ed');
+  const ws = await newWorkspace(admin, 'Limited');
+  await inviteMember(admin, ws, editor.user.email, 'editor');
+  await setWorkspaceLlm(admin, ws, { endpoint: 'https://api.openai.com/v1', model: 'gpt-lab', apiKey: 'sk-lab-key-1234' });
+  await signIn(page, admin);
+  await setActiveWorkspace(page, admin, ws);
+  await page.goto('/projects?section=settings');
+  const block = page.getByTestId('ws-ai');
+  await expect(block.getByTestId('ws-ai-usage')).toHaveText('0 requests today, 0 in the last 30 days');
+  await block.getByLabel('Daily limit').fill('abc');
+  await block.getByRole('button', { name: 'Save' }).click();
+  await expect(block).toContainText('whole number');
+  await block.getByLabel('Daily limit').fill('250');
+  await block.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('AI provider saved')).toBeVisible();
+  await page.reload();
+  await expect(block.getByLabel('Daily limit')).toHaveValue('250');
+  await block.getByLabel('Daily limit').fill('');
+  await block.getByRole('button', { name: 'Save' }).click();
+  await expect(page.getByText('AI provider saved')).toBeVisible();
+  await page.reload();
+  await expect(block.getByLabel('Daily limit')).toHaveValue('');
+
+  const ctx = await browser.newContext();
+  const other = await ctx.newPage();
+  await signIn(other, editor);
+  await setActiveWorkspace(other, editor, ws);
+  await other.goto('/projects?section=settings');
+  await expect(other.getByTestId('ws-ai-readonly')).toBeVisible();
+  await expect(other.getByLabel('Daily limit')).toHaveCount(0);
+  await expect(other.getByTestId('ws-ai-usage')).toHaveCount(0);
+  await ctx.close();
+});

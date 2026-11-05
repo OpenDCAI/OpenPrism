@@ -20,6 +20,10 @@ data:
   OPENPRISM_COLLAB_TOKEN_TTL: "86400"
   COMPILE_TIMEOUT_SECONDS: "120"
   AI_WAIT_SECONDS: "300"
+  AI_RATE_PER_MINUTE: "30"                           # per user: llm, agent, vision, plot, transfer, arXiv import
+  COMPILE_RATE_PER_MINUTE: "30"
+  SERVER_LLM_KEY_USERS: "verified"                   # who may spend the operator's OPENPRISM_LLM_* key: all|verified|staff|none
+  SERVER_LLM_DAILY_QUOTA: "200"                      # such jobs per user per UTC day; 0 = no limit
   TEX_CACHE_DIR: "/tmp/openprism-tex-cache"
   APP_BASE_URL: "https://openprism.example.com"      # overlay: the URL people open; used for links in emails
   EMAIL_HOST: "smtp.example.com"                     # overlay: your SMTP relay (credentials go in openprism-core)

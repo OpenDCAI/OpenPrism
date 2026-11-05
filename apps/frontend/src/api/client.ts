@@ -924,6 +924,9 @@ export interface WorkspaceLlmStatus {
   model?: string;
   /** only for owners and admins */
   lastFour?: string;
+  /** owners and admins: AI requests per UTC day through this provider (null = no limit), and how many were made */
+  dailyLimit?: number | null;
+  usage?: { today: number; last30Days: number };
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -931,7 +934,7 @@ export interface WorkspaceLlmStatus {
 export function getWorkspaceLlm(workspaceId: string) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`);
 }
-export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: string; model?: string; apiKey?: string }) {
+export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: string; model?: string; apiKey?: string; dailyLimit?: number | null }) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, {
     method: 'PUT',
     body: JSON.stringify(payload)

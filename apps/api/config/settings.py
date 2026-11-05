@@ -188,12 +188,14 @@ CELERY_TASK_ROUTES = {
     'collab.tasks.*': {'queue': 'import'},
     'versions.tasks.*': {'queue': 'import'},
     'accounts.tasks.*': {'queue': 'import'},  # outgoing mail
+    'integrations.tasks.*': {'queue': 'import'},
 }
 CELERY_BEAT_SCHEDULE = {
     'reap-stale-jobs': {'task': 'jobs.tasks.reap_stale_jobs', 'schedule': 60.0},
     'cleanup-old-jobs': {'task': 'jobs.tasks.cleanup_old_jobs', 'schedule': 3600.0},
     'cleanup-expired-invites': {'task': 'collab.tasks.cleanup_expired_invites', 'schedule': 3600.0},
     'prune-versions': {'task': 'versions.tasks.prune_versions', 'schedule': 86400.0},
+    'prune-llm-usage': {'task': 'integrations.tasks.prune_llm_usage', 'schedule': 86400.0},
 }
 
 LLM_TIMEOUT_SECONDS = int(env('LLM_TIMEOUT_SECONDS', '180'))
@@ -219,6 +221,17 @@ JOB_QUEUED_STALE_MINUTES = int(env('JOB_QUEUED_STALE_MINUTES', '30'))
 JOB_WAITING_STALE_MINUTES = int(env('JOB_WAITING_STALE_MINUTES', '60'))  # transfer left waiting for layout-check images
 JOB_RETENTION_HOURS = int(env('JOB_RETENTION_HOURS', '24'))
 AI_EDIT_RATE_PER_MINUTE = int(env('AI_EDIT_RATE_PER_MINUTE', '1000' if TESTING else '20'))  # in-place AI edit requests per user
+# Per-user requests per minute on the expensive endpoints: AI jobs (llm, agent, vision, plot, transfer, arXiv import)
+# and compiles (guests are counted per invite link).
+AI_RATE_PER_MINUTE = int(env('AI_RATE_PER_MINUTE', '1000' if TESTING else '30'))
+COMPILE_RATE_PER_MINUTE = int(env('COMPILE_RATE_PER_MINUTE', '1000' if TESTING else '30'))
+# Who may run AI jobs on the operator's key (OPENPRISM_LLM_* on the workers), i.e. with no workspace, saved or
+# browser key: all | verified (verified address) | staff | none. And how many such jobs per user per UTC day (0 = no limit).
+SERVER_LLM_KEY_USERS = env('SERVER_LLM_KEY_USERS', 'all').strip().lower()
+if SERVER_LLM_KEY_USERS not in ('all', 'verified', 'staff', 'none'):
+    raise ImproperlyConfigured('SERVER_LLM_KEY_USERS must be all, verified, staff or none.')
+SERVER_LLM_DAILY_QUOTA = int(env('SERVER_LLM_DAILY_QUOTA', '200'))
+LLM_USAGE_KEEP_DAYS = int(env('LLM_USAGE_KEEP_DAYS', '400'))
 VERSION_KEEP_UNNAMED = int(env('VERSION_KEEP_UNNAMED', '50'))  # unnamed versions kept per project; named ones are kept forever
 VERSION_KEEP_FAILED = int(env('VERSION_KEEP_FAILED', '10'))  # unnamed failed-compile versions kept per project, counted apart
 

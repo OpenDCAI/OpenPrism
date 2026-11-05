@@ -340,7 +340,7 @@ class AiApiTests(ApiBase):
         pid = self.new_project()
         other = client_for(make_user('o@example.com'))
         self.assertEqual(other.post('/api/agent/run', {'mode': 'tools', 'projectId': pid}, format='json').status_code, 404)
-        with mock.patch.dict('os.environ', {}, clear=False):
+        with mock.patch.dict('os.environ', {'OPENPRISM_LLM_API_KEY': ''}):  # no server key either (the workers may have one)
             res = self.c.post('/api/agent/run', {'mode': 'tools', 'projectId': pid, 'llmConfig': {'endpoint': fake.url}}, format='json').data
         self.assertFalse(res['ok'])
 
@@ -608,9 +608,9 @@ class WorkspaceKeyTests(ApiBase):
         self.set_workspace_key(ws)
         with mock.patch('ai.views.run_job', return_value=Response({})) as run:
             self.c.post('/api/plot/from-table', {'projectId': self.pid, 'tableLatex': 'a', 'llmConfig': self.browser_cfg(ws)}, format='json')
-        job_type, params, secrets = run.call_args.args[1:4]
-        self.assertEqual(secrets, {'apiKey': WS_KEY})
-        self.assertEqual(params['llmConfig'], {'endpoint': ws.url + '/chat/completions', 'model': 'ws-model'})
+        public, secrets, source = run.call_args.args[3]
+        self.assertEqual((secrets, source), ({'apiKey': WS_KEY}, 'workspace'))
+        self.assertEqual(public, {'endpoint': ws.url + '/chat/completions', 'model': 'ws-model'})
 
     def test_viewers_and_commenters_do_not_get_the_workspace_key(self):
         ws, browser = self.fake(), self.fake()

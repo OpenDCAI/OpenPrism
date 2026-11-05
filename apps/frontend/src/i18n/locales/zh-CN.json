@@ -915,5 +915,10 @@
   "Page {{n}}, changed": "第 {{n}} 页，有差异",
   "Page {{n}}": "第 {{n}} 页",
   "No such page": "没有此页",
-  "PDF": "PDF"
+  "PDF": "PDF",
+  "Daily limit": "每日上限",
+  "No limit": "不限",
+  "AI requests per day (UTC) through this provider, for the whole workspace. Empty: no limit.": "整个工作区每天（UTC）通过此服务商发出的 AI 请求数。留空：不限。",
+  "{{today}} requests today, {{month}} in the last 30 days": "今天 {{today}} 次请求，最近 30 天 {{month}} 次",
+  "The daily limit must be a whole number, or empty for no limit.": "每日上限必须是整数，留空表示不限。"
 }

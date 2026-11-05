@@ -17,7 +17,9 @@ from projects import storage
 from projects.access import get_project
 from projects.paths import InvalidPath, safe_path, sanitize_upload_path
 
-from . import arxiv
+from common import ratelimit
+
+from . import arxiv, usage
 from .i18n import get_lang
 from .tasks import run_ai_job
 
@@ -31,11 +33,9 @@ def split_llm_config(cfg):
     return public, {'apiKey': str(cfg.get('apiKey') or '')}
 
 
-def workspace_first(request, workspace, public, secrets):
-    """The workspace's provider replaces the browser's whole config (endpoint, model and key belong together) when it
-    has one and the user may use it; otherwise the browser's config stands (and, without one, the server default)."""
-    from integrations.llmconfig import workspace_llm_for
-    return workspace_llm_for(workspace, request.user) or (public, secrets)
+def limit_rate(request):
+    """AI_RATE_PER_MINUTE per user across the AI endpoints (429 with Retry-After)."""
+    ratelimit.enforce('ai', request.user, settings.AI_RATE_PER_MINUTE)
 
 
 def wants_async(request):
@@ -44,7 +44,13 @@ def wants_async(request):
     return value is True or str(value).lower() in ('1', 'true')
 
 
-def run_job(request, job_type, params, secrets, project=None, job_id=None):
+def run_job(request, job_type, params, paid, project=None, job_id=None, charged=False):
+    """`paid` is usage.resolve()'s (public, secrets, source); the job is charged to it (policy, daily limits) first,
+    unless the view already did (`charged`)."""
+    public, secrets, source = paid
+    if not charged:
+        usage.charge(request, source, project.workspace if project else None)
+    params = {**params, 'llmConfig': public, 'keySource': source}
     job = Job.objects.create(id=job_id or uuid.uuid4(), type=job_type, user=request.user, project=project, params=params)
     run_ai_job.delay(str(job.id), secrets)
     if wants_async(request):
@@ -64,21 +70,19 @@ def _body(request):
 
 @api_view(['POST'])
 def llm_endpoint(request):
+    limit_rate(request)
     b = _body(request)
     public, secrets = split_llm_config(b.get('llmConfig'))
     if b.get('model') and 'model' not in public:
         public['model'] = str(b['model'])
-    if b.get('projectId'):
-        public, secrets = workspace_first(request, get_project(request, b['projectId']).workspace, public, secrets)
-    return run_job(request, Job.LLM, {'messages': b.get('messages') or [], 'llmConfig': public}, secrets)
+    project = get_project(request, b['projectId']) if b.get('projectId') else None
+    paid = usage.resolve(request, project.workspace if project else None, public, secrets)
+    return run_job(request, Job.LLM, {'messages': b.get('messages') or []}, paid, project)
 
 
 def edit_rate_limited(user):
     """True when `user` has used up this minute's in-place edit requests (each one can run a many-step agent)."""
-    from django.core.cache import cache
-    key = f'ai-edit-rate:{user.id}:{int(time.time() // 60)}'
-    cache.add(key, 0, 90)
-    return cache.incr(key) > settings.AI_EDIT_RATE_PER_MINUTE
+    return bool(ratelimit.hit('ai-edit', ratelimit.ident_for(user), settings.AI_EDIT_RATE_PER_MINUTE))
 
 
 MAX_SELECTION = 20000
@@ -116,6 +120,7 @@ def clean_edit_context(project, raw):
 
 @api_view(['POST'])
 def agent_run(request):
+    limit_rate(request)
     b = _body(request)
     public, secrets = split_llm_config(b.get('llmConfig'))
     edit = b.get('editContext') is not None
@@ -133,17 +138,17 @@ def agent_run(request):
             job_id = uuid.UUID(str(b['jobId'])) if b.get('jobId') else None
         except ValueError:
             return Response({'ok': False, 'error': 'jobId must be a UUID.'})
-    if project:
-        public, secrets = workspace_first(request, project.workspace, public, secrets)
+    paid = usage.resolve(request, project.workspace if project else None, public, secrets)
     params = {k: b.get(k) for k in ('task', 'prompt', 'selection', 'content', 'mode', 'activePath', 'compileLog',
                                     'interaction', 'history', 'editContext')}
-    params.update({'llmConfig': public, 'lang': get_lang(request.headers.get('x-lang'))})
-    return run_job(request, Job.AGENT, params, secrets, project, job_id=job_id if edit else None)
+    params['lang'] = get_lang(request.headers.get('x-lang'))
+    return run_job(request, Job.AGENT, params, paid, project, job_id=job_id if edit else None)
 
 
 @api_view(['POST'])
 @parser_classes([PathMultiPartParser])
 def vision_latex(request):
+    limit_rate(request)
     image = request.FILES.get('image') or next(iter(request.FILES.values()), None)
     if image is None:
         return Response({'ok': False, 'error': 'Missing image.'})
@@ -160,18 +165,20 @@ def vision_latex(request):
         from projects.models import Membership
         save = Membership.objects.filter(workspace_id=project.workspace_id, user=request.user,
                                          role__in=Membership.WRITE_ROLES).exists()
-        public, secrets = workspace_first(request, project.workspace, public, secrets)
+    paid = usage.resolve(request, project.workspace if project else None, public, secrets)
+    usage.charge(request, paid[2], project.workspace if project else None)  # before storing the upload
     job_id = uuid.uuid4()
     key = f'jobs/{job_id}/input'
     storage.put_bytes(key, image.read(), image.content_type or 'image/png')
     params = {'imageKey': key, 'imageName': getattr(image, 'full_path', image.name), 'imageType': image.content_type or 'image/png',
               'mode': request.data.get('mode') or 'equation', 'prompt': request.data.get('prompt') or '',
-              'llmConfig': public, 'saveToProject': save}
-    return run_job(request, Job.VISION, params, secrets, project, job_id)
+              'saveToProject': save}
+    return run_job(request, Job.VISION, params, paid, project, job_id, charged=True)
 
 
 @api_view(['POST'])
 def plot_from_table(request):
+    limit_rate(request)
     b = _body(request)
     if not b.get('projectId'):
         return Response({'ok': False, 'error': 'Missing projectId.'})
@@ -185,14 +192,14 @@ def plot_from_table(request):
         asset_path = safe_path(f'assets/plots/{name}')
     except InvalidPath:
         return Response({'ok': False, 'error': 'Invalid filename.'})
-    public, secrets = workspace_first(request, project.workspace, *split_llm_config(b.get('llmConfig')))
+    paid = usage.resolve(request, project.workspace, *split_llm_config(b.get('llmConfig')))
     try:
         retries = min(5, max(0, int(b.get('retries', 2))))
     except (TypeError, ValueError):
         retries = 2
     params = {'tableLatex': b['tableLatex'], 'chartType': b.get('chartType'), 'title': b.get('title'),
-              'prompt': b.get('prompt'), 'assetPath': asset_path, 'retries': retries, 'llmConfig': public}
-    return run_job(request, Job.PLOT, params, secrets, project)
+              'prompt': b.get('prompt'), 'assetPath': asset_path, 'retries': retries}
+    return run_job(request, Job.PLOT, params, paid, project)
 
 
 @api_view(['POST'])

@@ -5,6 +5,7 @@ import time
 import zipfile
 from datetime import timezone as dt_timezone
 
+from django.conf import settings
 from django.db import transaction
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
@@ -16,6 +17,7 @@ from rest_framework.response import Response
 from ai import arxiv
 from ai.i18n import get_lang
 from collab.auth import IsUserOrGuest
+from common import ratelimit
 from common.uploads import PathMultiPartParser, upload_path
 from common.zips import iter_zip_files
 from jobs.models import Job
@@ -406,6 +408,9 @@ def import_arxiv_sse(request):
     headers = {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}  # no proxy buffering, or events arrive in a lump
     if not arxiv_id:
         return StreamingHttpResponse(iter([_sse('error', {'error': 'Invalid arXiv ID.'})]),
+                                     content_type='text/event-stream', headers=headers)
+    if ratelimit.hit('ai', ratelimit.ident_for(request.user), settings.AI_RATE_PER_MINUTE):
+        return StreamingHttpResponse(iter([_sse('error', {'error': 'Too many requests: try again in a minute.'})]),
                                      content_type='text/event-stream', headers=headers)
     workspace = _default_workspace(request.user, request.query_params.get('workspaceId'))
     name = request.query_params.get('projectName') or f'arxiv-{arxiv_id}'
