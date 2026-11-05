@@ -144,3 +144,6 @@
 - [x] #50 **Users' AI keys on the server.** LLM, search, vision and MinerU keys are saved encrypted on the server
       (last four shown, never returned; a new endpoint needs the key again) instead of in plain-text localStorage;
       requests name a profile; keys left by older builds move to the server once and leave the browser.
+- [x] #51 **Scoped URL tokens.** `?token=` takes only an hour-long token for one project (or the arXiv import),
+      minted on demand and re-checked on every use; account and invite tokens no longer appear in any URL (invite
+      links are resolved by POST).
