@@ -7,3 +7,4 @@ apps/api
 apps/frontend/dist
 deploy
 .env
+design/reference
