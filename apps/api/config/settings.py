@@ -155,7 +155,11 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
     'NUM_PROXIES': int(env('TRUSTED_PROXY_COUNT', '0')),  # reverse proxies in front of the API: rate limits key on the real client
     'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],  # only views that set throttle_scope
-    'DEFAULT_THROTTLE_RATES': {'auth': env('AUTH_RATE_LIMIT', '10000/min' if TESTING else '20/min')},
+    'DEFAULT_THROTTLE_RATES': {
+        'auth': env('AUTH_RATE_LIMIT', '10000/min' if TESTING else '20/min'),
+        # every tab refreshes on load (the access token lives in memory only); a refresh needs a valid refresh token
+        'refresh': env('AUTH_REFRESH_RATE_LIMIT', '10000/min' if TESTING else '120/min'),
+    },
     'EXCEPTION_HANDLER': 'common.exceptions.ok_error_handler',
 }
 
@@ -166,6 +170,13 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,       # each refresh issues a new refresh token…
     'BLACKLIST_AFTER_ROTATION': True,    # …and revokes the old one, so a stolen refresh token has a short life
 }
+
+# The refresh token lives in this httpOnly cookie (accounts/cookies.py); the access token only in the page's memory.
+REFRESH_COOKIE_NAME = 'openprism_refresh'
+REFRESH_COOKIE_SECURE = env_bool('REFRESH_COOKIE_SECURE', not DEBUG)  # browsers accept Secure cookies on http://localhost too
+# Origins whose pages may use the refresh cookie (an Origin header must be one of these): APP_BASE_URL and any extra
+# origins people open the app at (comma-separated), e.g. the nginx image on :8080 next to Vite on :5173 in dev.
+TRUSTED_ORIGINS = sorted({APP_BASE_URL, *(o.strip().rstrip('/') for o in env('TRUSTED_ORIGINS', '').split(',') if o.strip())})
 
 REDIS_URL = env('REDIS_URL', 'redis://localhost:6379/0')
 # Shared across replicas so rate limits (login attempts) are enforced per user, not per process.

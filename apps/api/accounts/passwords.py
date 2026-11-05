@@ -87,5 +87,7 @@ class ChangePasswordView(APIView):
         if error:
             return Response({'ok': False, 'error': error}, status=400)
         set_new_password(user, password)
+        from . import cookies
         from .views import _tokens
-        return Response({'ok': True, **_tokens(user)})  # this browser stays signed in with fresh tokens
+        tokens = _tokens(user)
+        return cookies.with_session(Response({'ok': True, **tokens}), tokens)  # this browser stays signed in, fresh tokens

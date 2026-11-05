@@ -89,9 +89,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const quiet = useRef(0); // >0 while this provider is itself signing in/out and already sets the state
 
   useEffect(() => {
-    initSession();
-    void resolve();
-    return subscribeSession(() => {
+    let live = true;
+    void initSession().then(() => { if (live) void resolve(); }); // 'loading' until the refresh cookie says who this is
+    const unsubscribe = subscribeSession(() => {
       if (quiet.current > 0) return;
       const next = getInviteToken() ? 'guest' : getSession() ? 'user' : 'anonymous';
       const cur = stateRef.current.status; // a token refresh also notifies; that changes nothing here
@@ -100,6 +100,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       setState({ status: 'loading' });
       void resolve();
     });
+    return () => {
+      live = false;
+      unsubscribe();
+    };
   }, [resolve]);
 
   const value = useMemo<AuthContextValue>(() => ({

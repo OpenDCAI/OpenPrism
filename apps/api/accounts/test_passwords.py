@@ -10,7 +10,7 @@ class PasswordTests(TestCase):
     def setUp(self):
         self.client = APIClient()
         res = self.client.post('/api/auth/register', {'email': 'ann@example.com', 'password': PASSWORD}, format='json')
-        self.refresh = res.data['refresh']
+        self.refresh = res.cookies['openprism_refresh'].value
         self.access = res.data['access']
 
     def reset_link(self):
@@ -65,5 +65,5 @@ class PasswordTests(TestCase):
         ok = self.client.post('/api/auth/password/change', {'current': PASSWORD, 'password': 'new-horse-battery-9'}, format='json')
         self.assertTrue(ok.data['ok'])
         self.assertEqual(self.client.post('/api/auth/refresh', {'refresh': self.refresh}, format='json').status_code, 401)  # old session
-        self.assertEqual(self.client.post('/api/auth/refresh', {'refresh': ok.data['refresh']}, format='json').status_code, 200)  # this one
+        self.assertEqual(self.client.post('/api/auth/refresh', {'refresh': ok.cookies['openprism_refresh'].value}, format='json').status_code, 200)  # this one
         self.assertEqual(self.login('new-horse-battery-9').status_code, 200)
