@@ -58,6 +58,7 @@ export function setSession(session: Session) {
 
 export function clearSession() {
   window.localStorage.removeItem(SESSION_KEY);
+  forgetUrlTokens();
   if (refreshTimer) clearTimeout(refreshTimer);
   notify();
 }
@@ -69,11 +70,13 @@ export function getInviteToken(): string {
 export function setInviteToken(token: string) {
   if (!token) return;
   window.sessionStorage.setItem(INVITE_KEY, token);
+  forgetUrlTokens(); // they belong to whoever this tab was
   notify();
 }
 
 export function clearInviteToken() {
   window.sessionStorage.removeItem(INVITE_KEY);
+  forgetUrlTokens();
   notify();
 }
 
@@ -82,8 +85,61 @@ export function currentToken(): string {
   return getInviteToken() || getSession()?.access || '';
 }
 
-/** Token to put in a URL's `?token=` (img/object/EventSource/WebSocket cannot send headers). */
-export const tokenForUrl = currentToken;
+// ─── URL tokens ───
+// <img>/<object>, EventSource and WebSocket cannot send headers, so their URLs carry `?token=`. That is never the
+// account's or the invite's own token: it is a short-lived token the server mints for one project (or for the arXiv
+// import), kept in memory only and renewed before it expires. Never put any other credential in a URL.
+
+type UrlTokenEntry = { token: string; expires: number; timer?: ReturnType<typeof setTimeout> };
+const URL_TOKEN_RENEW_MS = 10 * 60_000;
+const urlTokens = new Map<string, UrlTokenEntry>();
+const urlTokenRequests = new Map<string, Promise<string>>();
+const urlTokenListeners = new Set<Listener>();
+
+/** Subscribe to URL-token renewals (re-render anything that built a URL with one). */
+export function subscribeUrlTokens(listener: Listener): () => void {
+  urlTokenListeners.add(listener);
+  return () => urlTokenListeners.delete(listener);
+}
+
+function forgetUrlTokens() {
+  urlTokens.forEach((e) => e.timer && clearTimeout(e.timer));
+  urlTokens.clear();
+  urlTokenRequests.clear();
+}
+
+/** The cached URL token for a project id (or 'import'), or '' when there is none yet: call ensureUrlToken first. */
+export function cachedUrlToken(key: string): string {
+  const entry = urlTokens.get(key);
+  return entry && entry.expires > Date.now() ? entry.token : '';
+}
+
+/** A URL token for a project id (or 'import'), minted when missing or close to expiry; concurrent callers share one request. */
+export function ensureUrlToken(key: string): Promise<string> {
+  const entry = urlTokens.get(key);
+  if (entry && entry.expires - Date.now() > URL_TOKEN_RENEW_MS) return Promise.resolve(entry.token);
+  const pending = urlTokenRequests.get(key);
+  if (pending) return pending;
+  const request = (async () => {
+    try {
+      const body = key === 'import' ? { scope: 'import' } : { scope: 'project', projectId: key };
+      const res = await apiFetch('/api/url-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = (await res.json()) as { ok?: boolean; token?: string; expiresIn?: number; error?: string };
+      if (!res.ok || !data.token || !data.expiresIn) throw new Error(data.error || `Could not get a link token (${res.status})`);
+      const expires = Date.now() + data.expiresIn * 1000; // from receipt, by this clock: it may disagree with the server's
+      const old = urlTokens.get(key);
+      if (old?.timer) clearTimeout(old.timer);
+      const timer = setTimeout(() => void ensureUrlToken(key).catch(() => {}), Math.max(5_000, expires - Date.now() - URL_TOKEN_RENEW_MS + 1_000));
+      urlTokens.set(key, { token: data.token, expires, timer });
+      urlTokenListeners.forEach((l) => l());
+      return data.token;
+    } finally {
+      urlTokenRequests.delete(key);
+    }
+  })();
+  urlTokenRequests.set(key, request);
+  return request;
+}
 
 export function authHeaders(): Record<string, string> {
   const token = currentToken();

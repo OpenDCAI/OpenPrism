@@ -40,19 +40,6 @@ class InviteAuthentication(BaseAuthentication):
         return 'Bearer'  # makes DRF answer 401 (not 403) when an invite token is rejected
 
 
-class QueryInviteAuthentication(InviteAuthentication):
-    """Same, from `?token=` (for <img>/<object>/EventSource, which cannot set headers)."""
-
-    def authenticate(self, request):
-        token = request.query_params.get('token')
-        if not token or not token.startswith(tokens.PREFIX):
-            return None
-        invite = tokens.lookup(token)
-        if invite is None:
-            raise AuthenticationFailed('Invalid or expired invite.')
-        return GuestUser(invite), invite
-
-
 def is_guest(user):
     return getattr(user, 'is_guest', False)
 

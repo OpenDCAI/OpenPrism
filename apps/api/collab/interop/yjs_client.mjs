@@ -2,6 +2,7 @@
 // The message handling below is copied from apps/frontend/src/collab/provider.ts.
 // Usage (from the repo root, with the stack running):
 //   node apps/api/collab/interop/yjs_client.mjs <baseUrl> <token> <projectId> <file> [<secondReplicaBaseUrl>]
+// <token> is an invite token or an access token; like the browser, the script exchanges it for a URL token first.
 // With a second base URL, bob and carol connect to that replica, so every check also exercises Redis fan-out.
 import WebSocket from 'ws';
 import * as Y from 'yjs';
@@ -10,7 +11,13 @@ import * as decoding from 'lib0/decoding';
 import * as syncProtocol from 'y-protocols/sync';
 import * as awarenessProtocol from 'y-protocols/awareness';
 
-const [base, token, projectId, file, base2 = base] = process.argv.slice(2);
+const [base, credential, projectId, file, base2 = base] = process.argv.slice(2);
+const minted = await fetch(`${base}/api/url-token`, {
+  method: 'POST', headers: { 'content-type': 'application/json', authorization: `Bearer ${credential}` },
+  body: JSON.stringify({ scope: 'project', projectId })
+}).then((r) => r.json());
+if (!minted.token) throw new Error(`Could not mint a URL token: ${JSON.stringify(minted)}`);
+const token = minted.token;
 const MESSAGE_SYNC = 0, MESSAGE_AWARENESS = 1;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 

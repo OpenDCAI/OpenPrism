@@ -5,13 +5,10 @@ from urllib.parse import parse_qs
 from channels.generic.websocket import AsyncWebsocketConsumer
 from django.conf import settings
 from django.core.exceptions import ValidationError
-from rest_framework_simplejwt.exceptions import TokenError
-from rest_framework_simplejwt.tokens import AccessToken
 
 from projects.models import Membership, Project
 from projects.paths import InvalidPath, is_text_file, safe_path
 
-from . import tokens
 from .dbasync import db_async
 from .rooms import Conn, default_manager
 
@@ -26,33 +23,35 @@ class Reject(Exception):
 
 @db_async
 def authorize(token, project_param, raw_path):
-    """Returns (project_id, path, can_write) or raises Reject(close_code, reason)."""
+    """Returns (project_id, path, can_write, invite_id) or raises Reject(close_code, reason).
+
+    The credential is a URL token (common.urltokens) for this project, minted by POST /api/url-token; an account's
+    access token or an invite token in the URL is refused. What the connection may do comes from the membership or the
+    invite as they are now, not from the token."""
+    from common import urltokens
     try:
         path = safe_path(raw_path or '')
     except InvalidPath:
         raise Reject(1008, 'Invalid path')
     if not token:
         raise Reject(1008, 'Unauthorized')
-    invite = tokens.lookup(token)
-    if invite is not None:
-        if project_param and str(invite.project_id) != project_param:
-            raise Reject(1008, 'Project mismatch')
-        project_id, can_write, invite_id = str(invite.project_id), invite.role in ('editor', 'admin'), str(invite.id)
+    try:
+        principal, claims = urltokens.verify(token)
+    except urltokens.InvalidUrlToken:
+        raise Reject(1008, 'Unauthorized')
+    if claims.scope != urltokens.PROJECT or not project_param or claims.project_id != project_param:
+        raise Reject(1008, 'Project mismatch')
+    if getattr(principal, 'is_guest', False):
+        project_id, can_write, invite_id = principal.project_id, principal.can_write, principal.invite_id
     else:
-        try:
-            user_id = AccessToken(token)['user_id']
-        except (TokenError, KeyError):
-            raise Reject(1008, 'Unauthorized')
-        if not project_param:
-            raise Reject(1008, 'Missing project or file')
         try:
             project = Project.objects.get(pk=project_param)
         except (Project.DoesNotExist, ValidationError):
             raise Reject(1008, 'Project not found')
-        membership = Membership.objects.filter(workspace_id=project.workspace_id, user_id=user_id).first()
+        membership = Membership.objects.filter(workspace_id=project.workspace_id, user=principal).first()
         if membership is None:
             raise Reject(1008, 'Project not found')  # same answer as a missing project
-        if settings.REQUIRE_EMAIL_VERIFICATION and membership.user.email_verified_at is None:
+        if settings.REQUIRE_EMAIL_VERIFICATION and principal.email_verified_at is None:
             raise Reject(1008, 'Unauthorized')  # like every other API until the address is verified
         project_id, can_write, invite_id = str(project.id), membership.role in Membership.WRITE_ROLES, None
     if not Project.objects.filter(pk=project_id).exists():

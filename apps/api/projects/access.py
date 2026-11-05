@@ -7,9 +7,12 @@ from .models import Membership, Project
 
 def get_project(request, project_id, write=False):
     """Return the project if the user belongs to its workspace (with a write role when write=True)."""
+    from common.urltokens import allows_project
     try:
         project = Project.objects.select_related('workspace').get(pk=project_id)
     except (Project.DoesNotExist, ValidationError):  # unknown or malformed id -> same 404
+        raise NotFound('Project not found')
+    if not allows_project(request, project.id):  # a URL token opens its one project only
         raise NotFound('Project not found')
     user = request.user
     if getattr(user, 'is_guest', False):  # invite-link guest: exactly one project, role from the invite
@@ -30,22 +33,23 @@ def user_projects(user):
     return Project.objects.filter(workspace__memberships__user=user)
 
 
-class QueryTokenJWTAuthentication(JWTAuthentication):
-    """Accept the access token (or an invite token) as ?token= as well as the Authorization header.
+class UrlTokenAuthentication(JWTAuthentication):
+    """The usual header credentials (invite token, then JWT), or a scoped URL token (common.urltokens) in `?token=`.
 
-    Only for endpoints loaded by <img>/<object>/EventSource, which cannot set headers.
-    """
+    Only for endpoints loaded by <img>/<object>/EventSource, which cannot set headers. `?token=` accepts nothing else:
+    an account's access token or an invite token in a URL is refused (401). request.auth is then the token's UrlClaims,
+    which get_project()/allows_project() hold to its one project."""
     def authenticate(self, request):
-        from collab.auth import InviteAuthentication, QueryInviteAuthentication
-        for auth in (InviteAuthentication(), QueryInviteAuthentication()):
-            result = auth.authenticate(request)
-            if result is not None:
-                return result
-        result = super().authenticate(request)
+        from rest_framework.exceptions import AuthenticationFailed
+        from collab.auth import InviteAuthentication
+        from common import urltokens
+        result = InviteAuthentication().authenticate(request) or super().authenticate(request)
         if result is not None:
             return result
         token = request.query_params.get('token')
         if not token:
             return None
-        validated = self.get_validated_token(token)
-        return self.get_user(validated), validated
+        try:
+            return urltokens.verify(token)
+        except urltokens.InvalidUrlToken as exc:
+            raise AuthenticationFailed(str(exc))

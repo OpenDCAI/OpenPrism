@@ -55,7 +55,8 @@ import {
   setCollabServer
 } from '../api/client';
 import type { ArxivPaper, CommentThreadMeta, PdfFocus, RestoreVersionResult } from '../api/client';
-import { getInviteToken, tokenForUrl } from '../api/auth';
+import { ensureUrlToken, getInviteToken } from '../api/auth';
+import { useUrlToken } from '../api/useUrlToken';
 import { createTwoFilesPatch } from 'diff';
 import { merge3 } from './merge3';
 import { SplitDiffView, buildSplitDiff } from './SplitDiff';
@@ -1356,6 +1357,7 @@ export default function EditorPage() {
   const { t, i18n } = useTranslation();
   const { projectId: routeProjectId } = useParams();
   const projectId = routeProjectId || '';
+  useUrlToken(projectId); // blobUrl() (figures, plots) reads it; this re-renders when it is minted or renewed
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectName, setProjectName] = useState('');
@@ -1654,7 +1656,7 @@ export default function EditorPage() {
     });
     const provider = new CollabProvider({
       serverUrl: normalizeServerUrl(collabServer) || (typeof window === 'undefined' ? '' : window.location.origin),
-      token: tokenForUrl, // read on every (re)connect, so a refreshed account token is picked up
+      token: () => ensureUrlToken(projectId), // a URL token for this project, fetched (or renewed) on every (re)connect
       projectId,
       filePath: activePath,
       doc: ydoc,

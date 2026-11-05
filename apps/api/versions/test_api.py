@@ -117,11 +117,13 @@ class AccessTests(VersionApiBase):
         other = self.new_project('Other')
         self.assertEqual(g.get(self.url(pid=other)).status_code, 404)
 
-    def test_pdf_accepts_a_query_token_for_object_tags(self):
+    def test_pdf_accepts_a_url_token_for_object_tags(self):
         from rest_framework_simplejwt.tokens import RefreshToken
-        token = str(RefreshToken.for_user(self.user).access_token)
+        token = self.c.post('/api/url-token', {'scope': 'project', 'projectId': str(self.project.id)}, format='json').data['token']
         res = APIClient().get(self.url(self.version.id, 'pdf'), {'token': token})
         self.assertEqual((res.status_code, res['Content-Type']), (200, 'application/pdf'))
+        jwt = str(RefreshToken.for_user(self.user).access_token)
+        self.assertEqual(APIClient().get(self.url(self.version.id, 'pdf'), {'token': jwt}).status_code, 401)
 
 
 class ContentTests(VersionApiBase):
