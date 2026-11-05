@@ -1,0 +1,3 @@
+# Only for running the test suites (the compose dev stack builds the `dev` image stage); never in production images.
+-r requirements.txt
+daphne==4.1.2  # only imported by channels.testing (WebsocketCommunicator); uvicorn serves the app
