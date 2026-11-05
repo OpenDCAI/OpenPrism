@@ -27,10 +27,16 @@ def normalize_chat_endpoint(endpoint):
 
 
 def resolve_config(cfg=None):
+    """The request's endpoint, key and model, or, when it brings no key, the worker's OPENPRISM_LLM_* as a whole: the
+    operator's key is only ever sent to the operator's endpoint (a request naming its own endpoint without a key would
+    otherwise receive it), and with the operator's model."""
     cfg = cfg or {}
+    key = (cfg.get('apiKey') or cfg.get('api_key') or '').strip()
+    if not key:
+        cfg = {}
     return {
         'endpoint': (cfg.get('endpoint') or os.environ.get('OPENPRISM_LLM_ENDPOINT') or DEFAULT_ENDPOINT).strip(),
-        'api_key': (cfg.get('apiKey') or cfg.get('api_key') or os.environ.get('OPENPRISM_LLM_API_KEY') or '').strip(),
+        'api_key': key or os.environ.get('OPENPRISM_LLM_API_KEY', '').strip(),
         'model': (cfg.get('model') or os.environ.get('OPENPRISM_LLM_MODEL') or 'gpt-4o-mini').strip(),
     }
 

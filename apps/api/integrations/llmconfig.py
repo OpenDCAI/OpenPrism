@@ -7,6 +7,8 @@ from . import crypto
 from .models import WorkspaceLlmConfig
 
 MAX_KEY_CHARS = 500
+MAX_DAILY_LIMIT = 100000
+UNSET = object()
 
 
 class LlmConfigError(ValueError):
@@ -25,8 +27,19 @@ def clean_endpoint(value):
     return endpoint
 
 
-def save(workspace, user, endpoint=None, model=None, api_key=None):
-    """Create or update the workspace's config. `None` fields keep their current value; a key is required the first time."""
+def clean_daily_limit(value):
+    """AI jobs per day through the provider: 1-MAX_DAILY_LIMIT, or None/'' for no limit."""
+    if value is None or value == '':
+        return None
+    if isinstance(value, bool) or not isinstance(value, (int, str)) or not str(value).strip().isdigit() \
+            or not 1 <= int(value) <= MAX_DAILY_LIMIT:
+        raise LlmConfigError(f'The daily limit must be a whole number from 1 to {MAX_DAILY_LIMIT}, or empty for no limit.')
+    return int(value)
+
+
+def save(workspace, user, endpoint=None, model=None, api_key=None, daily_limit=UNSET):
+    """Create or update the workspace's config. `None` fields (and an omitted `daily_limit`) keep their current value; a
+    key is required the first time."""
     config = WorkspaceLlmConfig.objects.filter(workspace=workspace).first()
     api_key = str(api_key or '').strip()
     if len(api_key) > MAX_KEY_CHARS:
@@ -34,6 +47,8 @@ def save(workspace, user, endpoint=None, model=None, api_key=None):
     if config is None and not api_key:
         raise LlmConfigError('Enter an API key.')
     fields = {'updated_by': user}
+    if daily_limit is not UNSET:
+        fields['daily_limit'] = clean_daily_limit(daily_limit)
     if endpoint is not None:
         fields['endpoint'] = clean_endpoint(endpoint)
     if model is not None:

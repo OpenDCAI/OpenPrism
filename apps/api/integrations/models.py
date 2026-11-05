@@ -26,3 +26,22 @@ class WorkspaceLlmConfig(models.Model):
     last_four = models.CharField(max_length=4)
     updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
     updated_at = models.DateTimeField(auto_now=True)
+    daily_limit = models.PositiveIntegerField(null=True, blank=True, db_default=None)  # AI jobs per UTC day; null = no limit
+
+
+class LlmUsage(models.Model):
+    """AI jobs per UTC day, by who ran them, in which workspace, and whose key paid (`source`). Counts requests, not
+    tokens. Outlives the 24 h Job rows; pruned after LLM_USAGE_KEEP_DAYS. Written by ai.usage.charge()."""
+    WORKSPACE, USER, BROWSER, SERVER = 'workspace', 'user', 'browser', 'server'
+    SOURCES = [(s, s) for s in (WORKSPACE, USER, BROWSER, SERVER)]
+
+    day = models.DateField()
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name='+')
+    workspace = models.ForeignKey('projects.Workspace', null=True, on_delete=models.CASCADE, related_name='+')
+    source = models.CharField(max_length=10, choices=SOURCES)
+    count = models.PositiveIntegerField(default=0, db_default=0)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['day', 'user', 'workspace', 'source'], nulls_distinct=False,
+                                               name='llm_usage_unique_row')]
+        indexes = [models.Index(fields=['workspace', 'day'])]

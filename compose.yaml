@@ -76,6 +76,10 @@ services:
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,api}
       LLM_ALLOW_PRIVATE_ENDPOINTS: ${LLM_ALLOW_PRIVATE_ENDPOINTS:-0} # 1 lets workspace admins point at a local model (Ollama, vLLM)
       TRUSTED_PROXY_COUNT: "1" # the nginx web container: rate limits must key on the real client, not on it
+      AI_RATE_PER_MINUTE: ${AI_RATE_PER_MINUTE:-30} # per user: llm, agent, vision, plot, transfer, arXiv import
+      COMPILE_RATE_PER_MINUTE: ${COMPILE_RATE_PER_MINUTE:-30}
+      SERVER_LLM_KEY_USERS: ${SERVER_LLM_KEY_USERS:-all} # who may use OPENPRISM_LLM_*: all | verified | staff | none
+      SERVER_LLM_DAILY_QUOTA: ${SERVER_LLM_DAILY_QUOTA:-200} # jobs per user per UTC day on that key; 0 = no limit
       DATABASE_URL: postgres://${POSTGRES_USER:-openprism}:${POSTGRES_PASSWORD:-openprism}@postgres:5432/${POSTGRES_DB:-openprism}
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://garage:3900

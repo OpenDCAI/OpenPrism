@@ -1,9 +1,11 @@
+from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 
+from common import ratelimit
 from projects import storage
 from collab.auth import IsUserOrGuest
 from projects.access import QueryTokenJWTAuthentication, get_project
@@ -87,6 +89,7 @@ def start_compile(request):
     engine = request.data.get('engine') or 'pdflatex'
     if not project_id:
         return fail('Missing projectId.')
+    ratelimit.enforce('compile', request.user, settings.COMPILE_RATE_PER_MINUTE)
     if engine not in SUPPORTED_ENGINES:
         return fail(f"Unsupported engine: {engine}. Supported: {', '.join(SUPPORTED_ENGINES)}")
     project = get_project(request, project_id)

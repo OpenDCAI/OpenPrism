@@ -187,7 +187,8 @@ def _llm_status(config, membership):
             'updatedAt': config.updated_at.isoformat().replace('+00:00', 'Z'),
             'updatedBy': (config.updated_by.name or config.updated_by.email) if config.updated_by else ''}
     if can_manage:
-        body['lastFour'] = config.last_four
+        from ai.usage import workspace_usage
+        body.update(lastFour=config.last_four, dailyLimit=config.daily_limit, usage=workspace_usage(config.workspace_id))
     return body
 
 
@@ -203,7 +204,8 @@ def workspace_llm(request, pk):
         return Response(_llm_status(None, membership))
     b = request.data if isinstance(request.data, dict) else {}
     try:
-        config = llmconfig.save(membership.workspace, request.user, b.get('endpoint'), b.get('model'), b.get('apiKey'))
+        extra = {'daily_limit': b['dailyLimit']} if 'dailyLimit' in b else {}
+        config = llmconfig.save(membership.workspace, request.user, b.get('endpoint'), b.get('model'), b.get('apiKey'), **extra)
     except llmconfig.LlmConfigError as exc:
         return Response({'ok': False, 'error': str(exc)})
     return Response(_llm_status(config, membership))
