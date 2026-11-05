@@ -85,6 +85,8 @@ jobs:
       - uses: ./.github/actions/stack
         with: {services: postgres redis garage mailpit api worker-tex worker-ai beat web}
       - run: docker compose run --rm worker-tex python manage.py test jobs transfer --noinput
+      - name: Load the built-in templates (template and transfer specs use them)
+        run: docker compose exec -T api python manage.py import_legacy --skip-projects
       - uses: actions/setup-node@v4
         with: {node-version: 20, cache: npm}
       - run: npm ci
