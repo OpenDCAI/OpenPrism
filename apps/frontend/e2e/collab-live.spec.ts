@@ -1,0 +1,82 @@
+import { expect, test } from '@playwright/test';
+import type { Browser, Page } from '@playwright/test';
+import { mkdtempSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import { newAccount, newProject, signIn } from './helpers';
+import type { Session } from './helpers';
+
+// Live editing and the rest of the app: changes made outside the live document (uploads, saves, renames, deletes)
+// reach the people who have the file open, and are not undone by the live document's next save.
+
+const base = () => process.env.E2E_BASE_URL || 'http://localhost:5173';
+const doc = '\\documentclass{article}\n\\begin{document}\nOriginal text.\n\\end{document}\n';
+const editorText = (page: Page) => page.locator('.cm-content').innerText();
+
+async function api(session: Session, path: string, init: RequestInit = {}) {
+  const res = await fetch(`${base()}${path}`, {
+    ...init, headers: { 'content-type': 'application/json', authorization: `Bearer ${session.access}`, ...(init.headers || {}) }
+  });
+  return res.json() as Promise<Record<string, unknown>>;
+}
+
+async function liveConns(session: Session, id: string, path: string) {
+  const res = await api(session, `/api/projects/${id}/collab/status?path=${encodeURIComponent(path)}`) as { diagnostics: { conns: number } | null };
+  return res.diagnostics?.conns ?? 0;
+}
+
+/** A guest (invite link) with `path` open live, which is how collaboration starts for them. */
+async function guestWithFileOpen(browser: Browser, session: Session, id: string, path = 'main.tex') {
+  const invite = await api(session, `/api/projects/${id}/collab/invite`, { method: 'POST', body: JSON.stringify({ role: 'editor' }) }) as { token: string };
+  const context = await browser.newContext();
+  const page = await context.newPage();
+  await page.goto(`/collab?token=${encodeURIComponent(invite.token)}`);
+  await page.waitForSelector('.cm-editor');
+  if (path !== 'main.tex') await page.locator('.tree-row').filter({ hasText: path }).first().click();
+  await expect.poll(() => liveConns(session, id, path), { timeout: 20_000 }).toBeGreaterThan(0);
+  return { context, page };
+}
+
+test('uploading over a file someone has open changes their editor, and the change sticks', async ({ page, browser }) => {
+  const session = await newAccount('live');
+  const id = await newProject(session, 'Live', { 'main.tex': doc });
+  const guest = await guestWithFileOpen(browser, session, id);
+  await expect.poll(() => editorText(guest.page)).toContain('Original text.');
+
+  // The owner (not in live mode) uploads a new main.tex through the file tree.
+  await signIn(page, session);
+  await page.goto(`/editor/${id}`);
+  await page.waitForSelector('.cm-editor');
+  const file = join(mkdtempSync(join(tmpdir(), 'op-live-')), 'main.tex');
+  writeFileSync(file, doc.replace('Original text.', 'Uploaded text.'));
+  const chooser = page.waitForEvent('filechooser');
+  await page.getByRole('button', { name: 'Upload files', exact: true }).click();
+  await (await chooser).setFiles(file);
+
+  await expect.poll(() => editorText(guest.page), { timeout: 15_000 }).toContain('Uploaded text.');
+  // The guest keeps typing; the live document's saves keep the upload.
+  await guest.page.locator('.cm-content').click();
+  await guest.page.keyboard.press('Control+End');
+  await guest.page.keyboard.type('% typed live');
+  await expect.poll(async () => (await api(session, `/api/projects/${id}/file?path=main.tex`)).content as string, { timeout: 15_000 })
+    .toContain('% typed live');
+  const saved = (await api(session, `/api/projects/${id}/file?path=main.tex`)).content as string;
+  expect(saved).toContain('Uploaded text.');
+  expect(saved).not.toContain('Original text.');
+
+  await guest.page.reload();
+  await guest.page.waitForSelector('.cm-editor');
+  await expect.poll(() => editorText(guest.page)).toContain('Uploaded text.');
+  await guest.context.close();
+});
+
+test('a save from a tab that is not live reaches the open editor', async ({ browser }) => {
+  const session = await newAccount('live');
+  const id = await newProject(session, 'Live', { 'main.tex': doc });
+  const guest = await guestWithFileOpen(browser, session, id);
+  await api(session, `/api/projects/${id}/file`, { method: 'PUT', body: JSON.stringify({ path: 'main.tex', content: doc.replace('Original', 'Saved') }) });
+  await expect.poll(() => editorText(guest.page), { timeout: 15_000 }).toContain('Saved text.');
+  await guest.page.waitForTimeout(2_000); // past the live document's next save
+  expect((await api(session, `/api/projects/${id}/file?path=main.tex`)).content).toContain('Saved text.');
+  await guest.context.close();
+});

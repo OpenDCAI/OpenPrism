@@ -1,13 +1,31 @@
 """Synchronous DB side of collaboration (called from async code through database_sync_to_async)."""
 import hashlib
+import logging
 
+import redis
+from django.conf import settings
 from django.db import connection, transaction
 from pycrdt import Doc, Text
 
 from projects import files as pfiles
 from projects.models import Project, ProjectFile
 
+from . import coord
 from .models import CollabDoc
+
+log = logging.getLogger(__name__)
+_redis = None
+
+
+def _publish(key, kind, payload):
+    """Tell every replica holding the room (fire-and-forget: the stored state is the truth, rooms merge it anyway)."""
+    global _redis
+    try:
+        if _redis is None:
+            _redis = redis.Redis.from_url(settings.REDIS_URL)
+        _redis.publish(coord.channel(key), coord.pack(kind, b'\x00' * coord.ORIGIN_LEN, payload))
+    except Exception:
+        log.exception('collab publish failed for %s', key)
 
 
 def _lock(project_id, path):
@@ -88,11 +106,36 @@ def flush(project_id, path, local_update):
         merged = doc.get_update()
         new_text = str(text)
         if new_text != _file_text(project, path):
-            pfiles.write_text(project, path, new_text)
+            pfiles.write_text(project, path, new_text, sync_live=False)
         if merged != bytes(row.state):
             row.state = merged
             row.save(update_fields=['state', 'updated_at'])
         return merged
+
+
+def external_write(project, path, content):
+    """A text write that does not come from a live room (REST save, upload, template, restore, …): make it an edit of
+    the file's Yjs state too, so an open room keeps it instead of overwriting it at its next flush.
+
+    Called by projects.files inside the write's transaction, before the file row changes: the lock order (advisory lock,
+    then the row) matches a flush, and a room loading meanwhile waits and then sees the new text. After commit the
+    delta goes to the rooms as an update from another replica; if that message is lost, the stored state already has
+    it and the room merges it at its next flush."""
+    _lock(project.id, path)
+    row = CollabDoc.objects.filter(project=project, path=path).first()
+    if row is None or not row.state:
+        return  # never opened live: a room that opens later seeds from the file
+    doc = Doc()
+    text = doc.get('content', type=Text)
+    doc.apply_update(bytes(row.state))
+    before = doc.get_state()
+    if not diff_replace(text, content):
+        return
+    delta = doc.get_update(before)
+    row.state = doc.get_update()
+    row.save(update_fields=['state', 'updated_at'])
+    key = coord.room_key(project.id, path)
+    transaction.on_commit(lambda: _publish(key, coord.KIND_UPDATE, delta))
 
 
 def project_name(project_id):
