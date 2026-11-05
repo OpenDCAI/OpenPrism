@@ -34,4 +34,4 @@ runs:
       run: docker compose up -d --wait ${{ inputs.services }}
     - name: Garage layout, bucket, key and CORS
       shell: bash
-      run: deploy/garage-init.sh
+      run: bash deploy/garage-init.sh

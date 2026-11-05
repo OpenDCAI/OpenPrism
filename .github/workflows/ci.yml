@@ -35,13 +35,11 @@ jobs:
             kubectl kustomize "deploy/k8s/overlays/$overlay" > "/tmp/$overlay.yaml"
             echo "$overlay: $(grep -c '^kind:' "/tmp/$overlay.yaml") objects"
           done
-          mkdir -p /tmp/keda && cat > /tmp/keda/kustomization.yaml <<YAML
-          apiVersion: kustomize.config.k8s.io/v1beta1
-          kind: Kustomization
-          resources: [$PWD/deploy/k8s/overlays/production]
-          components: [$PWD/deploy/k8s/components/keda]
-          YAML
-          kubectl kustomize --load-restrictor LoadRestrictionsNone /tmp/keda > /tmp/keda.yaml
+          # kustomize only loads paths inside the kustomization's tree, so the combination lives next to the overlays.
+          mkdir -p deploy/k8s/overlays/ci-keda
+          printf '%s\n' 'apiVersion: kustomize.config.k8s.io/v1beta1' 'kind: Kustomization' \
+            'resources: [../production]' 'components: [../../components/keda]' > deploy/k8s/overlays/ci-keda/kustomization.yaml
+          kubectl kustomize deploy/k8s/overlays/ci-keda > /tmp/keda.yaml
           echo "production+keda: $(grep -c '^kind:' /tmp/keda.yaml) objects"
 
   api-tests:
