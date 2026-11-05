@@ -7,6 +7,7 @@ export interface Session {
 }
 
 const baseUrl = () => process.env.E2E_BASE_URL || 'http://localhost:5173';
+const PASSWORD = 'correct-horse-battery';
 
 async function api<T>(path: string, token: string | null, method = 'GET', body?: unknown): Promise<T> {
   const res = await fetch(baseUrl() + path, {
@@ -25,11 +26,12 @@ export async function newAccount(prefix = 'e2e'): Promise<Session> {
   // that: wait as long as the server asks instead of failing the test.
   for (let attempt = 0; attempt < 5; attempt += 1) {
     const res = await fetch(baseUrl() + '/api/auth/register', {
-      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: 'correct-horse-battery' })
+      method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ email, password: PASSWORD })
     });
     if (res.status !== 429) {
       if (!res.ok) throw new Error(`POST /api/auth/register -> ${res.status}: ${await res.text()}`);
-      return res.json() as Promise<Session>;
+      const body = await res.json() as Omit<Session, 'refresh'>;
+      return { ...body, refresh: refreshCookie(res) };
     }
     const wait = Number(res.headers.get('retry-after') || '10');
     await new Promise((r) => setTimeout(r, Math.min(wait, 60) * 1000 + 250));
@@ -45,9 +47,35 @@ export async function newProject(session: Session, name: string, files: Record<s
   return project.id;
 }
 
-/** Start the page signed in as `session` (the app reads its tokens from localStorage). */
+/** The refresh token the server set as the httpOnly `openprism_refresh` cookie. */
+function refreshCookie(res: Response): string {
+  const cookie = res.headers.getSetCookie().find((c) => c.startsWith('openprism_refresh='));
+  if (!cookie) throw new Error('no refresh cookie in the response');
+  return cookie.split(';')[0].slice('openprism_refresh='.length);
+}
+
+const usedSessions = new WeakSet<Session>();
+
+/**
+ * Start the browser context signed in as `session`: the context's own request client (which shares the browser's
+ * cookie jar) exchanges the session's refresh token for the httpOnly `openprism_refresh` cookie, exactly as a browser
+ * would get it, and the app refreshes on load (the access token lives in the page's memory). The server rotates refresh
+ * tokens on use, so a second context for the same session signs in again for a cookie of its own.
+ */
 export async function signIn(page: Page, session: Session, opts: { verifyBanner?: boolean } = {}) {
-  await page.addInitScript(([key, value]) => window.localStorage.setItem(key, value), ['openprism-auth-v1', JSON.stringify(session)]);
+  const request = page.context().request;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const res = usedSessions.has(session)
+      ? await request.post(`${baseUrl()}/api/auth/login`, { data: { email: session.user.email, password: PASSWORD } })
+      : await request.post(`${baseUrl()}/api/auth/refresh`, { data: { refresh: session.refresh }, headers: { 'X-OpenPrism-Refresh': '1' } });
+    if (res.status() === 429) {
+      await new Promise((r) => setTimeout(r, Math.min(Number(res.headers()['retry-after'] || '10'), 60) * 1000 + 250));
+      continue;
+    }
+    if (!res.ok()) throw new Error(`signIn -> ${res.status()}: ${await res.text()}`);
+    break;
+  }
+  usedSessions.add(session);
   // Test accounts never open their verification mail; keep the reminder from covering the bottom of the screen.
   if (!opts.verifyBanner) await page.addInitScript(() => window.sessionStorage.setItem('openprism-verify-banner', 'hidden'));
 }

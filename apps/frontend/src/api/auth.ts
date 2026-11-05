@@ -2,31 +2,46 @@
  * Session state and the authenticated fetch used by every API call.
  *
  * Two kinds of credential exist:
- *  - an account session: JWT access + refresh tokens in localStorage (shared by tabs);
+ *  - an account session: the refresh token is an httpOnly cookie (`openprism_refresh`, path /api/auth) that no script
+ *    can read, and the short-lived access token is kept in this module's memory only, never in Web Storage. Each tab
+ *    gets its access token by refreshing; tabs share new tokens and sign-outs over a BroadcastChannel and take turns
+ *    refreshing (Web Locks), because the server rotates the refresh token on every use;
  *  - a guest invite token: set by opening an invite link, kept in sessionStorage so it only affects that tab.
  * The invite token wins while present (a tab that joined through a link acts as that guest until it leaves).
  *
- * Tokens in localStorage are readable by any script on the page, so the app must never inject untrusted HTML.
- * The short access-token lifetime (30 min) and refresh-token rotation (the server revokes each used refresh token)
- * limit what a stolen token is worth.
+ * A script injected into the page could still use the in-memory token while the page is open, so the app must never
+ * inject untrusted HTML; but it cannot carry the session away.
  */
-const SESSION_KEY = 'openprism-auth-v1';
+const LEGACY_SESSION_KEY = 'openprism-auth-v1'; // older builds kept both tokens here; read once to migrate, then removed
 const INVITE_KEY = 'openprism-collab-token';
 const LANG_KEY = 'openprism-lang';
 const REFRESH_MARGIN_MS = 60_000;
+const CHANNEL = 'openprism-auth';
+const LOCK = 'openprism-refresh';
 
 export interface Session {
   access: string;
-  refresh: string;
 }
 
 type Listener = () => void;
+type AuthMessage = { type: 'access'; access: string } | { type: 'signout' };
 const listeners = new Set<Listener>();
+let session: Session | null = null;
 let refreshInFlight: Promise<boolean> | null = null;
 let refreshTimer: ReturnType<typeof setTimeout> | undefined;
+let channel: BroadcastChannel | null = null;
+let ready: Promise<void> | null = null;
 
 function notify() {
   listeners.forEach((l) => l());
+}
+
+function broadcast(message: AuthMessage) {
+  try {
+    channel?.postMessage(message);
+  } catch {
+    // another tab will refresh on its own
+  }
 }
 
 /** Subscribe to credential changes (sign-in, sign-out, token refresh, other tabs). Returns an unsubscribe function. */
@@ -35,32 +50,33 @@ export function subscribeSession(listener: Listener): () => void {
   return () => listeners.delete(listener);
 }
 
-function readSession(): Session | null {
-  try {
-    const raw = window.localStorage.getItem(SESSION_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as Partial<Session>;
-    return parsed.access && parsed.refresh ? { access: parsed.access, refresh: parsed.refresh } : null;
-  } catch {
-    return null;
-  }
-}
-
 export function getSession(): Session | null {
-  return typeof window === 'undefined' ? null : readSession();
+  return session;
 }
 
-export function setSession(session: Session) {
-  window.localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+function adoptAccess(access: string) {
+  session = { access };
   scheduleRefresh();
   notify();
 }
 
-export function clearSession() {
-  window.localStorage.removeItem(SESSION_KEY);
+function dropSession() {
+  session = null;
   forgetUrlTokens();
   if (refreshTimer) clearTimeout(refreshTimer);
   notify();
+}
+
+/** A sign-in, sign-up, refresh or password change gave this tab an access token (the refresh cookie came with it). */
+export function setSession(next: Session) {
+  adoptAccess(next.access);
+  broadcast({ type: 'access', access: next.access });
+}
+
+/** Forget the account in this tab and the others (the caller revokes the cookie, if it can). */
+export function clearSession() {
+  dropSession();
+  broadcast({ type: 'signout' });
 }
 
 export function getInviteToken(): string {
@@ -163,51 +179,89 @@ function expiryOf(token: string): number | null {
 /** Refresh shortly before the access token expires so long-lived connections (collab) keep a valid token. */
 function scheduleRefresh() {
   if (refreshTimer) clearTimeout(refreshTimer);
-  const session = readSession();
   const exp = session && expiryOf(session.access);
   if (!exp) return;
   const delay = Math.max(5_000, exp - Date.now() - REFRESH_MARGIN_MS);
   refreshTimer = setTimeout(() => void refreshSession(), delay);
 }
 
-/** Exchange the refresh token for new tokens. Concurrent callers share one request. Signs out if it is rejected. */
-export function refreshSession(): Promise<boolean> {
+function stillFresh(access: string | undefined) {
+  const exp = access ? expiryOf(access) : null;
+  return Boolean(exp && exp - Date.now() > REFRESH_MARGIN_MS);
+}
+
+/** One refresh at a time across tabs: the server rotates the cookie, so two tabs using the same one would collide. */
+function withRefreshLock<T>(fn: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator !== 'undefined' ? (navigator as Navigator & { locks?: LockManager }).locks : undefined;
+  return locks ? (locks.request(LOCK, fn) as Promise<T>) : fn();
+}
+
+/**
+ * Get a new access token with the refresh cookie (`legacyRefresh`: a refresh token from an older build's storage,
+ * exchanged once for the cookie). Concurrent callers in this tab share one request. Signs out (every tab) if the
+ * server rejects it, unless `quietReject` (a tab starting up without a cookie is simply signed out).
+ */
+export function refreshSession(opts: { legacyRefresh?: string; quietReject?: boolean } = {}): Promise<boolean> {
   if (refreshInFlight) return refreshInFlight;
-  const session = readSession();
-  if (!session) return Promise.resolve(false);
-  refreshInFlight = (async () => {
+  const before = session?.access;
+  refreshInFlight = withRefreshLock(async () => {
+    if (session && session.access !== before && stillFresh(session.access)) return true; // another tab just did it
     try {
-      const res = await fetch('/api/auth/refresh', {
+      const post = () => fetch('/api/auth/refresh', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ refresh: session.refresh })
+        credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', 'X-OpenPrism-Refresh': '1' },
+        body: opts.legacyRefresh ? JSON.stringify({ refresh: opts.legacyRefresh }) : undefined
       });
-      if (res.status === 401 || res.status === 400) {
-        clearSession(); // revoked or expired: the account must sign in again
+      let res = await post();
+      const noSession = res.status === 401 && ((await res.clone().json().catch(() => ({}))) as { code?: string }).code === 'no_session';
+      if (res.status === 401 && !noSession) {
+        // A token minted a moment ago is "not yet valid" to a server whose clock has just stepped back: try once more.
+        await new Promise((r) => setTimeout(r, 1500));
+        res = await post();
+      }
+      if (res.status === 401 || res.status === 400 || res.status === 403) {
+        if (opts.quietReject) dropSession();
+        else clearSession(); // revoked or expired: the account must sign in again
         return false;
       }
       if (!res.ok) return false; // server trouble: keep the session and retry later
-      const data = (await res.json()) as { access: string; refresh?: string };
-      setSession({ access: data.access, refresh: data.refresh || session.refresh });
+      const data = (await res.json()) as { access: string };
+      setSession({ access: data.access });
       return true;
     } catch {
       return false; // offline: keep the session
-    } finally {
-      refreshInFlight = null;
     }
-  })();
+  }).finally(() => {
+    refreshInFlight = null;
+  });
   return refreshInFlight;
 }
 
-/** Start background token refresh and cross-tab sync. Call once at startup. */
-export function initSession() {
-  scheduleRefresh();
-  window.addEventListener('storage', (e) => {
-    if (e.key === SESSION_KEY) {
-      scheduleRefresh();
-      notify();
-    }
-  });
+/**
+ * Restore this tab's account session (once; later calls share the first): exchange an older build's stored refresh
+ * token for the cookie, or refresh with the cookie, and listen to the other tabs. Resolves when it is known whether
+ * the tab is signed in.
+ */
+export function initSession(): Promise<void> {
+  if (ready) return ready;
+  if (typeof BroadcastChannel !== 'undefined') {
+    channel = new BroadcastChannel(CHANNEL);
+    channel.onmessage = (e: MessageEvent<AuthMessage>) => {
+      if (e.data?.type === 'access' && e.data.access !== session?.access) adoptAccess(e.data.access);
+      else if (e.data?.type === 'signout' && session) dropSession();
+    };
+  }
+  let legacy = '';
+  try {
+    const raw = window.localStorage.getItem(LEGACY_SESSION_KEY);
+    if (raw) legacy = String((JSON.parse(raw) as { refresh?: string }).refresh || '');
+    window.localStorage.removeItem(LEGACY_SESSION_KEY); // tokens never stay in Web Storage
+  } catch {
+    // storage unavailable: nothing to migrate
+  }
+  ready = refreshSession({ legacyRefresh: legacy || undefined, quietReject: true }).then(() => undefined);
+  return ready;
 }
 
 /**
@@ -224,7 +278,7 @@ export async function apiFetch(input: string, init: RequestInit = {}): Promise<R
     return { ...init, headers };
   };
   const res = await fetch(input, build());
-  if (res.status === 401 && !getInviteToken() && getSession() && (await refreshSession())) {
+  if (res.status === 401 && !getInviteToken() && session && (await refreshSession())) {
     return fetch(input, build());
   }
   return res;

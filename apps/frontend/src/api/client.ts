@@ -731,14 +731,14 @@ async function authCall<T>(url: string, body: unknown): Promise<T> {
 }
 
 export async function login(email: string, password: string): Promise<Account> {
-  const tokens = await authCall<{ access: string; refresh: string }>('/api/auth/login', { email, password });
-  setSession(tokens);
+  const tokens = await authCall<{ access: string }>('/api/auth/login', { email, password }); // the refresh token: a cookie
+  setSession({ access: tokens.access });
   return fetchMe();
 }
 
 export async function register(email: string, password: string, name?: string): Promise<Account> {
-  const res = await authCall<{ access: string; refresh: string; user: Account }>('/api/auth/register', { email, password, name });
-  setSession({ access: res.access, refresh: res.refresh });
+  const res = await authCall<{ access: string; user: Account }>('/api/auth/register', { email, password, name });
+  setSession({ access: res.access });
   return res.user;
 }
 
@@ -772,8 +772,8 @@ export async function resetPassword(uid: string, token: string, password: string
 
 /** Change the password while signed in. Other browsers are signed out; this one gets fresh tokens. */
 export async function changePassword(current: string, password: string) {
-  const res = await request<{ access: string; refresh: string }>('/api/auth/password/change', { method: 'POST', body: JSON.stringify({ current, password }) });
-  setSession({ access: res.access, refresh: res.refresh });
+  const res = await request<{ access: string }>('/api/auth/password/change', { method: 'POST', body: JSON.stringify({ current, password }) });
+  setSession({ access: res.access });
 }
 
 export type DeleteAccountResult =
@@ -795,14 +795,12 @@ export function clearLocalSession() {
 }
 
 export async function logout() {
-  const session = getSession();
-  clearSession(); // sign out locally first: it must work even if the server is unreachable
-  if (session) {
-    try {
-      await authCall('/api/auth/logout', { refresh: session.refresh });
-    } catch {
-      // the refresh token expires on its own
-    }
+  clearSession(); // sign out locally (and in the other tabs) first: it must work even if the server is unreachable
+  try {
+    // revokes the refresh cookie's token and deletes the cookie
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { 'X-OpenPrism-Refresh': '1' } });
+  } catch {
+    // the refresh token expires on its own
   }
 }
 
