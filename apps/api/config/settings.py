@@ -170,6 +170,10 @@ SIMPLE_JWT = {
     'AUTH_HEADER_TYPES': ('Bearer',),
     'ROTATE_REFRESH_TOKENS': True,       # each refresh issues a new refresh token…
     'BLACKLIST_AFTER_ROTATION': True,    # …and revokes the old one, so a stolen refresh token has a short life
+    # Seconds of clock difference tolerated on `iat`/`exp`. 0 in production. The devcontainer's (WSL2) clock steps back
+    # about a second several times a minute, so a token minted just before a step looked issued in the future and was
+    # refused ("Token is invalid"); tests and the compose dev stack use 5.
+    'LEEWAY': int(env('JWT_LEEWAY_SECONDS', '5' if TESTING else '0')),
 }
 
 # The refresh token lives in this httpOnly cookie (accounts/cookies.py); the access token only in the page's memory.
