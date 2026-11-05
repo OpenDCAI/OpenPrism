@@ -68,3 +68,22 @@ class CredentialEvent(models.Model):
 
     class Meta:
         indexes = [models.Index(fields=['workspace', '-created_at']), models.Index(fields=['owner', '-created_at'])]
+
+
+class UserCredential(models.Model):
+    """A user's own AI keys, encrypted (integrations.crypto), one row per profile: `llm` (the assistant and agent),
+    `search` and `vision` (fall back to `llm` when unset) and `mineru` (endpoint = MinerU API base, no model). The key is
+    never serialised; only userkeys.resolve() decrypts it."""
+    LLM, SEARCH, VISION, MINERU = 'llm', 'search', 'vision', 'mineru'
+    PROFILES = [(p, p) for p in (LLM, SEARCH, VISION, MINERU)]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name='ai_credentials')
+    profile = models.CharField(max_length=10, choices=PROFILES)
+    endpoint = models.CharField(max_length=500, blank=True)
+    model = models.CharField(max_length=200, blank=True)
+    api_key_encrypted = models.BinaryField()
+    last_four = models.CharField(max_length=4)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['user', 'profile'], name='user_credential_profile')]

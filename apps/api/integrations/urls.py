@@ -7,6 +7,8 @@ urlpatterns = [
     path('workspaces/<uuid:pk>/llm', views.workspace_llm),
     path('workspaces/<uuid:pk>/credential-events', views.workspace_credential_events),
     path('integrations/credential-events', views.my_credential_events),
+    path('integrations/ai-keys', views.ai_keys),
+    path('integrations/ai-keys/<str:profile>', views.ai_key),
     path('integrations/zotero/libraries', views.zotero_libraries),
     path('integrations/zotero/collections', views.zotero_collections),
     path('integrations/zotero/items', views.zotero_items),

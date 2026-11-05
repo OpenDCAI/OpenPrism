@@ -36,15 +36,22 @@ def _seconds_to_midnight():
 
 def resolve(request, workspace, public, secrets):
     """(public, secrets, source): the workspace's provider replaces the browser's whole config (endpoint, model and key
-    belong together) when it has one and the user may use it; else the browser's config if it carries a key; else the
-    worker's OPENPRISM_LLM_* defaults, and then nothing of the browser's config is kept (the worker never sends its key
-    to a request's endpoint either)."""
+    belong together) when it has one and the user may use it; else the request's config if it carries a key (API
+    clients); else the user's saved key for `public['profile']` (llm, search, vision; the UI's way) with its own
+    endpoint and model; else the worker's OPENPRISM_LLM_* defaults, and then nothing of the request's config is kept
+    (the worker never sends its key to a request's endpoint either)."""
+    from integrations import userkeys
     from integrations.llmconfig import workspace_llm_for
+    public = dict(public)
+    profile = public.pop('profile', '')
     found = workspace_llm_for(workspace, request.user)
     if found:
         return found[0], found[1], LlmUsage.WORKSPACE
     if secrets.get('apiKey'):
         return public, secrets, LlmUsage.BROWSER
+    saved = userkeys.resolve(request.user, profile)
+    if saved:
+        return saved[0], {'apiKey': saved[1]}, LlmUsage.USER
     return {}, {'apiKey': ''}, LlmUsage.SERVER
 
 

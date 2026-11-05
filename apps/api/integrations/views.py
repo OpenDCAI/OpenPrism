@@ -11,7 +11,7 @@ from projects.models import Membership, ProjectFile
 from projects.workspaces import membership_for, require_admin
 from projects.paths import InvalidPath, safe_path
 
-from . import audit, bibtex, crypto, llmconfig, zotero
+from . import audit, bibtex, crypto, llmconfig, userkeys, zotero
 from .models import CredentialEvent, WorkspaceLlmConfig, ZoteroConnection
 
 
@@ -234,3 +234,24 @@ def my_credential_events(request):
     """The signed-in user's own credential history (Zotero, their AI keys)."""
     return Response(audit.page(CredentialEvent.objects.filter(owner=request.user),
                                request.query_params.get('before'), request.query_params.get('limit')))
+
+
+@api_view(['GET'])
+def ai_keys(request):
+    """The user's own AI key profiles: endpoint, model and last four characters; never the key."""
+    return Response({'ok': True, 'profiles': userkeys.status(request.user)})
+
+
+@api_view(['PUT', 'DELETE'])
+def ai_key(request, profile):
+    if profile not in userkeys.PROFILES:
+        return Response({'ok': False, 'error': 'Unknown key profile.'}, status=404)
+    if request.method == 'DELETE':
+        userkeys.remove(request.user, profile)
+    else:
+        b = request.data if isinstance(request.data, dict) else {}
+        try:
+            userkeys.save(request.user, profile, b.get('endpoint'), b.get('model'), b.get('apiKey'))
+        except llmconfig.LlmConfigError as exc:
+            return Response({'ok': False, 'error': str(exc)})
+    return Response({'ok': True, 'profiles': userkeys.status(request.user)})

@@ -39,7 +39,7 @@ import {
 } from '@design';
 import type { BadgeTone, IconName, MenuEntry, SelectOption, Workspace, WorkspaceRole } from '@design';
 import './pages.css';
-import { dropLegacyLlmDefaults } from './llmDefaults';
+import AiKeysForm from './AiKeysForm';
 
 type ViewFilter = 'all' | 'mine' | 'archived' | 'trash';
 type SortBy = 'updatedAt' | 'name' | 'createdAt';
@@ -47,45 +47,9 @@ type Section = 'projects' | 'templates' | 'members' | 'settings';
 type TFn = (k: string, o?: Record<string, unknown>) => string;
 
 const SECTIONS: Section[] = ['projects', 'templates', 'members', 'settings'];
-const SETTINGS_KEY = 'openprism-settings-v1';
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const ASSIGNABLE_ROLES: WorkspaceRole[] = ['Admin', 'Editor', 'Commenter', 'Viewer'];
 const WORKSPACE_NAME_MAX = 60;
-
-interface LLMSettings {
-  llmEndpoint: string;
-  llmApiKey: string;
-  llmModel: string;
-}
-
-const DEFAULT_LLM: LLMSettings = {
-  llmEndpoint: '',
-  llmApiKey: '',
-  llmModel: '',
-};
-
-function loadLLMSettings(): LLMSettings {
-  try {
-    const raw = window.localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return DEFAULT_LLM;
-    const parsed = JSON.parse(raw);
-    return dropLegacyLlmDefaults({
-      llmEndpoint: parsed.llmEndpoint ?? DEFAULT_LLM.llmEndpoint,
-      llmApiKey: parsed.llmApiKey ?? DEFAULT_LLM.llmApiKey,
-      llmModel: parsed.llmModel ?? DEFAULT_LLM.llmModel,
-    });
-  } catch {
-    return DEFAULT_LLM;
-  }
-}
-
-function saveLLMSettings(s: LLMSettings) {
-  try {
-    const raw = window.localStorage.getItem(SETTINGS_KEY);
-    const prev = raw ? JSON.parse(raw) : {};
-    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...prev, ...s }));
-  } catch {}
-}
 
 function formatRelativeTime(iso: string, t: TFn): string {
   const now = Date.now();
@@ -612,7 +576,6 @@ export default function ProjectPage() {
 
   // LLM settings modal state
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsForm, setSettingsForm] = useState<LLMSettings>(loadLLMSettings);
 
   // Template gallery (Templates section) filters
   const [galleryCat, setGalleryCat] = useState('all');
@@ -1289,7 +1252,7 @@ export default function ProjectPage() {
             icon="bot"
             label={t('AI settings')}
             tipPos="bottom-end"
-            onClick={() => { setSettingsForm(loadLLMSettings()); setSettingsOpen(true); }}
+            onClick={() => setSettingsOpen(true)}
           />
         }
       />
@@ -1643,52 +1606,13 @@ export default function ProjectPage() {
       {settingsOpen && (
         <Modal
           title={t('AI settings')}
-          description={t('未配置 API Key 时将使用后端环境变量。')}
-          onClose={() => { setSettingsForm(loadLLMSettings()); setSettingsOpen(false); }}
+          description={t('Your own AI keys, used when the workspace provides none.')}
+          size="lg"
+          onClose={() => setSettingsOpen(false)}
           closeLabel={t('Close')}
-          footer={
-            <>
-              <Button variant="secondary" onClick={() => { setSettingsForm(loadLLMSettings()); setSettingsOpen(false); }}>{t('取消')}</Button>
-              <Button variant="primary" onClick={() => { saveLLMSettings(settingsForm); setSettingsOpen(false); }}>{t('保存')}</Button>
-            </>
-          }
+          footer={<Button variant="primary" onClick={() => setSettingsOpen(false)}>{t('完成')}</Button>}
         >
-          <div className="op-field">
-            <label className="op-field-label" htmlFor="llm-endpoint">{t('LLM Endpoint')}</label>
-            <input
-              id="llm-endpoint"
-              className="op-input"
-              type="text"
-              autoComplete="off"
-              placeholder={t('Server default')}
-              value={settingsForm.llmEndpoint}
-              onChange={(e) => setSettingsForm((p) => ({ ...p, llmEndpoint: e.target.value }))}
-            />
-          </div>
-          <div className="op-field">
-            <label className="op-field-label" htmlFor="llm-key">{t('LLM API Key')}</label>
-            <input
-              id="llm-key"
-              className="op-input"
-              type="password"
-              autoComplete="off"
-              placeholder="sk-..."
-              value={settingsForm.llmApiKey}
-              onChange={(e) => setSettingsForm((p) => ({ ...p, llmApiKey: e.target.value }))}
-            />
-          </div>
-          <div className="op-field">
-            <label className="op-field-label" htmlFor="llm-model">{t('LLM Model')}</label>
-            <input
-              id="llm-model"
-              className="op-input"
-              type="text"
-              autoComplete="off"
-              placeholder={t('Server default')}
-              value={settingsForm.llmModel}
-              onChange={(e) => setSettingsForm((p) => ({ ...p, llmModel: e.target.value }))}
-            />
-          </div>
+          <AiKeysForm onStatus={setStatus} />
         </Modal>
       )}
 
