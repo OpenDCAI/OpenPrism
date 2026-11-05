@@ -96,6 +96,12 @@ Moved to `docs/todo.md` (issues #57-#62). Decided: a `JWT_LEEWAY_SECONDS` settin
 compose dev stack) for the devcontainer's clock steps; CI on GitHub Actions runs typecheck, the k8s render and the API and
 AI-worker suites on every push, and adds the TeX-worker and browser suites on `main` and `release/*`.
 
+## v0.0.10 follow-ups (found while building it)
+
+- [ ] **Signed-in people show up as "Guest" to each other in live editing** (bug, collab): the editor's display name
+      defaults to `loadCollabName() || 'Guest'` (localStorage), not the account's name. Default to the account's name
+      (and the invite guest's chosen name), keeping the field to override it. Found by `e2e/collab-typing.spec.ts`.
+
 ## v0.0.11 - Operations
 
 - [ ] **No observability.** No metrics, structured logs, tracing or alerts; no view of queue depth, failed jobs, or
