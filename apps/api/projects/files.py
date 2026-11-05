@@ -51,10 +51,18 @@ def _comments_under(project, path):
     return CommentThread.objects.filter(project=project, path=path) | CommentThread.objects.filter(project=project, path__startswith=path + '/')
 
 
-def write_text(project, path, content):
+def _sync_live(project, path, content):
+    from collab import store  # imported lazily, like _drop_collab_state
+    store.external_write(project, path, content)
+
+
+def write_text(project, path, content, sync_live=True):
+    """`sync_live=False` only for the live room's own flush: every other write also edits an open room's document."""
     path = safe_path(path)
     assert_can_create(project, path)
     with transaction.atomic():
+        if sync_live:
+            _sync_live(project, path, content)
         obj, _ = project.files.update_or_create(
             path=path,
             defaults={'kind': ProjectFile.TEXT, 'content': content, 's3_key': '',
@@ -258,6 +266,7 @@ def apply_changes(project, writes, removals):
                     if not existing:
                         assert_can_create(project, path)
                     if w['kind'] == 'text':
+                        _sync_live(project, path, w['text'])
                         defaults = {'kind': ProjectFile.TEXT, 'content': w['text'], 's3_key': '',
                                     'size': len(w['text'].encode('utf-8')), 'content_type': 'text/plain'}
                     else:

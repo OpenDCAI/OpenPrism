@@ -90,6 +90,12 @@ Moved to `docs/todo.md` (issues #54-#56). Decided: REST text writes go through t
 rooms are tied to their stored document, so rename follows the file and delete closes the room; edits are logged in
 Redis until flushed, and awareness entries expire.
 
+## v0.0.9 follow-ups (found while building it)
+
+- [ ] **Zotero's `applied: false` hand-back and version restore's 409 for open files predate #54.** Now that REST text
+      writes reach open rooms, the Zotero add could always write, and restore could write text files behind live rooms
+      (binary/removed files still need thought). Simplify both and their editor code.
+
 ## v0.0.10 - Better testing
 
 - [ ] **Grow the browser test suite.** `apps/frontend/e2e` (Playwright, `npm run e2e`, against a running stack) now covers

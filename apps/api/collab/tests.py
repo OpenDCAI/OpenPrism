@@ -428,6 +428,81 @@ class ReplicaTests(CollabTestBase):
         await a.disconnect()
 
 
+class LiveWriteTests(CollabTestBase):
+    """#54: a write that does not come from the room (REST save, upload, template, restore) becomes an edit of the open
+    document instead of being overwritten by the room's next flush."""
+
+    def room(self, manager, path='main.tex'):
+        return manager.rooms[coord.room_key(self.pid, path)]
+
+    async def test_a_rest_write_reaches_open_editors_on_every_replica_and_sticks(self):
+        await self.db(files.write_text, self.project, 'main.tex', 'old text')
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma), await self.join(mb)
+        await settle(a, b)
+        api = await self.db(client_for, self.user)
+        res = await sync_to_async(api.put, thread_sensitive=False)(
+            f'/api/projects/{self.pid}/file', {'path': 'main.tex', 'content': 'new text from a tab that is not live'}, format='json')
+        self.assertEqual(res.data, {'ok': True})
+        await settle(a, b)
+        self.assertEqual((str(a.text), str(b.text)), ('new text from a tab that is not live',) * 2)
+        a.insert(0, '> ')                                                          # the room's next flush keeps it
+        await settle(a, b)
+        await asyncio.sleep(0.2)
+        self.assertEqual(await self.db(self.file_text), '> new text from a tab that is not live')
+        await a.disconnect(), await b.disconnect()
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)   # the live edit is still only in the room when the REST write lands
+    async def test_typing_elsewhere_in_the_file_survives_a_rest_write(self):
+        await self.db(files.write_text, self.project, 'main.tex', 'title\nbody\n')
+        m = self.manager()
+        a = await self.join(m)
+        await settle(a)
+        a.insert(len(str(a.text)), 'typed live\n')
+        await settle(a)
+        await self.db(files.write_text, self.project, 'main.tex', 'NEW TITLE\nbody\n')
+        await settle(a)
+        self.assertEqual(str(a.text), 'NEW TITLE\nbody\ntyped live\n')
+        await self.room(m).flush()
+        self.assertEqual(await self.db(self.file_text), 'NEW TITLE\nbody\ntyped live\n')
+        await a.disconnect()
+
+    async def test_a_lost_message_is_picked_up_at_the_next_flush(self):
+        m = self.manager()
+        a = await self.join(m)
+        a.insert(0, 'live')
+        await settle(a)
+        await asyncio.sleep(0.2)
+        with mock.patch('collab.store._publish'):                                 # the update never reaches the room
+            await self.db(files.write_text, self.project, 'main.tex', 'written by upload')
+        await settle(a)
+        self.assertEqual(str(a.text), 'live')
+        await self.room(m).flush()                                                 # the stored state already has it
+        await settle(a)
+        self.assertEqual(str(a.text), 'written by upload')
+        self.assertEqual(await self.db(self.file_text), 'written by upload')
+        await a.disconnect()
+
+    async def test_upload_and_restore_paths_reach_the_room_too(self):
+        await self.db(files.write_text, self.project, 'main.tex', 'one')
+        m = self.manager()
+        a = await self.join(m)
+        await settle(a)
+        await self.db(files.write_file, self.project, 'main.tex', b'uploaded over it')
+        await settle(a)
+        self.assertEqual(str(a.text), 'uploaded over it')
+        await self.db(files.apply_changes, self.project, [{'path': 'main.tex', 'kind': 'text', 'text': 'restored'}], [])
+        await settle(a)
+        self.assertEqual(str(a.text), 'restored')
+        await a.disconnect()
+
+    def test_files_never_opened_live_are_untouched(self):
+        files.write_text(self.project, 'plain.tex', 'a')
+        files.write_text(self.project, 'plain.tex', 'b')
+        self.assertFalse(CollabDoc.objects.filter(project=self.project).exists())
+        self.assertEqual(self.file_text('plain.tex'), 'b')
+
+
 class RestTests(CollabTestBase):
     """Invites and the guest credential, over plain HTTP."""
 
