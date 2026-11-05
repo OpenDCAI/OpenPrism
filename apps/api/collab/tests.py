@@ -45,7 +45,7 @@ class Client:
         self.text = self.doc.get('content', type=Text)
         self.awareness = Awareness(self.doc)
         self.awareness.set_local_state_field('user', {'name': name})
-        self.outgoing, self.applying, self.close = [], False, None
+        self.outgoing, self.applying, self.close, self.notices = [], False, None, []
         self.doc.observe(self._on_doc)
         self.awareness.observe(self._on_awareness)
         url = f'/api/collab?projectId={project_id}&file={path}&token={token}'
@@ -81,6 +81,9 @@ class Client:
             if out['type'] == 'websocket.close':
                 self.close = (out['code'], out.get('reason', ''))
                 return self.close
+            if out.get('text') is not None:
+                self.notices.append(json.loads(out['text']))
+                continue
             self._handle(out['bytes'])
         return self.close
 
@@ -503,6 +506,107 @@ class LiveWriteTests(CollabTestBase):
         self.assertEqual(self.file_text('plain.tex'), 'b')
 
 
+class FileGoneTests(CollabTestBase):
+    """#55: renaming or deleting a file closes its live rooms (code 4404, after a notice saying which); a room never
+    writes a renamed or deleted file back."""
+
+    def room(self, manager, path='main.tex'):
+        return manager.rooms.get(coord.room_key(self.pid, path))
+
+    async def paths(self):
+        return sorted(await self.db(lambda: list(self.project.files.values_list('path', flat=True))))
+
+    async def test_delete_closes_open_rooms_on_every_replica_and_the_file_stays_deleted(self):
+        await self.db(files.write_text, self.project, 'a.tex', 'doomed')
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma, path='a.tex'), await self.join(mb, path='a.tex')
+        await settle(a, b)
+        await self.db(files.delete, self.project, 'a.tex')
+        await settle(a, b)
+        for c in (a, b):
+            self.assertEqual(c.close, (4404, 'File deleted'))
+            self.assertEqual(c.notices, [{'type': 'closed', 'reason': 'deleted', 'path': 'a.tex', 'to': None}])
+        self.assertEqual((self.room(ma, 'a.tex'), self.room(mb, 'a.tex')), (None, None))
+        await asyncio.sleep(0.3)
+        self.assertNotIn('a.tex', await self.paths())
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)
+    async def test_a_room_that_missed_the_message_does_not_recreate_the_file(self):
+        await self.db(files.write_text, self.project, 'a.tex', 'doomed')
+        m = self.manager()
+        a = await self.join(m, path='a.tex')
+        a.insert(0, 'unsaved ')
+        await settle(a)
+        with mock.patch('collab.store._publish'):                                  # the close message is lost
+            await self.db(files.delete, self.project, 'a.tex')
+        await self.room(m, 'a.tex').flush()                                         # its next save finds the file gone
+        await settle(a)
+        self.assertEqual(a.close, (4404, 'File deleted'))
+        self.assertNotIn('a.tex', await self.paths())
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)   # the last edit is still only in the room when the rename lands
+    async def test_rename_keeps_the_last_edits_under_the_new_name(self):
+        await self.db(files.write_text, self.project, 'a.tex', 'text')
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma, path='a.tex'), await self.join(mb, path='a.tex')
+        await settle(a, b)
+        a.insert(0, 'last words, ')
+        await settle(a, b)
+        await self.db(files.rename, self.project, 'a.tex', 'b.tex')
+        await settle(a, b)
+        for c in (a, b):
+            self.assertEqual(c.close, (4404, 'File renamed'))
+            self.assertEqual(c.notices, [{'type': 'closed', 'reason': 'renamed', 'path': 'a.tex', 'to': 'b.tex'}])
+        await asyncio.sleep(0.3)
+        self.assertEqual(await self.paths(), ['b.tex'])
+        self.assertEqual(await self.db(self.file_text, 'b.tex'), 'last words, text')
+        c = await self.join(ma, path='b.tex')                                       # the history carries on under the new name
+        await settle(c)
+        self.assertEqual(str(c.text), 'last words, text')
+        await c.disconnect()
+
+    async def test_renaming_a_folder_closes_the_rooms_of_its_files(self):
+        await self.db(files.write_text, self.project, 'sec/one.tex', '1')
+        await self.db(files.write_text, self.project, 'sec/two.tex', '2')
+        m = self.manager()
+        a, b = await self.join(m, path='sec/one.tex'), await self.join(m, path='sec/two.tex')
+        await settle(a, b)
+        await self.db(files.rename, self.project, 'sec', 'chapters')
+        await settle(a, b)
+        self.assertEqual([n['to'] for n in a.notices + b.notices], ['chapters/one.tex', 'chapters/two.tex'])
+        await asyncio.sleep(0.3)
+        self.assertEqual(await self.paths(), ['chapters/one.tex', 'chapters/two.tex'])
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)
+    async def test_a_new_file_at_a_deleted_path_is_not_polluted_by_the_old_room(self):
+        await self.db(files.write_text, self.project, 'a.tex', 'old content')
+        m = self.manager()
+        a = await self.join(m, path='a.tex')
+        await settle(a)
+        old_room = self.room(m, 'a.tex')
+        with mock.patch('collab.store._publish'):
+            await self.db(files.delete, self.project, 'a.tex')
+        await self.db(files.write_text, self.project, 'a.tex', 'fresh')
+        b = await self.join(self.manager(), path='a.tex')                          # another replica opens the new file
+        await settle(b)
+        await old_room.flush()                                                      # the stale room saves late
+        await settle(a, b)
+        self.assertEqual(a.close, (4404, 'File deleted'))
+        self.assertEqual(str(b.text), 'fresh')
+        self.assertEqual(await self.db(self.file_text, 'a.tex'), 'fresh')
+        await b.disconnect()
+
+    async def test_deleting_the_project_closes_its_rooms(self):
+        m = self.manager()
+        a = await self.join(m)
+        a.insert(0, 'x')
+        await settle(a)
+        await self.db(Project.objects.filter(pk=self.pid).delete)
+        await self.room(m).flush()
+        await settle(a)
+        self.assertEqual(a.close, (4404, 'File deleted'))
+
+
 class RestTests(CollabTestBase):
     """Invites and the guest credential, over plain HTTP."""
 
@@ -593,14 +697,17 @@ class RestTests(CollabTestBase):
         self.assertEqual(cleanup_expired_invites(), 1)
         self.assertFalse(CollabInvite.objects.filter(pk=invite.pk).exists())
 
-    def test_rename_and_delete_drop_stale_yjs_state(self):
+    def test_rename_moves_yjs_state_and_delete_drops_it(self):
         files.write_text(self.project, 'a.tex', 'x')
         files.write_text(self.project, 'dir/b.tex', 'y')
         CollabDoc.objects.create(project=self.project, path='a.tex', state=b'')
         CollabDoc.objects.create(project=self.project, path='dir/b.tex', state=b'')
         files.rename(self.project, 'a.tex', 'c.tex')
-        self.assertEqual(sorted(CollabDoc.objects.values_list('path', flat=True)), ['dir/b.tex'])
-        files.delete(self.project, 'dir')
+        self.assertEqual(sorted(CollabDoc.objects.values_list('path', flat=True)), ['c.tex', 'dir/b.tex'])
+        files.rename(self.project, 'dir', 'docs')
+        self.assertEqual(sorted(CollabDoc.objects.values_list('path', flat=True)), ['c.tex', 'docs/b.tex'])
+        files.delete(self.project, 'docs')
+        files.delete(self.project, 'c.tex')
         self.assertEqual(CollabDoc.objects.count(), 0)
 
 

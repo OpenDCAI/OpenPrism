@@ -3,6 +3,7 @@ import hashlib
 import time
 
 KIND_UPDATE, KIND_AWARENESS, KIND_FLUSH, KIND_SYNC, KIND_EVICT = b'U', b'A', b'F', b'S', b'E'
+KIND_CLOSE = b'C'  # the file was renamed or deleted: flush now (the flush finds out which) and close
 KIND_REVOKE = b'R'  # on a project channel: payload is a revoked invite's id; its live connections are closed
 ORIGIN_LEN = 16
 HOLDER_FRESH_SECONDS = 90
@@ -18,6 +19,12 @@ def _h(key):
 
 def channel(key):
     return f'collab:room:{_h(key)}'
+
+
+def doc_channel(doc_id):
+    """Edits, cursors and catch-up requests of one stored document (CollabDoc). Not the path's channel: a room left
+    over for a deleted file must not exchange edits with the room of a new file at the same path."""
+    return f'collab:doc:{doc_id}'
 
 
 def project_channel(project_id):

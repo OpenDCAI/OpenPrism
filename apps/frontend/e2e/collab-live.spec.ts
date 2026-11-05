@@ -80,3 +80,44 @@ test('a save from a tab that is not live reaches the open editor', async ({ brow
   expect((await api(session, `/api/projects/${id}/file?path=main.tex`)).content).toContain('Saved text.');
   await guest.context.close();
 });
+
+const activeFile = (page: Page) => page.locator('.tree-row.file.active');
+
+test('renaming a file someone has open moves their editor to the new name, and the old name never comes back', async ({ browser }) => {
+  const session = await newAccount('live');
+  const id = await newProject(session, 'Live', { 'main.tex': doc, 'intro.tex': 'Introduction text.\n' });
+  const guest = await guestWithFileOpen(browser, session, id, 'intro.tex');
+  await expect.poll(() => editorText(guest.page)).toContain('Introduction text.');
+  await guest.page.locator('.cm-content').click();
+  await guest.page.keyboard.press('Control+End');
+  await guest.page.keyboard.type('Typed just before the rename.');
+
+  expect((await api(session, `/api/projects/${id}/rename`, { method: 'POST', body: JSON.stringify({ from: 'intro.tex', to: 'chapter1.tex' }) })).ok).toBe(true);
+
+  await expect(activeFile(guest.page)).toContainText('chapter1.tex', { timeout: 15_000 });
+  await expect(guest.page.locator('.ed-status-text')).toContainText('intro.tex was renamed to chapter1.tex');
+  await expect.poll(() => editorText(guest.page)).toContain('Typed just before the rename.');
+  await expect(guest.page.locator('.tree-row').filter({ hasText: 'intro.tex' })).toHaveCount(0);
+  await guest.page.waitForTimeout(2_000); // past any save the old live document could still make
+  const tree = await api(session, `/api/projects/${id}/tree`) as { items: { path: string }[] };
+  expect(tree.items.map((i) => i.path)).not.toContain('intro.tex');
+  expect((await api(session, `/api/projects/${id}/file?path=chapter1.tex`)).content).toContain('Typed just before the rename.');
+  await guest.context.close();
+});
+
+test('deleting a file someone has open tells them and moves them to the main file; it stays deleted', async ({ browser }) => {
+  const session = await newAccount('live');
+  const id = await newProject(session, 'Live', { 'main.tex': doc, 'notes.tex': 'Notes.\n' });
+  const guest = await guestWithFileOpen(browser, session, id, 'notes.tex');
+  await expect.poll(() => editorText(guest.page)).toContain('Notes.');
+
+  expect((await api(session, `/api/projects/${id}/file?path=notes.tex`, { method: 'DELETE' })).ok).toBe(true);
+
+  await expect(guest.page.locator('.ed-status-text')).toContainText('notes.tex was deleted', { timeout: 15_000 });
+  await expect(activeFile(guest.page)).toContainText('main.tex');
+  await expect.poll(() => editorText(guest.page)).toContain('Original text.');
+  await guest.page.waitForTimeout(2_000);
+  const tree = await api(session, `/api/projects/${id}/tree`) as { items: { path: string }[] };
+  expect(tree.items.map((i) => i.path)).not.toContain('notes.tex');
+  await guest.context.close();
+});

@@ -78,8 +78,9 @@ class CollabConsumer(AsyncWebsocketConsumer):
             log.exception('collab connect failed')
             await self.close(code=1011, reason='Server error')
             return
-        self.conn = Conn(lambda data: self.send(bytes_data=data), can_write, invite_id,
-                         on_revoke=lambda: self.close(code=1008, reason='Invite revoked'))
+        self.conn = Conn(lambda data: self.send(bytes_data=data) if isinstance(data, bytes) else self.send(text_data=data),
+                         can_write, invite_id, on_revoke=lambda: self.close(code=1008, reason='Invite revoked'),
+                         close=lambda code, reason: self.close(code=code, reason=reason))
         self.room.add_conn(self.conn)
 
     async def receive(self, text_data=None, bytes_data=None):

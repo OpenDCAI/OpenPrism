@@ -963,5 +963,7 @@
   "Your AI keys are now stored encrypted on the server, not in this browser.": "你的 AI 密钥现已加密保存在服务器上，而不在此浏览器中。",
   "Uploading… {{percent}}%": "上传中… {{percent}}%",
   "Uploaded {{count}} files": "已上传 {{count}} 个文件",
-  "Upload failed: {{error}}": "上传失败：{{error}}"
+  "Upload failed: {{error}}": "上传失败：{{error}}",
+  "{{from}} was renamed to {{to}}": "{{from}} 已重命名为 {{to}}",
+  "{{path}} was deleted": "{{path}} 已被删除"
 }
