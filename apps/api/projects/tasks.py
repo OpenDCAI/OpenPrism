@@ -37,3 +37,10 @@ def import_arxiv(job_id):
             log.exception('arxiv import %s crashed', job_id)
         return finish(job, Job.FAILED, t(lang, 'arxiv_download_failed', error=str(exc)))
     finish(job, Job.SUCCESS, '', {'projectId': str(project.id)})
+
+
+@shared_task(name='projects.tasks.cleanup_pending_uploads', ignore_result=True)
+def cleanup_pending_uploads():
+    """Every 15 minutes: drop direct uploads started over an hour ago and never completed (and their objects)."""
+    from .direct_uploads import cleanup_pending
+    return cleanup_pending()

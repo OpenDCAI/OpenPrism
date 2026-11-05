@@ -24,6 +24,7 @@ from jobs.models import Job
 from templates_app import service as templates
 from templates_app.models import Template
 
+from . import direct_uploads
 from . import files as pfiles
 from .tasks import import_arxiv
 from .access import UrlTokenAuthentication, get_project, user_projects
@@ -303,6 +304,35 @@ def upload(request, pk):
             return fail(str(exc), 409)
         saved.append(path)
     return Response({'ok': True, 'files': saved})
+
+
+@api_view(['POST'])
+@permission_classes([IsUserOrGuest])
+def uploads_start(request, pk):
+    """Plan an upload of {files: [{path, size, contentType}]}: presigned PUT URLs for binary files (direct to S3),
+    `direct: false` for text files (send them to /upload). With direct uploads off: {ok, direct: false}."""
+    project = get_project(request, pk, write=True)
+    if not settings.S3_DIRECT_UPLOADS:
+        return Response({'ok': True, 'direct': False})
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        planned = direct_uploads.start(project, request.user, b.get('files'))
+    except direct_uploads.UploadError as exc:
+        return fail(str(exc))
+    return Response({'ok': True, 'direct': True, 'files': planned})
+
+
+@api_view(['POST'])
+@permission_classes([IsUserOrGuest])
+def uploads_complete(request, pk):
+    """{uploadIds}: register the files PUT to S3 (each one's size is checked first)."""
+    project = get_project(request, pk, write=True)
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        saved, failed = direct_uploads.complete(project, request.user, b.get('uploadIds'))
+    except direct_uploads.UploadError as exc:
+        return fail(str(exc))
+    return Response({'ok': not failed, 'files': saved, 'failed': failed})
 
 
 @api_view(['GET'])

@@ -207,12 +207,17 @@ CELERY_BEAT_SCHEDULE = {
     'cleanup-expired-invites': {'task': 'collab.tasks.cleanup_expired_invites', 'schedule': 3600.0},
     'prune-versions': {'task': 'versions.tasks.prune_versions', 'schedule': 86400.0},
     'prune-llm-usage': {'task': 'integrations.tasks.prune_llm_usage', 'schedule': 86400.0},
+    'cleanup-pending-uploads': {'task': 'projects.tasks.cleanup_pending_uploads', 'schedule': 900.0},
 }
 
 LLM_TIMEOUT_SECONDS = int(env('LLM_TIMEOUT_SECONDS', '180'))
 LLM_ALLOW_PRIVATE_ENDPOINTS = env_bool('LLM_ALLOW_PRIVATE_ENDPOINTS', False)  # true only for local models in dev
 AI_WAIT_SECONDS = int(env('AI_WAIT_SECONDS', '300'))  # how long an AI endpoint blocks waiting for its worker
 URL_TOKEN_SECONDS = int(env('URL_TOKEN_SECONDS', '3600'))  # lifetime of the scoped tokens in ?token= URLs
+MAX_UPLOAD_BYTES = int(env('MAX_UPLOAD_BYTES', str(200 * 1024 * 1024)))  # one uploaded file
+# Binary project files go from the browser straight to S3 (presigned PUT) instead of through the API. Needs
+# S3_PUBLIC_ENDPOINT_URL reachable by browsers and bucket CORS for the app's origins (manage.py configure_s3_cors).
+S3_DIRECT_UPLOADS = env_bool('S3_DIRECT_UPLOADS', False)
 COLLAB_FLUSH_DEBOUNCE_MS = int(env('OPENPRISM_COLLAB_FLUSH_DEBOUNCE_MS', '800'))
 COLLAB_INVITE_TTL_SECONDS = int(env('OPENPRISM_COLLAB_TOKEN_TTL', '86400'))
 COLLAB_ROOM_EVICT_SECONDS = float(env('COLLAB_ROOM_EVICT_SECONDS', '60'))  # keep an idle room this long

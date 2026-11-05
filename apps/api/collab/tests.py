@@ -293,7 +293,7 @@ class AuthTests(CollabTestBase):
         self.assertEqual(await self.closes_with(m, token=for_import, raw=True), 1008)     # wrong scope
         with override_settings(URL_TOKEN_SECONDS=1):
             stale = await self.db(lambda: urltokens.mint(self.user, urltokens.PROJECT, self.pid)[0])
-            await asyncio.sleep(2.1)
+            await asyncio.sleep(3.5)  # margin: the dev clock can step back about a second
             self.assertEqual(await self.closes_with(m, token=stale, raw=True), 1008)      # expired
         fresh = await self.db(lambda: urltokens.mint(self.user, urltokens.PROJECT, self.pid)[0])
         await self.db(Membership.objects.filter(user=self.user).delete)

@@ -2894,8 +2894,14 @@ export default function EditorPage() {
   const handleUpload = async (fileList: FileList | null, basePath = '') => {
     if (!projectId || !fileList || fileList.length === 0) return;
     const files = Array.from(fileList);
-    await uploadFiles(projectId, files, basePath);
-    await refreshTree();
+    try {
+      await uploadFiles(projectId, files, basePath, (fraction) => setStatus(t('Uploading… {{percent}}%', { percent: Math.round(fraction * 100) })));
+      setStatus(t('Uploaded {{count}} files', { count: files.length }));
+    } catch (err) {
+      setStatus(t('Upload failed: {{error}}', { error: (err as Error).message }));
+    } finally {
+      await refreshTree();
+    }
   };
 
   const handleVisionSubmit = async () => {

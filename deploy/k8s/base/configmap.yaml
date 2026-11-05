@@ -14,6 +14,7 @@ data:
   S3_PUBLIC_ENDPOINT_URL: "http://garage:3900"
   S3_REGION: "garage"
   S3_BUCKET: "openprism"
+  S3_DIRECT_UPLOADS: "0"                               # 1 once S3_PUBLIC_ENDPOINT_URL is browser-reachable with bucket CORS (v0.1.0)
   LLM_ALLOW_PRIVATE_ENDPOINTS: "0"                    # keep 0: user-supplied LLM/MinerU URLs must be public
   OPENPRISM_MINERU_API_BASE: "https://mineru.net/api/v4"
   OPENPRISM_COLLAB_FLUSH_DEBOUNCE_MS: "800"

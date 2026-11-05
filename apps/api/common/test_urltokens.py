@@ -74,7 +74,7 @@ class UrlTokenTests(ApiBase):
         with override_settings(URL_TOKEN_SECONDS=1):
             token = self.mint().data['token']
             self.assertEqual(self.blob(token), 200)
-            time.sleep(2.1)
+            time.sleep(3.5)  # margin: the dev clock can step back about a second
             self.assertEqual(self.blob(token), 401)
 
     def test_removal_and_tampering(self):
