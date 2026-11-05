@@ -129,3 +129,9 @@
 - [x] #41 **Failed transfers clean up.** A failed template transfer (error, compile give-up, timeout, dead worker, or a
       layout check left unanswered for an hour) deletes its unfinished target project; the job keeps its error and the
       panel says the project was removed.
+
+## v0.0.8 - Security issues
+
+- [x] #47 **AI clients poll the job.** The AI endpoints answer `{jobId}` at once with `async: true` and the frontend polls
+      `/api/jobs/:id` through one helper (`runAiJob`), so no AI request holds a web thread; blocking stays, deprecated,
+      for old clients.

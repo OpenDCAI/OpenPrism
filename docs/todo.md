@@ -2,7 +2,6 @@
 
 ## v0.0.8 - Security issues
 
-- [ ] #47 **AI endpoints: clients poll the job** instead of holding a web thread for up to 5 minutes.
 - [ ] #48 **Rate limits** on expensive endpoints, a policy and daily quota for the server-side LLM key, workspace usage limits.
 - [ ] #49 **Audit log for stored credentials** (workspace LLM providers, Zotero, users' own keys).
 - [ ] #50 **Users' own LLM/MinerU keys stored encrypted on the server** instead of plain-text localStorage.
