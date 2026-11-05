@@ -223,3 +223,9 @@
   background: var(--surface); box-shadow: var(--shadow-2); color: var(--text); font-size: var(--fs-sm); }
 .verify-banner > span { flex: 1; min-width: 0; }
 .home-invite-status { display: inline-flex; flex-wrap: wrap; align-items: center; gap: var(--sp-2); }
+
+/* Key history (credential events): workspace AI provider block and the account page */
+.cred-history { display: grid; gap: var(--sp-2); justify-items: start; }
+.cred-history-list { list-style: none; margin: 0; padding: 0; display: grid; gap: var(--sp-2); width: 100%; }
+.cred-history-list li { display: flex; flex-wrap: wrap; justify-content: space-between; gap: var(--sp-1) var(--sp-3); padding-bottom: var(--sp-2); border-bottom: 1px solid var(--border); font-size: var(--fs-sm); color: var(--text); overflow-wrap: anywhere; }
+.cred-history-list time { color: var(--text-3); font-size: var(--fs-xs); white-space: nowrap; }

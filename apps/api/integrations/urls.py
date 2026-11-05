@@ -5,6 +5,8 @@ from . import views
 urlpatterns = [
     path('integrations/zotero', views.zotero_connection),
     path('workspaces/<uuid:pk>/llm', views.workspace_llm),
+    path('workspaces/<uuid:pk>/credential-events', views.workspace_credential_events),
+    path('integrations/credential-events', views.my_credential_events),
     path('integrations/zotero/libraries', views.zotero_libraries),
     path('integrations/zotero/collections', views.zotero_collections),
     path('integrations/zotero/items', views.zotero_items),

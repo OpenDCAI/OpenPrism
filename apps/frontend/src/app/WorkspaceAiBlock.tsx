@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getWorkspaceLlm, removeWorkspaceLlm, saveWorkspaceLlm } from '../api/client';
+import { getWorkspaceLlm, removeWorkspaceLlm, saveWorkspaceLlm, workspaceCredentialEvents } from '../api/client';
 import type { WorkspaceLlmStatus } from '../api/client';
 import { Button, FieldError } from '@design';
+import CredentialHistory from './CredentialHistory';
 
 interface Props {
   workspaceId: string;
@@ -22,6 +23,8 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
   const [replacing, setReplacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const loadEvents = useCallback((before?: string) => workspaceCredentialEvents(workspaceId, before), [workspaceId]);
 
   const apply = useCallback((s: WorkspaceLlmStatus) => {
     setStatus(s);
@@ -134,6 +137,7 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
         <Button type="submit" disabled={busy || (!configured && !apiKey.trim())}>{t('保存')}</Button>
         {configured && <Button variant="danger" type="button" onClick={onRemove} disabled={busy}>{t('Remove')}</Button>}
       </div>
+      <CredentialHistory load={loadEvents} reloadKey={status} />
     </form>
   );
 }

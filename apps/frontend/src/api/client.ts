@@ -944,6 +944,34 @@ export function removeWorkspaceLlm(workspaceId: string) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, { method: 'DELETE' });
 }
 
+// ─── Credential history ───
+
+export interface CredentialEvent {
+  id: string;
+  createdAt: string;
+  kind: 'workspace_llm' | 'zotero' | 'user_llm' | 'user_mineru';
+  action: 'set' | 'rotated' | 'updated' | 'removed';
+  /** the key's last four characters after the change ('' when removed) */
+  lastFour: string;
+  /** non-secret fields that changed, e.g. {model: 'gpt-4o'} or {profile: 'search'} */
+  detail: Record<string, unknown>;
+  actor: { id: string; name: string } | null;
+  /** kept when the account that made the change is gone */
+  actorName: string;
+}
+export interface CredentialEventPage { ok: boolean; events: CredentialEvent[]; hasMore: boolean }
+
+/** Who set, rotated, changed or removed the workspace's AI provider (owners and admins). */
+export function workspaceCredentialEvents(workspaceId: string, before?: string) {
+  const q = before ? `?before=${encodeURIComponent(before)}` : '';
+  return request<CredentialEventPage>(`/api/workspaces/${encodeURIComponent(workspaceId)}/credential-events${q}`);
+}
+/** The signed-in user's own credential history (Zotero, their AI keys). */
+export function myCredentialEvents(before?: string) {
+  const q = before ? `?before=${encodeURIComponent(before)}` : '';
+  return request<CredentialEventPage>(`/api/integrations/credential-events${q}`);
+}
+
 // ─── Version history ───
 
 export interface ProjectVersionMeta {

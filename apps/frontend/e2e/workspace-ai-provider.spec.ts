@@ -98,3 +98,49 @@ test('an admin sets a daily limit, sees it kept and sees the usage line; an edit
   await expect(other.getByTestId('ws-ai-usage')).toHaveCount(0);
   await ctx.close();
 });
+
+test('Key history lists who set and replaced the key; editors do not see it', async ({ page, browser }) => {
+  const admin = await newAccount('wsai-hist');
+  const editor = await newAccount('wsai-hist-ed');
+  const ws = await newWorkspace(admin, 'History');
+  await inviteMember(admin, ws, editor.user.email, 'editor');
+  await signIn(page, admin);
+  await setActiveWorkspace(page, admin, ws);
+  await page.goto('/projects?section=settings');
+  const block = page.getByTestId('ws-ai');
+  await block.getByLabel('Endpoint').fill('https://api.openai.com/v1');
+  await block.getByLabel('API key').fill('sk-history-key-1111');
+  await block.getByRole('button', { name: 'Save' }).click();
+  await expect(block.getByTestId('ws-ai-key-set')).toContainText('ending 1111');
+  await block.getByRole('button', { name: 'Replace key' }).click();
+  await block.getByLabel('API key').fill('sk-history-key-2222');
+  await block.getByRole('button', { name: 'Save' }).click();
+  await expect(block.getByTestId('ws-ai-key-set')).toContainText('ending 2222');
+
+  await block.getByRole('button', { name: 'Key history' }).click();
+  const events = block.getByTestId('cred-event');
+  await expect(events).toHaveCount(2);
+  const who = admin.user.name || admin.user.email;
+  await expect(events.nth(0)).toContainText(`${who} replaced the API key (…2222)`);
+  await expect(events.nth(1)).toContainText(`${who} set the API key (…1111)`);
+  expect(await page.content()).not.toContain('sk-history-key');
+
+  const ctx = await browser.newContext();
+  const other = await ctx.newPage();
+  await signIn(other, editor);
+  await setActiveWorkspace(other, editor, ws);
+  await other.goto('/projects?section=settings');
+  await expect(other.getByTestId('ws-ai-readonly')).toBeVisible();
+  await expect(other.getByRole('button', { name: 'Key history' })).toHaveCount(0);
+  await ctx.close();
+});
+
+test('the account page has its own Key history', async ({ page }) => {
+  const session = await newAccount('acct-hist');
+  await signIn(page, session);
+  await page.goto('/account');
+  await page.getByRole('button', { name: 'Key history' }).click();
+  await expect(page.getByTestId('cred-history')).toContainText('No changes recorded yet.');
+  await page.setViewportSize({ width: 390, height: 800 });
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});
