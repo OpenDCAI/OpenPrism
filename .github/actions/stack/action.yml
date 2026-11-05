@@ -13,6 +13,8 @@ runs:
         set -euo pipefail
         cp .env.sample .env
         key=$(python3 -c 'import base64,os;print(base64.urlsafe_b64encode(os.urandom(32)).decode())')
+        # Every browser test registers accounts from one address, faster than the 20/min a real deployment allows.
+        echo "AUTH_RATE_LIMIT=1000/min" >> .env
         sed -i "s|^DJANGO_SECRET_KEY=.*|DJANGO_SECRET_KEY=$(openssl rand -hex 32)|; s|^CREDENTIAL_ENCRYPTION_KEY=.*|CREDENTIAL_ENCRYPTION_KEY=$key|" .env
         mkdir -p data
     - uses: docker/setup-buildx-action@v3
