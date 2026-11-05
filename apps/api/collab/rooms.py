@@ -131,9 +131,11 @@ class Room:
     # ---- lifecycle ----
     async def start(self):
         state, self.doc_id = await db_async(store.load)(self.project_id, self.path)
+        self._log = coord.log_key(self.doc_id, self.manager.instance_hex)
         self._apply(state, DB)
         self.ydoc.observe(self._on_doc_update)
         self.awareness.observe(self._on_awareness)
+        await self._replay_logs()
         redis = self.manager.redis
         self._pubsub = redis.pubsub()
         await self._pubsub.subscribe(coord.channel(self.key), coord.doc_channel(self.doc_id),
@@ -141,7 +143,8 @@ class Room:
         # Edits and cursors that only live in another replica's memory (not flushed yet, or announced before we
         # subscribed) never reach us on their own: ask the replicas that already hold this room to catch us up.
         self._publish(coord.KIND_SYNC, self.ydoc.get_state())
-        self._tasks = [asyncio.ensure_future(self._listen()), asyncio.ensure_future(self._run())]
+        self._tasks = [asyncio.ensure_future(self._listen()), asyncio.ensure_future(self._run()),
+                       asyncio.ensure_future(self._expire_awareness())]
         await self._heartbeat()
 
     async def shutdown(self):
@@ -224,6 +227,7 @@ class Room:
                 conn.push(message)
         if origin not in (REMOTE, DB):
             self._publish(coord.KIND_UPDATE, event.update)
+            asyncio.ensure_future(self._append_log(event.update))
         if origin != DB:
             self._dirty.set()
 
@@ -292,6 +296,49 @@ class Room:
         if states:
             self._publish(coord.KIND_AWARENESS, self.awareness.encode_awareness_update(states))
 
+    # ---- update log (survives this process) ----
+    async def _append_log(self, update):
+        try:
+            pipe = self.manager.redis.pipeline()
+            pipe.rpush(self._log, update)
+            pipe.expire(self._log, coord.LOG_TTL_SECONDS)
+            pipe.sadd(coord.log_owners_key(self.doc_id), self.manager.instance_hex)
+            pipe.expire(coord.log_owners_key(self.doc_id), coord.LOG_TTL_SECONDS)
+            pipe.sadd(coord.LOGGED, self.doc_id)
+            await pipe.execute()
+        except Exception:
+            log.exception('collab update log failed for %s', self.key)
+
+    async def _replay_logs(self):
+        """Edits logged by any replica and not flushed yet (one that died, most likely). Updates are idempotent, so
+        replaying what is already in the stored state does nothing; what is new marks the room dirty and gets saved."""
+        try:
+            r = self.manager.redis
+            for owner in await r.smembers(coord.log_owners_key(self.doc_id)):
+                for update in await r.lrange(coord.log_key(self.doc_id, owner.decode()), 0, -1):
+                    self._apply(update, REMOTE)
+        except Exception:
+            log.exception('collab log replay failed for %s', self.key)
+
+    async def _trim_log(self, count):
+        """Drop the first `count` entries of this replica's log: a flush now covers them."""
+        try:
+            if count:
+                await self.manager.redis.ltrim(self._log, count, -1)
+        except Exception:
+            log.exception('collab log trim failed for %s', self.key)
+
+    # ---- cursors of clients that went away without saying so (their replica died) ----
+    async def _expire_awareness(self):
+        timeout_ms = settings.COLLAB_AWARENESS_TIMEOUT_SECONDS * 1000
+        while True:
+            await asyncio.sleep(max(0.05, settings.COLLAB_AWARENESS_TIMEOUT_SECONDS / 10))
+            now = int(time.time() * 1000)
+            stale = [cid for cid, meta in self.awareness.meta.items()
+                     if cid in self.awareness.states and now - meta['lastUpdated'] >= timeout_ms]
+            if stale:
+                self.awareness.remove_awareness_states(stale, 'timeout')  # clients renew every 15 s
+
     async def _run(self):
         """Debounced persistence, plus a periodic merge with the DB even when idle (anti-entropy)."""
         debounce = settings.COLLAB_FLUSH_DEBOUNCE_MS / 1000
@@ -309,10 +356,13 @@ class Room:
         async with self._flush_lock:
             self._dirty.clear()
             try:
+                logged = await self.manager.redis.llen(self._log)  # all of these are in the doc we are about to save
                 status, merged, path = await db_async(store.flush)(self.project_id, self.path, self.doc_id, self.ydoc.get_update())
                 if status != store.OK:
+                    await self.manager.redis.delete(self._log)  # a MOVED flush saved everything too
                     asyncio.ensure_future(self._file_gone(status, path))
                     return
+                await self._trim_log(logged)
                 self._apply(merged, DB)  # picks up anything another replica persisted that we missed
                 if self.last_error:
                     self.last_error = None
@@ -357,6 +407,7 @@ class Room:
     async def _heartbeat(self):
         pipe = self.manager.redis.pipeline()
         pipe.zadd(coord.holders_key(self.key), {self.manager.instance_hex: time.time()})
+        pipe.zadd(coord.INSTANCES, {self.manager.instance_hex: time.time()})
         pipe.expire(coord.holders_key(self.key), 3600)
         pipe.hset(coord.conns_key(self.key), self.manager.instance_hex, len(self.conns))
         pipe.expire(coord.conns_key(self.key), 3600)

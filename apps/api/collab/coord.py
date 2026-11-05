@@ -44,6 +44,21 @@ def error_key(key):
     return f'collab:error:{_h(key)}'
 
 
+# Update log (#56): every edit a replica receives from its own clients is also appended to its own list for the
+# document until a flush covers it, so a replica that dies before flushing loses nothing.
+LOGGED = 'collab:logged'  # set: CollabDoc ids that may have logs
+INSTANCES = 'collab:instances'  # zset: replica id -> last heartbeat (any room); a replica not seen for a while is dead
+LOG_TTL_SECONDS = 86400
+
+
+def log_key(doc_id, instance_hex):
+    return f'collab:log:{doc_id}:{instance_hex}'  # list of Yjs updates
+
+
+def log_owners_key(doc_id):
+    return f'collab:logs:{doc_id}'  # set: replica ids with a log for this document
+
+
 def pack(kind, origin, payload=b''):
     return kind + origin + payload
 

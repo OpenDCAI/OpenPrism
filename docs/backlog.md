@@ -95,6 +95,8 @@ Redis until flushed, and awareness entries expire.
 - [ ] **Zotero's `applied: false` hand-back and version restore's 409 for open files predate #54.** Now that REST text
       writes reach open rooms, the Zotero add could always write, and restore could write text files behind live rooms
       (binary/removed files still need thought). Simplify both and their editor code.
+- [ ] **The k8s/compose docs don't mention that tests now use Redis database 15** beyond CLAUDE.md; a CI setup with a
+      Redis that has only one database (some managed offerings) needs `TEST_REDIS_URL`.
 
 ## v0.0.10 - Better testing
 

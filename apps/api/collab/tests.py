@@ -1,12 +1,15 @@
 import asyncio
 import json
+import os
 from datetime import timedelta
 from unittest import mock
 
+import redis
 from asgiref.sync import sync_to_async
 from channels.db import database_sync_to_async
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
+from django.conf import settings
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from pycrdt import (Awareness, Doc, Text, YMessageType, create_awareness_message, create_sync_message,
@@ -136,6 +139,8 @@ async def settle(*clients, rounds=3):
 @override_settings(**FAST)
 class CollabTestBase(TransactionTestCase):
     def setUp(self):
+        assert settings.REDIS_URL.endswith('/15') or 'TEST_REDIS_URL' in os.environ  # never the dev database
+        redis.Redis.from_url(settings.REDIS_URL).flushdb()  # the tests' own database: logs and holders of earlier runs go
         self.user = make_user('owner@example.com')
         self.workspace = self.user.memberships.first().workspace
         self.project = Project.objects.create(workspace=self.workspace, name='Collab')
@@ -605,6 +610,105 @@ class FileGoneTests(CollabTestBase):
         await self.room(m).flush()
         await settle(a)
         self.assertEqual(a.close, (4404, 'File deleted'))
+
+
+async def crash(manager):
+    """A replica dies: no final flush, no goodbye to clients or other replicas, its heartbeat stops."""
+    for room in list(manager.rooms.values()):
+        room._closing = True  # its websocket handlers never run again
+        for task in room._tasks:
+            task.cancel()
+        await room._pubsub.aclose()
+    manager.rooms.clear()
+
+
+class CrashTests(CollabTestBase):
+    """#56: edits a replica never flushed are recovered from its Redis log; a dead replica's cursors expire."""
+
+    def room(self, manager, path='main.tex'):
+        return manager.rooms.get(coord.room_key(self.pid, path))
+
+    async def log_len(self, manager, path='main.tex'):
+        return await manager.redis.llen(self.room(manager, path)._log)
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)   # nothing reaches the database before the crash
+    async def test_a_new_room_replays_what_a_dead_replica_never_saved(self):
+        await self.db(files.write_text, self.project, 'main.tex', '')
+        ma = self.manager()
+        a = await self.join(ma, name='alice')
+        a.insert(0, 'typed just before the crash')
+        await settle(a)
+        await crash(ma)
+        self.assertEqual(await self.db(self.file_text), '')                         # never flushed
+        b = await self.join(self.manager())                                         # someone opens the file later
+        await settle(b)
+        self.assertEqual(str(b.text), 'typed just before the crash')
+        await self.room(self.managers[-1]).flush()
+        self.assertEqual(await self.db(self.file_text), 'typed just before the crash')
+        await b.disconnect()
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)
+    async def test_the_beat_task_saves_a_dead_replicas_edits_when_nobody_reopens_the_file(self):
+        from .tasks import recover_update_logs
+        ma = self.manager()
+        a = await self.join(ma)
+        a.insert(0, 'saved by the beat task')
+        await settle(a)
+        log_key = self.room(ma)._log
+        self.assertEqual(await recover_and_count(recover_update_logs), 0)          # its replica is alive: left alone
+        await crash(ma)
+        await ma.redis.zadd(coord.INSTANCES, {ma.instance_hex: 1})                 # no heartbeat for a long time
+        self.assertEqual(await recover_and_count(recover_update_logs), 1)
+        self.assertEqual(await self.db(self.file_text), 'saved by the beat task')
+        self.assertFalse(await ma.redis.exists(log_key))
+        self.assertEqual(await recover_and_count(recover_update_logs), 0)          # once
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)   # flushes happen only when the test says so
+    async def test_a_flush_trims_this_replicas_log_but_never_another_replicas(self):
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma), await self.join(mb)
+        await settle(a, b)
+        a.insert(0, 'A')
+        b.insert(0, 'B')
+        await settle(a, b)
+        self.assertEqual((await self.log_len(ma), await self.log_len(mb)), (1, 1))
+        with mock.patch.object(self.room(mb), 'flush', mock.AsyncMock()):          # B's room does not save in time
+            await self.room(ma).flush()
+            self.assertEqual((await self.log_len(ma), await self.log_len(mb)), (0, 1))
+        await self.room(mb).flush()
+        self.assertEqual(await self.log_len(mb), 0)
+        await a.disconnect(), await b.disconnect()
+
+    async def test_nothing_is_logged_for_edits_that_arrive_from_other_replicas_or_the_database(self):
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma), await self.join(mb)
+        a.insert(0, 'only A logs this')
+        await settle(a, b)
+        self.assertEqual(str(b.text), 'only A logs this')
+        await self.room(ma).flush()
+        self.assertEqual((await self.log_len(ma), await self.log_len(mb)), (0, 0))
+        await a.disconnect(), await b.disconnect()
+
+    @override_settings(COLLAB_AWARENESS_TIMEOUT_SECONDS=2)
+    async def test_cursors_of_a_dead_replica_expire(self):
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma, name='alice'), await self.join(mb, name='bob')
+        await settle(a, b)
+        self.assertEqual(b.peers(), ['alice'])
+        await crash(ma)                                                             # alice's replica never says goodbye
+        await settle(b)
+        self.assertEqual(b.peers(), ['alice'])
+        await asyncio.sleep(2.2)
+        await settle(b)
+        self.assertEqual(b.peers(), [])                                             # expired and broadcast
+        c = await self.join(mb, name='carol')
+        await settle(c)
+        self.assertNotIn('alice', c.peers())                                        # and not sent to people joining later
+        await b.disconnect(), await c.disconnect()
+
+
+async def recover_and_count(task):
+    return await sync_to_async(task, thread_sensitive=False)()
 
 
 class RestTests(CollabTestBase):
