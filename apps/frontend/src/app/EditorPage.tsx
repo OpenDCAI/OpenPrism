@@ -1662,7 +1662,28 @@ export default function EditorPage() {
       doc: ydoc,
       awareness,
       onStatus: setCollabStatus,
-      onError: (error) => setStatus(t('协作连接失败: {{error}}', { error }))
+      onError: (error) => setStatus(t('协作连接失败: {{error}}', { error })),
+      onClosed: ({ reason, path, to }) => {
+        // Someone (maybe this tab) renamed or deleted the file: follow it, or fall back to the main file.
+        setFiles((prev) => {
+          const next = { ...prev };
+          delete next[path];
+          return next;
+        });
+        if (reason === 'renamed' && to) {
+          setStatus(t('{{from}} was renamed to {{to}}', { from: path, to }));
+          getProjectTree(projectId)
+            .then((res) => {
+              setTree(res.items);
+              setFileOrder(res.fileOrder || {});
+              return activePathRef.current === path ? openFile(to, true) : undefined;
+            })
+            .catch(() => undefined);
+        } else {
+          setStatus(t('{{path}} was deleted', { path }));
+          refreshTree(true, true).catch(() => undefined);
+        }
+      }
     });
     collabProviderRef.current = provider;
     collabDocRef.current = { doc: ydoc, text: ytext, awareness };

@@ -1,4 +1,3 @@
 # Doing Now
 
-## v0.0.8 - Security issues
-
+## v0.0.9 - Collaboration Enhancements

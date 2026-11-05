@@ -1,5 +1,6 @@
 """Settings are 12-factor: everything comes from environment variables."""
 import os
+import re
 import sys
 from datetime import timedelta
 from pathlib import Path
@@ -179,6 +180,8 @@ REFRESH_COOKIE_SECURE = env_bool('REFRESH_COOKIE_SECURE', not DEBUG)  # browsers
 TRUSTED_ORIGINS = sorted({APP_BASE_URL, *(o.strip().rstrip('/') for o in env('TRUSTED_ORIGINS', '').split(',') if o.strip())})
 
 REDIS_URL = env('REDIS_URL', 'redis://localhost:6379/0')
+if TESTING:  # tests share the dev Redis: keep their keys (and anything they enqueue) out of the dev database
+    REDIS_URL = env('TEST_REDIS_URL', re.sub(r'/\d*$', '', REDIS_URL) + '/15')
 # Shared across replicas so rate limits (login attempts) are enforced per user, not per process.
 CACHES = {'default': {'BACKEND': 'django.core.cache.backends.redis.RedisCache', 'LOCATION': REDIS_URL}}
 CELERY_BROKER_URL = env('CELERY_BROKER_URL', REDIS_URL)
@@ -205,6 +208,7 @@ CELERY_BEAT_SCHEDULE = {
     'reap-stale-jobs': {'task': 'jobs.tasks.reap_stale_jobs', 'schedule': 60.0},
     'cleanup-old-jobs': {'task': 'jobs.tasks.cleanup_old_jobs', 'schedule': 3600.0},
     'cleanup-expired-invites': {'task': 'collab.tasks.cleanup_expired_invites', 'schedule': 3600.0},
+    'recover-collab-logs': {'task': 'collab.tasks.recover_update_logs', 'schedule': 60.0},
     'prune-versions': {'task': 'versions.tasks.prune_versions', 'schedule': 86400.0},
     'prune-llm-usage': {'task': 'integrations.tasks.prune_llm_usage', 'schedule': 86400.0},
     'cleanup-pending-uploads': {'task': 'projects.tasks.cleanup_pending_uploads', 'schedule': 900.0},
@@ -222,6 +226,7 @@ COLLAB_FLUSH_DEBOUNCE_MS = int(env('OPENPRISM_COLLAB_FLUSH_DEBOUNCE_MS', '800'))
 COLLAB_INVITE_TTL_SECONDS = int(env('OPENPRISM_COLLAB_TOKEN_TTL', '86400'))
 COLLAB_ROOM_EVICT_SECONDS = float(env('COLLAB_ROOM_EVICT_SECONDS', '60'))  # keep an idle room this long
 COLLAB_SYNC_INTERVAL_SECONDS = float(env('COLLAB_SYNC_INTERVAL_SECONDS', '30'))  # anti-entropy merge with the DB
+COLLAB_AWARENESS_TIMEOUT_SECONDS = float(env('COLLAB_AWARENESS_TIMEOUT_SECONDS', '30'))  # drop cursors not renewed (clients renew every 15 s)
 JOB_SECRET_TTL_SECONDS = int(env('JOB_SECRET_TTL_SECONDS', str(6 * 3600)))  # how long a transfer job may keep its API key
 MINERU_API_BASE = env('OPENPRISM_MINERU_API_BASE', 'https://mineru.net/api/v4')
 MINERU_TOKEN = env('OPENPRISM_MINERU_TOKEN', '')

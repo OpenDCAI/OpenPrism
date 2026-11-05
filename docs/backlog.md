@@ -86,12 +86,17 @@ v0.1.0.
 
 ## v0.0.9 - Collaboration Enhancements
 
-- [ ] **REST writes to a file someone has open are overwritten by the next live-editing save** *(pre-existing behaviour)*.
-      Template apply/convert and uploads to an open file are the affected paths.
-- [ ] **Renaming or deleting a file that has a live room can recreate it** at the old path on the next flush. The stored
-      state is dropped, but the live room is not closed.
-- [ ] **A hard server crash can lose up to ~800 ms of typing** (the flush debounce); awareness entries of a crashed
-      replica linger until its clients reconnect.
+Moved to `docs/todo.md` (issues #54-#56). Decided: REST text writes go through the Yjs state (no more overwrites);
+rooms are tied to their stored document, so rename follows the file and delete closes the room; edits are logged in
+Redis until flushed, and awareness entries expire.
+
+## v0.0.9 follow-ups (found while building it)
+
+- [ ] **Zotero's `applied: false` hand-back and version restore's 409 for open files predate #54.** Now that REST text
+      writes reach open rooms, the Zotero add could always write, and restore could write text files behind live rooms
+      (binary/removed files still need thought). Simplify both and their editor code.
+- [ ] **The k8s/compose docs don't mention that tests now use Redis database 15** beyond CLAUDE.md; a CI setup with a
+      Redis that has only one database (some managed offerings) needs `TEST_REDIS_URL`.
 
 ## v0.0.10 - Better testing
 

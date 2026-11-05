@@ -24,6 +24,7 @@ AWARENESS = YMessageType.AWARENESS
 WRITE_SYNC_TYPES = (YSyncMessageType.SYNC_STEP2, YSyncMessageType.SYNC_UPDATE)
 OUTBOX_LIMIT = 2000
 REMOTE, DB = 'remote', 'db'  # origins that must not be re-published to other replicas
+CLOSE_FILE_GONE = 4404  # the file was renamed or deleted; a text frame before the close says which (clients must not reconnect)
 
 
 def read_var_uint(buf, pos):
@@ -56,8 +57,9 @@ def awareness_client_ids(update):
 class Conn:
     """One websocket client. Outgoing messages are queued so Yjs callbacks (synchronous) never block."""
 
-    def __init__(self, send, can_write, invite_id=None, on_revoke=None):
+    def __init__(self, send, can_write, invite_id=None, on_revoke=None, close=None):
         self.send, self.can_write = send, can_write
+        self.close_socket = close  # async (code, reason): close the websocket
         self.invite_id = invite_id  # set when the client joined with an invite link (it can be revoked)
         self.on_revoke = on_revoke
         self.awareness_ids = set()
@@ -80,6 +82,10 @@ class Conn:
         try:
             while True:
                 message = await self.outbox.get()
+                if isinstance(message, tuple):  # ('close', code, reason): after everything queued before it
+                    if self.close_socket:
+                        await self.close_socket(message[1], message[2])
+                    break
                 await self.send(message)
         except Exception:
             self.closed = True
@@ -88,11 +94,26 @@ class Conn:
         self.closed = True
         self._task.cancel()
 
+    def finish(self, notice, code, reason):
+        """Send a last text frame (JSON), then close the socket with `code`; the pump stops after it."""
+        if self.closed:
+            return
+        self.closed = True
+        for message in (notice, ('close', code, reason)):
+            try:
+                self.outbox.put_nowait(message)
+            except asyncio.QueueFull:
+                self._task.cancel()
+                if self.close_socket:
+                    asyncio.ensure_future(self.close_socket(code, reason))
+                return
+
 
 class Room:
     def __init__(self, manager, project_id, path):
         self.manager, self.project_id, self.path = manager, project_id, path
         self.key = coord.room_key(project_id, path)
+        self.doc_id = None  # the CollabDoc this room loaded; renames move it, deletes remove it (see store.flush)
         self.ydoc = Doc()
         self.text = self.ydoc.get('content', type=Text)
         self.awareness = Awareness(self.ydoc)
@@ -109,17 +130,21 @@ class Room:
 
     # ---- lifecycle ----
     async def start(self):
-        state = await db_async(store.load)(self.project_id, self.path)
+        state, self.doc_id = await db_async(store.load)(self.project_id, self.path)
+        self._log = coord.log_key(self.doc_id, self.manager.instance_hex)
         self._apply(state, DB)
         self.ydoc.observe(self._on_doc_update)
         self.awareness.observe(self._on_awareness)
+        await self._replay_logs()
         redis = self.manager.redis
         self._pubsub = redis.pubsub()
-        await self._pubsub.subscribe(coord.channel(self.key), coord.project_channel(self.project_id))
+        await self._pubsub.subscribe(coord.channel(self.key), coord.doc_channel(self.doc_id),
+                                     coord.project_channel(self.project_id))
         # Edits and cursors that only live in another replica's memory (not flushed yet, or announced before we
         # subscribed) never reach us on their own: ask the replicas that already hold this room to catch us up.
         self._publish(coord.KIND_SYNC, self.ydoc.get_state())
-        self._tasks = [asyncio.ensure_future(self._listen()), asyncio.ensure_future(self._run())]
+        self._tasks = [asyncio.ensure_future(self._listen()), asyncio.ensure_future(self._run()),
+                       asyncio.ensure_future(self._expire_awareness())]
         await self._heartbeat()
 
     async def shutdown(self):
@@ -130,16 +155,8 @@ class Room:
         try:
             await self.flush()
         finally:
-            try:
-                await self._pubsub.unsubscribe()
-                await self._pubsub.aclose()
-                pipe = self.manager.redis.pipeline()
-                pipe.zrem(coord.holders_key(self.key), self.manager.instance_hex)
-                pipe.hdel(coord.conns_key(self.key), self.manager.instance_hex)
-                await pipe.execute()
-            except Exception:
-                log.exception('collab room cleanup failed for %s', self.key)
-            self.closed.set()
+            if not self.closed.is_set():
+                await self._leave()
 
     # ---- connections ----
     def add_conn(self, conn):
@@ -210,6 +227,7 @@ class Room:
                 conn.push(message)
         if origin not in (REMOTE, DB):
             self._publish(coord.KIND_UPDATE, event.update)
+            asyncio.ensure_future(self._append_log(event.update))
         if origin != DB:
             self._dirty.set()
 
@@ -230,7 +248,7 @@ class Room:
 
     # ---- other replicas ----
     def _publish(self, kind, payload=b''):
-        asyncio.ensure_future(self.manager.publish(self.key, coord.pack(kind, self.manager.instance, payload)))
+        asyncio.ensure_future(self.manager.publish(coord.doc_channel(self.doc_id), coord.pack(kind, self.manager.instance, payload)))
 
     async def _listen(self):
         try:
@@ -250,6 +268,8 @@ class Room:
                     elif kind == coord.KIND_FLUSH:
                         await self.flush()
                         await self.manager.redis.rpush(payload.decode(), self.manager.instance_hex)
+                    elif kind == coord.KIND_CLOSE and not self._closing:
+                        await self.flush()  # finds the file renamed or deleted, and closes the room
                     elif kind == coord.KIND_REVOKE:
                         self._drop_invite(payload.decode())
                     elif kind == coord.KIND_EVICT and not self.conns and not self._closing:
@@ -276,6 +296,49 @@ class Room:
         if states:
             self._publish(coord.KIND_AWARENESS, self.awareness.encode_awareness_update(states))
 
+    # ---- update log (survives this process) ----
+    async def _append_log(self, update):
+        try:
+            pipe = self.manager.redis.pipeline()
+            pipe.rpush(self._log, update)
+            pipe.expire(self._log, coord.LOG_TTL_SECONDS)
+            pipe.sadd(coord.log_owners_key(self.doc_id), self.manager.instance_hex)
+            pipe.expire(coord.log_owners_key(self.doc_id), coord.LOG_TTL_SECONDS)
+            pipe.sadd(coord.LOGGED, self.doc_id)
+            await pipe.execute()
+        except Exception:
+            log.exception('collab update log failed for %s', self.key)
+
+    async def _replay_logs(self):
+        """Edits logged by any replica and not flushed yet (one that died, most likely). Updates are idempotent, so
+        replaying what is already in the stored state does nothing; what is new marks the room dirty and gets saved."""
+        try:
+            r = self.manager.redis
+            for owner in await r.smembers(coord.log_owners_key(self.doc_id)):
+                for update in await r.lrange(coord.log_key(self.doc_id, owner.decode()), 0, -1):
+                    self._apply(update, REMOTE)
+        except Exception:
+            log.exception('collab log replay failed for %s', self.key)
+
+    async def _trim_log(self, count):
+        """Drop the first `count` entries of this replica's log: a flush now covers them."""
+        try:
+            if count:
+                await self.manager.redis.ltrim(self._log, count, -1)
+        except Exception:
+            log.exception('collab log trim failed for %s', self.key)
+
+    # ---- cursors of clients that went away without saying so (their replica died) ----
+    async def _expire_awareness(self):
+        timeout_ms = settings.COLLAB_AWARENESS_TIMEOUT_SECONDS * 1000
+        while True:
+            await asyncio.sleep(max(0.05, settings.COLLAB_AWARENESS_TIMEOUT_SECONDS / 10))
+            now = int(time.time() * 1000)
+            stale = [cid for cid, meta in self.awareness.meta.items()
+                     if cid in self.awareness.states and now - meta['lastUpdated'] >= timeout_ms]
+            if stale:
+                self.awareness.remove_awareness_states(stale, 'timeout')  # clients renew every 15 s
+
     async def _run(self):
         """Debounced persistence, plus a periodic merge with the DB even when idle (anti-entropy)."""
         debounce = settings.COLLAB_FLUSH_DEBOUNCE_MS / 1000
@@ -293,7 +356,13 @@ class Room:
         async with self._flush_lock:
             self._dirty.clear()
             try:
-                merged = await db_async(store.flush)(self.project_id, self.path, self.ydoc.get_update())
+                logged = await self.manager.redis.llen(self._log)  # all of these are in the doc we are about to save
+                status, merged, path = await db_async(store.flush)(self.project_id, self.path, self.doc_id, self.ydoc.get_update())
+                if status != store.OK:
+                    await self.manager.redis.delete(self._log)  # a MOVED flush saved everything too
+                    asyncio.ensure_future(self._file_gone(status, path))
+                    return
+                await self._trim_log(logged)
                 self._apply(merged, DB)  # picks up anything another replica persisted that we missed
                 if self.last_error:
                     self.last_error = None
@@ -303,9 +372,42 @@ class Room:
                 self.last_error = str(exc)
                 await self.manager.redis.set(coord.error_key(self.key), self.last_error, ex=3600)
 
+    async def _file_gone(self, status, new_path):
+        """The file was renamed (its text already flushed to `new_path`) or deleted: tell the clients, close them, and
+        go away without another flush (it would recreate the file)."""
+        if self._closing:
+            return
+        self._closing = True
+        if self.manager.rooms.get(self.key) is self:
+            self.manager.rooms.pop(self.key)
+        reason = 'renamed' if status == store.MOVED else 'deleted'
+        notice = json.dumps({'type': 'closed', 'reason': reason, 'path': self.path, 'to': new_path})
+        for conn in list(self.conns):
+            conn.finish(notice, CLOSE_FILE_GONE, f'File {reason}')
+        self.conns.clear()
+        if self._evict:
+            self._evict.cancel()
+        for task in self._tasks:
+            if task is not asyncio.current_task():
+                task.cancel()
+        await self._leave()
+
+    async def _leave(self):
+        try:
+            await self._pubsub.unsubscribe()
+            await self._pubsub.aclose()
+            pipe = self.manager.redis.pipeline()
+            pipe.zrem(coord.holders_key(self.key), self.manager.instance_hex)
+            pipe.hdel(coord.conns_key(self.key), self.manager.instance_hex)
+            await pipe.execute()
+        except Exception:
+            log.exception('collab room cleanup failed for %s', self.key)
+        self.closed.set()
+
     async def _heartbeat(self):
         pipe = self.manager.redis.pipeline()
         pipe.zadd(coord.holders_key(self.key), {self.manager.instance_hex: time.time()})
+        pipe.zadd(coord.INSTANCES, {self.manager.instance_hex: time.time()})
         pipe.expire(coord.holders_key(self.key), 3600)
         pipe.hset(coord.conns_key(self.key), self.manager.instance_hex, len(self.conns))
         pipe.expire(coord.conns_key(self.key), 3600)
@@ -334,11 +436,11 @@ class RoomManager:
             self._redis = aioredis.Redis.from_url(settings.REDIS_URL)
         return self._redis
 
-    async def publish(self, key, message):
+    async def publish(self, channel, message):
         try:
-            await self.redis.publish(coord.channel(key), message)
+            await self.redis.publish(channel, message)
         except Exception:
-            log.exception('collab publish failed for %s', key)
+            log.exception('collab publish failed on %s', channel)
 
     async def get_room(self, project_id, path):
         key = coord.room_key(project_id, path)

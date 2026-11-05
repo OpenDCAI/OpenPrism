@@ -1,12 +1,15 @@
 import asyncio
 import json
+import os
 from datetime import timedelta
 from unittest import mock
 
+import redis
 from asgiref.sync import sync_to_async
 from channels.db import database_sync_to_async
 from channels.routing import URLRouter
 from channels.testing import WebsocketCommunicator
+from django.conf import settings
 from django.test import TransactionTestCase, override_settings
 from django.utils import timezone
 from pycrdt import (Awareness, Doc, Text, YMessageType, create_awareness_message, create_sync_message,
@@ -45,7 +48,7 @@ class Client:
         self.text = self.doc.get('content', type=Text)
         self.awareness = Awareness(self.doc)
         self.awareness.set_local_state_field('user', {'name': name})
-        self.outgoing, self.applying, self.close = [], False, None
+        self.outgoing, self.applying, self.close, self.notices = [], False, None, []
         self.doc.observe(self._on_doc)
         self.awareness.observe(self._on_awareness)
         url = f'/api/collab?projectId={project_id}&file={path}&token={token}'
@@ -81,6 +84,9 @@ class Client:
             if out['type'] == 'websocket.close':
                 self.close = (out['code'], out.get('reason', ''))
                 return self.close
+            if out.get('text') is not None:
+                self.notices.append(json.loads(out['text']))
+                continue
             self._handle(out['bytes'])
         return self.close
 
@@ -133,6 +139,8 @@ async def settle(*clients, rounds=3):
 @override_settings(**FAST)
 class CollabTestBase(TransactionTestCase):
     def setUp(self):
+        assert settings.REDIS_URL.endswith('/15') or 'TEST_REDIS_URL' in os.environ  # never the dev database
+        redis.Redis.from_url(settings.REDIS_URL).flushdb()  # the tests' own database: logs and holders of earlier runs go
         self.user = make_user('owner@example.com')
         self.workspace = self.user.memberships.first().workspace
         self.project = Project.objects.create(workspace=self.workspace, name='Collab')
@@ -428,6 +436,281 @@ class ReplicaTests(CollabTestBase):
         await a.disconnect()
 
 
+class LiveWriteTests(CollabTestBase):
+    """#54: a write that does not come from the room (REST save, upload, template, restore) becomes an edit of the open
+    document instead of being overwritten by the room's next flush."""
+
+    def room(self, manager, path='main.tex'):
+        return manager.rooms[coord.room_key(self.pid, path)]
+
+    async def test_a_rest_write_reaches_open_editors_on_every_replica_and_sticks(self):
+        await self.db(files.write_text, self.project, 'main.tex', 'old text')
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma), await self.join(mb)
+        await settle(a, b)
+        api = await self.db(client_for, self.user)
+        res = await sync_to_async(api.put, thread_sensitive=False)(
+            f'/api/projects/{self.pid}/file', {'path': 'main.tex', 'content': 'new text from a tab that is not live'}, format='json')
+        self.assertEqual(res.data, {'ok': True})
+        await settle(a, b)
+        self.assertEqual((str(a.text), str(b.text)), ('new text from a tab that is not live',) * 2)
+        a.insert(0, '> ')                                                          # the room's next flush keeps it
+        await settle(a, b)
+        await asyncio.sleep(0.2)
+        self.assertEqual(await self.db(self.file_text), '> new text from a tab that is not live')
+        await a.disconnect(), await b.disconnect()
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)   # the live edit is still only in the room when the REST write lands
+    async def test_typing_elsewhere_in_the_file_survives_a_rest_write(self):
+        await self.db(files.write_text, self.project, 'main.tex', 'title\nbody\n')
+        m = self.manager()
+        a = await self.join(m)
+        await settle(a)
+        a.insert(len(str(a.text)), 'typed live\n')
+        await settle(a)
+        await self.db(files.write_text, self.project, 'main.tex', 'NEW TITLE\nbody\n')
+        await settle(a)
+        self.assertEqual(str(a.text), 'NEW TITLE\nbody\ntyped live\n')
+        await self.room(m).flush()
+        self.assertEqual(await self.db(self.file_text), 'NEW TITLE\nbody\ntyped live\n')
+        await a.disconnect()
+
+    async def test_a_lost_message_is_picked_up_at_the_next_flush(self):
+        m = self.manager()
+        a = await self.join(m)
+        a.insert(0, 'live')
+        await settle(a)
+        await asyncio.sleep(0.2)
+        with mock.patch('collab.store._publish'):                                 # the update never reaches the room
+            await self.db(files.write_text, self.project, 'main.tex', 'written by upload')
+        await settle(a)
+        self.assertEqual(str(a.text), 'live')
+        await self.room(m).flush()                                                 # the stored state already has it
+        await settle(a)
+        self.assertEqual(str(a.text), 'written by upload')
+        self.assertEqual(await self.db(self.file_text), 'written by upload')
+        await a.disconnect()
+
+    async def test_upload_and_restore_paths_reach_the_room_too(self):
+        await self.db(files.write_text, self.project, 'main.tex', 'one')
+        m = self.manager()
+        a = await self.join(m)
+        await settle(a)
+        await self.db(files.write_file, self.project, 'main.tex', b'uploaded over it')
+        await settle(a)
+        self.assertEqual(str(a.text), 'uploaded over it')
+        await self.db(files.apply_changes, self.project, [{'path': 'main.tex', 'kind': 'text', 'text': 'restored'}], [])
+        await settle(a)
+        self.assertEqual(str(a.text), 'restored')
+        await a.disconnect()
+
+    def test_files_never_opened_live_are_untouched(self):
+        files.write_text(self.project, 'plain.tex', 'a')
+        files.write_text(self.project, 'plain.tex', 'b')
+        self.assertFalse(CollabDoc.objects.filter(project=self.project).exists())
+        self.assertEqual(self.file_text('plain.tex'), 'b')
+
+
+class FileGoneTests(CollabTestBase):
+    """#55: renaming or deleting a file closes its live rooms (code 4404, after a notice saying which); a room never
+    writes a renamed or deleted file back."""
+
+    def room(self, manager, path='main.tex'):
+        return manager.rooms.get(coord.room_key(self.pid, path))
+
+    async def paths(self):
+        return sorted(await self.db(lambda: list(self.project.files.values_list('path', flat=True))))
+
+    async def test_delete_closes_open_rooms_on_every_replica_and_the_file_stays_deleted(self):
+        await self.db(files.write_text, self.project, 'a.tex', 'doomed')
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma, path='a.tex'), await self.join(mb, path='a.tex')
+        await settle(a, b)
+        await self.db(files.delete, self.project, 'a.tex')
+        await settle(a, b)
+        for c in (a, b):
+            self.assertEqual(c.close, (4404, 'File deleted'))
+            self.assertEqual(c.notices, [{'type': 'closed', 'reason': 'deleted', 'path': 'a.tex', 'to': None}])
+        self.assertEqual((self.room(ma, 'a.tex'), self.room(mb, 'a.tex')), (None, None))
+        await asyncio.sleep(0.3)
+        self.assertNotIn('a.tex', await self.paths())
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)
+    async def test_a_room_that_missed_the_message_does_not_recreate_the_file(self):
+        await self.db(files.write_text, self.project, 'a.tex', 'doomed')
+        m = self.manager()
+        a = await self.join(m, path='a.tex')
+        a.insert(0, 'unsaved ')
+        await settle(a)
+        with mock.patch('collab.store._publish'):                                  # the close message is lost
+            await self.db(files.delete, self.project, 'a.tex')
+        await self.room(m, 'a.tex').flush()                                         # its next save finds the file gone
+        await settle(a)
+        self.assertEqual(a.close, (4404, 'File deleted'))
+        self.assertNotIn('a.tex', await self.paths())
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)   # the last edit is still only in the room when the rename lands
+    async def test_rename_keeps_the_last_edits_under_the_new_name(self):
+        await self.db(files.write_text, self.project, 'a.tex', 'text')
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma, path='a.tex'), await self.join(mb, path='a.tex')
+        await settle(a, b)
+        a.insert(0, 'last words, ')
+        await settle(a, b)
+        await self.db(files.rename, self.project, 'a.tex', 'b.tex')
+        await settle(a, b)
+        for c in (a, b):
+            self.assertEqual(c.close, (4404, 'File renamed'))
+            self.assertEqual(c.notices, [{'type': 'closed', 'reason': 'renamed', 'path': 'a.tex', 'to': 'b.tex'}])
+        await asyncio.sleep(0.3)
+        self.assertEqual(await self.paths(), ['b.tex'])
+        self.assertEqual(await self.db(self.file_text, 'b.tex'), 'last words, text')
+        c = await self.join(ma, path='b.tex')                                       # the history carries on under the new name
+        await settle(c)
+        self.assertEqual(str(c.text), 'last words, text')
+        await c.disconnect()
+
+    async def test_renaming_a_folder_closes_the_rooms_of_its_files(self):
+        await self.db(files.write_text, self.project, 'sec/one.tex', '1')
+        await self.db(files.write_text, self.project, 'sec/two.tex', '2')
+        m = self.manager()
+        a, b = await self.join(m, path='sec/one.tex'), await self.join(m, path='sec/two.tex')
+        await settle(a, b)
+        await self.db(files.rename, self.project, 'sec', 'chapters')
+        await settle(a, b)
+        self.assertEqual([n['to'] for n in a.notices + b.notices], ['chapters/one.tex', 'chapters/two.tex'])
+        await asyncio.sleep(0.3)
+        self.assertEqual(await self.paths(), ['chapters/one.tex', 'chapters/two.tex'])
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)
+    async def test_a_new_file_at_a_deleted_path_is_not_polluted_by_the_old_room(self):
+        await self.db(files.write_text, self.project, 'a.tex', 'old content')
+        m = self.manager()
+        a = await self.join(m, path='a.tex')
+        await settle(a)
+        old_room = self.room(m, 'a.tex')
+        with mock.patch('collab.store._publish'):
+            await self.db(files.delete, self.project, 'a.tex')
+        await self.db(files.write_text, self.project, 'a.tex', 'fresh')
+        b = await self.join(self.manager(), path='a.tex')                          # another replica opens the new file
+        await settle(b)
+        await old_room.flush()                                                      # the stale room saves late
+        await settle(a, b)
+        self.assertEqual(a.close, (4404, 'File deleted'))
+        self.assertEqual(str(b.text), 'fresh')
+        self.assertEqual(await self.db(self.file_text, 'a.tex'), 'fresh')
+        await b.disconnect()
+
+    async def test_deleting_the_project_closes_its_rooms(self):
+        m = self.manager()
+        a = await self.join(m)
+        a.insert(0, 'x')
+        await settle(a)
+        await self.db(Project.objects.filter(pk=self.pid).delete)
+        await self.room(m).flush()
+        await settle(a)
+        self.assertEqual(a.close, (4404, 'File deleted'))
+
+
+async def crash(manager):
+    """A replica dies: no final flush, no goodbye to clients or other replicas, its heartbeat stops."""
+    for room in list(manager.rooms.values()):
+        room._closing = True  # its websocket handlers never run again
+        for task in room._tasks:
+            task.cancel()
+        await room._pubsub.aclose()
+    manager.rooms.clear()
+
+
+class CrashTests(CollabTestBase):
+    """#56: edits a replica never flushed are recovered from its Redis log; a dead replica's cursors expire."""
+
+    def room(self, manager, path='main.tex'):
+        return manager.rooms.get(coord.room_key(self.pid, path))
+
+    async def log_len(self, manager, path='main.tex'):
+        return await manager.redis.llen(self.room(manager, path)._log)
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)   # nothing reaches the database before the crash
+    async def test_a_new_room_replays_what_a_dead_replica_never_saved(self):
+        await self.db(files.write_text, self.project, 'main.tex', '')
+        ma = self.manager()
+        a = await self.join(ma, name='alice')
+        a.insert(0, 'typed just before the crash')
+        await settle(a)
+        await crash(ma)
+        self.assertEqual(await self.db(self.file_text), '')                         # never flushed
+        b = await self.join(self.manager())                                         # someone opens the file later
+        await settle(b)
+        self.assertEqual(str(b.text), 'typed just before the crash')
+        await self.room(self.managers[-1]).flush()
+        self.assertEqual(await self.db(self.file_text), 'typed just before the crash')
+        await b.disconnect()
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)
+    async def test_the_beat_task_saves_a_dead_replicas_edits_when_nobody_reopens_the_file(self):
+        from .tasks import recover_update_logs
+        ma = self.manager()
+        a = await self.join(ma)
+        a.insert(0, 'saved by the beat task')
+        await settle(a)
+        log_key = self.room(ma)._log
+        self.assertEqual(await recover_and_count(recover_update_logs), 0)          # its replica is alive: left alone
+        await crash(ma)
+        await ma.redis.zadd(coord.INSTANCES, {ma.instance_hex: 1})                 # no heartbeat for a long time
+        self.assertEqual(await recover_and_count(recover_update_logs), 1)
+        self.assertEqual(await self.db(self.file_text), 'saved by the beat task')
+        self.assertFalse(await ma.redis.exists(log_key))
+        self.assertEqual(await recover_and_count(recover_update_logs), 0)          # once
+
+    @override_settings(COLLAB_FLUSH_DEBOUNCE_MS=60_000)   # flushes happen only when the test says so
+    async def test_a_flush_trims_this_replicas_log_but_never_another_replicas(self):
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma), await self.join(mb)
+        await settle(a, b)
+        a.insert(0, 'A')
+        b.insert(0, 'B')
+        await settle(a, b)
+        self.assertEqual((await self.log_len(ma), await self.log_len(mb)), (1, 1))
+        with mock.patch.object(self.room(mb), 'flush', mock.AsyncMock()):          # B's room does not save in time
+            await self.room(ma).flush()
+            self.assertEqual((await self.log_len(ma), await self.log_len(mb)), (0, 1))
+        await self.room(mb).flush()
+        self.assertEqual(await self.log_len(mb), 0)
+        await a.disconnect(), await b.disconnect()
+
+    async def test_nothing_is_logged_for_edits_that_arrive_from_other_replicas_or_the_database(self):
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma), await self.join(mb)
+        a.insert(0, 'only A logs this')
+        await settle(a, b)
+        self.assertEqual(str(b.text), 'only A logs this')
+        await self.room(ma).flush()
+        self.assertEqual((await self.log_len(ma), await self.log_len(mb)), (0, 0))
+        await a.disconnect(), await b.disconnect()
+
+    @override_settings(COLLAB_AWARENESS_TIMEOUT_SECONDS=2)
+    async def test_cursors_of_a_dead_replica_expire(self):
+        ma, mb = self.manager(), self.manager()
+        a, b = await self.join(ma, name='alice'), await self.join(mb, name='bob')
+        await settle(a, b)
+        self.assertEqual(b.peers(), ['alice'])
+        await crash(ma)                                                             # alice's replica never says goodbye
+        await settle(b)
+        self.assertEqual(b.peers(), ['alice'])
+        await asyncio.sleep(2.2)
+        await settle(b)
+        self.assertEqual(b.peers(), [])                                             # expired and broadcast
+        c = await self.join(mb, name='carol')
+        await settle(c)
+        self.assertNotIn('alice', c.peers())                                        # and not sent to people joining later
+        await b.disconnect(), await c.disconnect()
+
+
+async def recover_and_count(task):
+    return await sync_to_async(task, thread_sensitive=False)()
+
+
 class RestTests(CollabTestBase):
     """Invites and the guest credential, over plain HTTP."""
 
@@ -518,14 +801,17 @@ class RestTests(CollabTestBase):
         self.assertEqual(cleanup_expired_invites(), 1)
         self.assertFalse(CollabInvite.objects.filter(pk=invite.pk).exists())
 
-    def test_rename_and_delete_drop_stale_yjs_state(self):
+    def test_rename_moves_yjs_state_and_delete_drops_it(self):
         files.write_text(self.project, 'a.tex', 'x')
         files.write_text(self.project, 'dir/b.tex', 'y')
         CollabDoc.objects.create(project=self.project, path='a.tex', state=b'')
         CollabDoc.objects.create(project=self.project, path='dir/b.tex', state=b'')
         files.rename(self.project, 'a.tex', 'c.tex')
-        self.assertEqual(sorted(CollabDoc.objects.values_list('path', flat=True)), ['dir/b.tex'])
-        files.delete(self.project, 'dir')
+        self.assertEqual(sorted(CollabDoc.objects.values_list('path', flat=True)), ['c.tex', 'dir/b.tex'])
+        files.rename(self.project, 'dir', 'docs')
+        self.assertEqual(sorted(CollabDoc.objects.values_list('path', flat=True)), ['c.tex', 'docs/b.tex'])
+        files.delete(self.project, 'docs')
+        files.delete(self.project, 'c.tex')
         self.assertEqual(CollabDoc.objects.count(), 0)
 
 

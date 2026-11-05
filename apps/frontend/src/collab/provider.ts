@@ -10,6 +10,11 @@ const MESSAGE_AWARENESS = 1;
 
 export type CollabStatus = 'disconnected' | 'connecting' | 'connected';
 
+/** Why the server ended the session for good: the file was renamed (`to` is its new path) or deleted. */
+export type CollabClosed = { reason: 'renamed' | 'deleted'; path: string; to: string | null };
+/** Close code for "this file is gone"; the server sends a CollabClosed text frame first. Never reconnect after it. */
+const CLOSE_FILE_GONE = 4404;
+
 type ProviderOptions = {
   serverUrl: string;
   /** The credential, or a function returning it (or a promise of it). A function is called on every (re)connect, so it
@@ -21,6 +26,7 @@ type ProviderOptions = {
   awareness: Awareness;
   onStatus?: (status: CollabStatus) => void;
   onError?: (error: string) => void;
+  onClosed?: (info: CollabClosed) => void;
 };
 
 export class CollabProvider {
@@ -37,6 +43,7 @@ export class CollabProvider {
   private reconnectAttempts = 0;
   private onStatus?: (status: CollabStatus) => void;
   private onError?: (error: string) => void;
+  private onClosed?: (info: CollabClosed) => void;
   private docUpdateHandler: ((update: Uint8Array, origin: unknown) => void) | null = null;
   private awarenessUpdateHandler:
     | ((update: { added: number[]; updated: number[]; removed: number[] }, origin: unknown) => void)
@@ -51,6 +58,7 @@ export class CollabProvider {
     this.awareness = options.awareness;
     this.onStatus = options.onStatus;
     this.onError = options.onError;
+    this.onClosed = options.onClosed;
   }
 
   connect() {
@@ -148,6 +156,7 @@ export class CollabProvider {
     this.onStatus?.('connecting');
     const ws = new WebSocket(wsUrl);
     ws.binaryType = 'arraybuffer';
+    let closedInfo: CollabClosed | null = null;
     ws.onopen = () => {
       this.reconnectAttempts = 0;
       this.onStatus?.('connected');
@@ -161,7 +170,15 @@ export class CollabProvider {
       }
     };
     ws.onmessage = (event) => {
-      if (typeof event.data === 'string') return;
+      if (typeof event.data === 'string') {
+        try {
+          const message = JSON.parse(event.data) as { type?: string } & CollabClosed;
+          if (message.type === 'closed') closedInfo = { reason: message.reason, path: message.path, to: message.to ?? null };
+        } catch {
+          // not ours: ignore
+        }
+        return;
+      }
       if (event.data instanceof Blob) {
         event.data.arrayBuffer().then((buffer) => this.handleMessage(ws, new Uint8Array(buffer)));
         return;
@@ -171,8 +188,14 @@ export class CollabProvider {
     ws.onerror = () => {
       this.onError?.('WebSocket error');
     };
-    ws.onclose = () => {
+    ws.onclose = (event) => {
+      if (generation !== this.generation) return; // a socket we already left
       this.onStatus?.('disconnected');
+      if (event.code === CLOSE_FILE_GONE) {
+        this.shouldReconnect = false;
+        this.onClosed?.(closedInfo || { reason: 'deleted', path: this.filePath, to: null });
+        return;
+      }
       this.scheduleReconnect();
     };
     this.ws = ws;
