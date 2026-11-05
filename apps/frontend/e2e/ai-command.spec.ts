@@ -12,16 +12,34 @@ const doc = (...lines: string[]) => `\\documentclass{article}\n\\begin{document}
 
 interface Seen { body: any }
 
-/** Answer /api/agent/run with a fixed proposal built from the project's current files. */
-async function stubAgent(page: Page, propose: (body: any) => { path: string; original: string; content: string }[], seen: Seen[] = [], delayMs = 0) {
-  await page.route('**/api/agent/run', async (route) => {
+/**
+ * Serve the AI job protocol: POST answers `{jobId}` at once (the client asks with `async: true`), and
+ * GET /api/jobs/:id says `running` until `delayMs` has passed, then returns `answer(body)` as the job's result.
+ */
+async function stubAiJob(page: Page, url: string, answer: (body: any) => unknown, seen: Seen[] = [], delayMs = 0) {
+  const jobs = new Map<string, { readyAt: number; result: unknown }>();
+  await page.route(`**${url}`, async (route) => {
     const body = route.request().postDataJSON();
     seen.push({ body });
-    if (delayMs) await new Promise((r) => setTimeout(r, delayMs));
-    const patches = propose(body).map((p) => ({ ...p, diff: createTwoFilesPatch(p.path, p.path, p.original, p.content, 'current', 'suggested') }));
-    await route.fulfill({ json: { ok: true, reply: 'Done.', suggestion: '', patches } });
+    const jobId = body.jobId || crypto.randomUUID();
+    jobs.set(jobId, { readyAt: Date.now() + delayMs, result: answer(body) });
+    await route.fulfill({ json: body.async === true ? { ok: true, jobId, status: 'queued' } : { ok: false, error: 'expected async: true' } });
+  });
+  await page.route(/\/api\/jobs\/[0-9a-f-]+$/, async (route) => {
+    const job = jobs.get(route.request().url().split('/').pop()!);
+    if (!job) return route.continue();
+    const done = Date.now() >= job.readyAt;
+    await route.fulfill({ json: { ok: true, status: done ? 'success' : 'running', progressLog: ['Thinking…'], error: '', result: done ? job.result : null } });
   });
   return seen;
+}
+
+/** Answer /api/agent/run with a fixed proposal built from the project's current files. */
+async function stubAgent(page: Page, propose: (body: any) => { path: string; original: string; content: string }[], seen: Seen[] = [], delayMs = 0) {
+  return stubAiJob(page, '/api/agent/run', (body) => {
+    const patches = propose(body).map((p) => ({ ...p, diff: createTwoFilesPatch(p.path, p.path, p.original, p.content, 'current', 'suggested') }));
+    return { ok: true, reply: 'Done.', suggestion: '', patches };
+  }, seen, delayMs);
 }
 
 async function openEditor(page: Page, session: Session, projectId: string) {
@@ -256,7 +274,7 @@ test('Up arrow in an empty bar recalls the previous requests', async ({ page }) 
   const session = await newAccount('ai');
   const id = await newProject(session, 'Paper', { 'main.tex': doc('Hello.') });
   await openEditor(page, session, id);
-  await page.route('**/api/agent/run', (route) => route.fulfill({ json: { ok: true, reply: `Nothing to change for ${route.request().postDataJSON().prompt}.`, suggestion: '', patches: [] } }));
+  await stubAiJob(page, '/api/agent/run', (body) => ({ ok: true, reply: `Nothing to change for ${body.prompt}.`, suggestion: '', patches: [] }));
   await ask(page, 'first request');
   await expect(bar(page)).toContainText('Nothing to change for first request.');
   await barInput(page).fill('second request');
@@ -274,4 +292,51 @@ test('Up arrow in an empty bar recalls the previous requests', async ({ page }) 
   await expect(barInput(page)).toHaveValue('second request');
   await barInput(page).press('ArrowDown');
   await expect(barInput(page)).toHaveValue('');
+});
+
+test('the request does not wait for the answer: it returns a job at once and the answer arrives by polling', async ({ page }) => {
+  const session = await newAccount('ai');
+  const original = doc('Hello.');
+  const id = await newProject(session, 'Paper', { 'main.tex': original });
+  await openEditor(page, session, id);
+  const seen = await stubAgent(page, () => [{ path: 'main.tex', original, content: original.replace('Hello.', 'Hello, world.') }], [], 2500);
+  const polls: string[] = [];
+  page.on('request', (r) => { if (/\/api\/jobs\/[0-9a-f-]+$/.test(r.url())) polls.push(r.url()); });
+  await ask(page, 'extend');
+  await expect(bar(page)).toContainText('Thinking…'); // progress comes from the job
+  await expect(page.getByText('Diff Preview (1)')).toBeVisible();
+  expect(seen[0].body.async).toBe(true);
+  expect(polls.length).toBeGreaterThan(1);
+  expect(new Set(polls).size).toBe(1); // always the job the editor chose
+});
+
+test('against the real API the request answers with a queued job and the outcome arrives by polling', async ({ page }) => {
+  const session = await newAccount('ai');
+  const id = await newProject(session, 'Paper', { 'main.tex': doc('Hello.') });
+  await page.addInitScript(() => {
+    // the worker refuses this endpoint (SSRF guard) once the job runs, so the outcome is a failure that only the job reports
+    localStorage.setItem('openprism-settings-v1', JSON.stringify({ llmEndpoint: 'http://127.0.0.1:9/v1', llmApiKey: 'sk-unused', llmModel: 'm' }));
+  });
+  await openEditor(page, session, id);
+  const started = page.waitForResponse((r) => r.url().endsWith('/api/agent/run'));
+  await ask(page, 'extend');
+  const first = await (await started).json() as { ok: boolean; jobId?: string; status?: string };
+  expect(first).toMatchObject({ ok: true, status: 'queued' }); // a blocking endpoint never answers before the job ran
+  const finished = await page.waitForResponse(async (r) => r.url().endsWith(`/api/jobs/${first.jobId}`)
+    && ['success', 'failed'].includes(((await r.json()) as { status: string }).status));
+  expect(((await finished.json()) as { status: string }).status).toBe('failed');
+  await expect(bar(page)).toContainText(/not allowed|failed/i);
+  await expect(bar(page).getByRole('button', { name: 'Send' })).toBeEnabled();
+});
+
+test('the Assistant panel gets its reply by polling the job too', async ({ page }) => {
+  const session = await newAccount('ai');
+  const id = await newProject(session, 'Paper', { 'main.tex': doc('Hello.') });
+  await openEditor(page, session, id);
+  const seen = await stubAiJob(page, '/api/agent/run', () => ({ ok: true, reply: 'A reply from the job.', suggestion: '' }), [], 1500);
+  await page.getByRole('button', { name: 'Assistant' }).first().click();
+  await page.locator('.chat-input').fill('explain this');
+  await page.locator('.chat-input + button').click();
+  await expect(page.getByText('A reply from the job.')).toBeVisible();
+  expect(seen[0].body.async).toBe(true);
 });

@@ -301,20 +301,71 @@ export function runAgent(payload: {
     /** The editor's current text, which may be newer than the saved file. */
     content?: string;
   };
-}, signal?: AbortSignal) {
-  return request<{ ok: boolean; error?: string; reply: string; suggestion: string; patches?: { path: string; diff: string; content: string; original?: string }[] }>(`/api/agent/run`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-    signal
+}, signal?: AbortSignal, onProgress?: (line: string) => void) {
+  return runAiJob<{ ok: boolean; error?: string; reply: string; suggestion: string; patches?: { path: string; diff: string; content: string; original?: string }[] }>(
+    '/api/agent/run', payload, { signal, onProgress }
+  );
+}
+
+const AI_POLL_FAST_MS = 1000;
+const AI_POLL_SLOW_MS = 2000;
+const AI_POLL_SLOW_AFTER_MS = 30_000;
+const AI_POLL_TIMEOUT_MS = 15 * 60 * 1000;
+
+function abortError() {
+  return new DOMException('The request was aborted.', 'AbortError');
+}
+
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError());
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', stop); resolve(); }, ms);
+    const stop = () => { clearTimeout(timer); reject(abortError()); };
+    signal?.addEventListener('abort', stop, { once: true });
   });
 }
 
-/** Progress lines of a running job (the in-place AI edit shows the latest). */
-export function jobProgress(jobId: string) {
-  return request<{ status: string; progressLog: string[] }>(`/api/jobs/${jobId}`);
+/**
+ * Start an AI job and wait for its answer without holding a request open: the endpoint answers `{jobId}` at once
+ * (`async: true`) and this polls GET /api/jobs/:id, resolving to the body the endpoint used to return. A reply without
+ * a jobId (a validation error) is returned as is. Aborting `signal` stops polling (and rejects with an AbortError);
+ * stopping the worker is the caller's `cancelJob`.
+ */
+export async function runAiJob<T>(
+  url: string,
+  body: Record<string, unknown> | FormData,
+  opts: { signal?: AbortSignal; onProgress?: (line: string) => void } = {}
+): Promise<T> {
+  const { signal, onProgress } = opts;
+  let first: { jobId?: string };
+  if (body instanceof FormData) {
+    body.set('async', 'true');
+    const res = await apiFetch(`${API_BASE}${url}`, { method: 'POST', body, signal });
+    if (!res.ok) throw new Error(await errorMessage(res));
+    first = await res.json();
+  } else {
+    first = await request<{ jobId?: string }>(url, { method: 'POST', body: JSON.stringify({ ...body, async: true }), signal });
+  }
+  if (!first.jobId) return first as T;
+  const started = Date.now();
+  let reported = 0;
+  for (;;) {
+    await sleep(Date.now() - started > AI_POLL_SLOW_AFTER_MS ? AI_POLL_SLOW_MS : AI_POLL_FAST_MS, signal);
+    const job = await request<{ status: string; progressLog: string[]; error: string; result?: T | null }>(
+      `/api/jobs/${first.jobId}`, { signal }
+    );
+    if (onProgress && job.progressLog.length > reported) {
+      reported = job.progressLog.length;
+      onProgress(job.progressLog[reported - 1]);
+    }
+    if (job.status === 'success' || job.status === 'failed') {
+      return (job.result ?? { ok: false, error: job.error || 'AI job failed.' }) as T;
+    }
+    if (Date.now() - started > AI_POLL_TIMEOUT_MS) return { ok: false, error: 'Timed out waiting for the AI job.' } as T;
+  }
 }
 
-/** Stop a running AI job: the waiting request returns and the worker stops before its next step. */
+/** Stop a running AI job: polling sees it failed (`cancelled`) and the worker stops before its next step. */
 export function cancelJob(jobId: string) {
   return request<{ ok: boolean; status: string }>(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
 }
@@ -458,13 +509,7 @@ export function plotFromTable(payload: {
   retries?: number;
   llmConfig?: Partial<LLMConfig>;
 }) {
-  return request<{ ok: boolean; assetPath?: string; error?: string }>(
-    '/api/plot/from-table',
-    {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    }
-  );
+  return runAiJob<{ ok: boolean; assetPath?: string; error?: string }>('/api/plot/from-table', payload);
 }
 
 export function callLLM(payload: {
@@ -474,10 +519,7 @@ export function callLLM(payload: {
   projectId?: string;
   llmConfig?: Partial<LLMConfig>;
 }) {
-  return request<{ ok: boolean; content?: string; error?: string }>('/api/llm', {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  });
+  return runAiJob<{ ok: boolean; content?: string; error?: string }>('/api/llm', payload);
 }
 
 export async function importZip(payload: { file: File; projectName?: string; workspaceId?: string }) {
@@ -552,14 +594,7 @@ export async function visionToLatex(payload: {
   if (payload.llmConfig) {
     form.append('llmConfig', JSON.stringify(payload.llmConfig));
   }
-  const res = await apiFetch('/api/vision/latex', {
-    method: 'POST',
-    body: form,
-  });
-  if (!res.ok) {
-    throw new Error(await errorMessage(res));
-  }
-  return res.json() as Promise<{ ok: boolean; latex?: string; assetPath?: string; error?: string }>;
+  return runAiJob<{ ok: boolean; latex?: string; assetPath?: string; error?: string }>('/api/vision/latex', form);
 }
 
 // ─── Transfer Agent API ───

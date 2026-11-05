@@ -449,6 +449,52 @@ class AiApiTests(ApiBase):
         status = self.c.get(f'/api/jobs/{job.id}').data
         self.assertEqual((status['status'], status['result']), ('success', {'ok': True, 'content': 'late'}))
 
+    def poll(self, job_id):
+        return self.c.get(f'/api/jobs/{job_id}').data
+
+    def test_async_requests_answer_at_once_and_the_job_serves_the_body(self):
+        fake = self.fake({'content': 'hello'}, {'content': 'agent says'})
+        with mock.patch('ai.views.run_ai_job.delay') as delay, override_settings(AI_WAIT_SECONDS=30):
+            llm_res = self.c.post('/api/llm', {'messages': [], 'llmConfig': self.cfg(fake), 'async': True}, format='json').data
+            agent_res = self.c.post('/api/agent/run', {'prompt': 'hi', 'interaction': 'chat', 'async': True,
+                                                       'llmConfig': self.cfg(fake)}, format='json').data
+        for res in (llm_res, agent_res):  # no waiting: the jobs have not even started
+            self.assertEqual((res['ok'], res['status']), (True, 'queued'))
+            self.assertEqual(self.poll(res['jobId'])['status'], 'queued')
+        self.assertEqual(delay.call_count, 2)
+        for call in delay.call_args_list:
+            ai_tasks.run_ai_job.run(*call.args)
+        self.assertEqual(self.poll(llm_res['jobId'])['result'], {'ok': True, 'content': 'hello'})
+        self.assertEqual(self.poll(agent_res['jobId'])['result'], {'ok': True, 'reply': 'agent says', 'suggestion': ''})
+        self.assert_key_not_persisted()
+
+    def test_async_failures_come_back_through_the_job(self):
+        fake = self.fake((500, 'upstream down'))
+        res = self.c.post('/api/llm', {'messages': [], 'llmConfig': self.cfg(fake), 'async': True}, format='json').data
+        status = self.poll(res['jobId'])
+        self.assertEqual((status['status'], status['result']), ('failed', {'ok': False, 'error': 'upstream down'}))
+
+    def test_async_multipart_vision_and_plot(self):
+        pid = self.new_project()
+        fake = self.fake({'content': 'x^2'})
+        res = self.c.post('/api/vision/latex', {'image': SimpleUploadedFile('eq.png', b'\x89PNGdata', content_type='image/png'),
+                                                'projectId': pid, 'mode': 'equation', 'async': 'true',
+                                                'llmConfig': json.dumps(self.cfg(fake))}, format='multipart').data
+        self.assertEqual(set(res), {'ok', 'jobId', 'status'})
+        self.assertEqual(self.poll(res['jobId'])['result']['latex'], 'x^2')
+        with mock.patch('ai.views.run_ai_job.delay'):
+            res = self.c.post('/api/plot/from-table', {'projectId': pid, 'tableLatex': 'a & b \\\\', 'async': True,
+                                                       'llmConfig': self.cfg(fake)}, format='json').data
+        self.assertEqual(Job.objects.get(pk=res['jobId']).type, 'plot')
+
+    def test_async_validation_errors_stay_synchronous(self):
+        pid = self.new_project()
+        self.assertEqual(self.c.post('/api/plot/from-table', {'projectId': pid, 'async': True}, format='json').data,
+                         {'ok': False, 'error': 'Missing tableLatex.'})
+        self.assertEqual(self.c.post('/api/vision/latex', {'async': 'true'}, format='multipart').data,
+                         {'ok': False, 'error': 'Missing image.'})
+        self.assertFalse(Job.objects.exists())
+
     @mock.patch('ai.arxiv.httpx.get')
     def test_arxiv_endpoints(self, get):
         get.return_value = mock.Mock(status_code=200, text=ATOM)
