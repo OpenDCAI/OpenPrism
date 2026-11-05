@@ -141,3 +141,6 @@
       endpoint without a key had the operator's LLM key (and MinerU token) sent to that endpoint.
 - [x] #49 **Credential audit log.** Who set, replaced, changed or removed a workspace AI provider or a Zotero key, and
       when; shown as Key history to workspace admins and, for one's own keys, on the Account page.
+- [x] #50 **Users' AI keys on the server.** LLM, search, vision and MinerU keys are saved encrypted on the server
+      (last four shown, never returned; a new endpoint needs the key again) instead of in plain-text localStorage;
+      requests name a profile; keys left by older builds move to the server once and leave the browser.
