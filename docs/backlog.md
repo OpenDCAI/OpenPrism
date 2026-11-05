@@ -75,6 +75,11 @@ v0.1.0.
 
 - [ ] **The arXiv import stream holds a web thread for up to 16 minutes** (`import_arxiv_sse` relays the job's progress
       over SSE). Move it to the same job polling as the AI endpoints.
+- [ ] **Template ZIP upload and project ZIP import still pass through the API** (direct uploads cover project files
+      only).
+- [ ] **The dev clock steps make every page load's cookie refresh a chance to be refused** (`iat` in the future); the
+      client retries once after 1.5 s. Fixing the clock (or a deliberate leeway decision) would remove the retry. See
+      the v0.0.10 flaky-401 item.
 - [ ] **AI usage counts requests, not tokens.** Record the providers' reported `usage` per job for spend accounting.
 
 ## v0.0.9 - Collaboration Enhancements

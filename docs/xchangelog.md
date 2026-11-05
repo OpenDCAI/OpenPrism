@@ -150,3 +150,6 @@
 - [x] #52 **Session cookie.** The refresh token is an httpOnly, SameSite=Strict cookie (refresh and logout need a
       custom header and a trusted Origin) and the access token lives in memory; tabs take turns refreshing and share
       tokens and sign-outs; older builds' stored tokens move into the cookie once.
+- [x] #53 **Direct uploads.** Binary project files go from the browser straight to object storage with presigned
+      PUT URLs (size checked before they join the project; abandoned uploads cleaned up); text files still go through
+      the API. Bucket CORS is set by `garage-init.sh`.
