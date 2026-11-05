@@ -558,8 +558,7 @@ class ArxivImportTests(ApiBase):
         self.addCleanup(patcher.stop)
 
     def events(self, query, stream):
-        from rest_framework_simplejwt.tokens import RefreshToken
-        token = str(RefreshToken.for_user(self.user).access_token)
+        token = self.c.post('/api/url-token', {'scope': 'import'}, format='json').data['token']
         with mock.patch('projects.arxiv_import.httpx.stream', return_value=stream) as m:
             res = self.c.__class__().get('/api/projects/import-arxiv-sse', {**query, 'token': token})
             body = b''.join(res.streaming_content).decode()

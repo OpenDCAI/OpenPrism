@@ -18,7 +18,7 @@ import type {
 } from '../api/client';
 import { Badge, Button, Icon, SegmentedControl, Select } from '@design';
 import type { BadgeTone, SelectOption } from '@design';
-import { dropLegacyLlmDefaults } from './llmDefaults';
+import AiKeysForm from './AiKeysForm';
 import { renderPdfPages } from './pageImages';
 
 interface TransferPanelProps {
@@ -47,43 +47,6 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
   const [targetTemplateId, setTargetTemplateId] = useState('');
   const [engine, setEngine] = useState('pdflatex');
   const [layoutCheck, setLayoutCheck] = useState(false);
-
-  // LLM config — read from shared localStorage (set via ProjectPage / EditorPage settings)
-  const SETTINGS_KEY = 'openprism-settings-v1';
-  const readLLMFromStorage = (): { llmEndpoint: string; llmApiKey: string; llmModel: string } => {
-    try {
-      const raw = window.localStorage.getItem(SETTINGS_KEY);
-      if (!raw) return { llmEndpoint: '', llmApiKey: '', llmModel: '' };
-      const p = JSON.parse(raw);
-      return dropLegacyLlmDefaults({ llmEndpoint: p.llmEndpoint || '', llmApiKey: p.llmApiKey || '', llmModel: p.llmModel || '' });
-    } catch { return { llmEndpoint: '', llmApiKey: '', llmModel: '' }; }
-  };
-
-  const readMineruConfigFromStorage = (): { mineruApiBase: string; mineruToken: string } => {
-    try {
-      const raw = window.localStorage.getItem(SETTINGS_KEY);
-      if (!raw) return { mineruApiBase: '', mineruToken: '' };
-      const p = JSON.parse(raw);
-      return {
-        mineruApiBase: p.mineruApiBase || '',
-        mineruToken: p.mineruToken || '',
-      };
-    } catch { return { mineruApiBase: '', mineruToken: '' }; }
-  };
-
-  const saveMineruConfigToStorage = (apiBase: string, token: string) => {
-    try {
-      const raw = window.localStorage.getItem(SETTINGS_KEY);
-      const p = raw ? JSON.parse(raw) : {};
-      p.mineruApiBase = apiBase;
-      p.mineruToken = token;
-      window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(p));
-    } catch { /* ignore */ }
-  };
-
-  // MinerU API config — initialized from localStorage
-  const [mineruApiBase, setMineruApiBase] = useState(() => readMineruConfigFromStorage().mineruApiBase);
-  const [mineruToken, setMineruToken] = useState(() => readMineruConfigFromStorage().mineruToken);
 
   // Job state
   const [jobId, setJobId] = useState('');
@@ -130,15 +93,8 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
 
   const selectedTemplate = templates.find(tp => tp.id === targetTemplateId);
 
-  const buildLlmConfig = (): Partial<LLMConfig> | undefined => {
-    const { llmEndpoint, llmApiKey, llmModel } = readLLMFromStorage();
-    if (!llmEndpoint && !llmApiKey && !llmModel) return undefined;
-    return {
-      ...(llmEndpoint ? { endpoint: llmEndpoint } : {}),
-      ...(llmApiKey ? { apiKey: llmApiKey } : {}),
-      ...(llmModel ? { model: llmModel } : {}),
-    };
-  };
+  // The server holds the user's keys (AI settings): requests only say which profile to use.
+  const llmConfig: Partial<LLMConfig> = { profile: 'llm' };
 
   const handleStart = useCallback(async () => {
     if (!targetTemplateId) return;
@@ -152,15 +108,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
 
     try {
       if (transferMode === 'mineru') {
-        // MinerU mode — persist config to localStorage
-        saveMineruConfigToStorage(mineruApiBase, mineruToken);
-        const mineruConfig = (mineruApiBase || mineruToken)
-          ? {
-            ...(mineruApiBase ? { apiBase: mineruApiBase } : {}),
-            ...(mineruToken ? { token: mineruToken } : {}),
-          }
-          : undefined;
-
+        // MinerU mode: the token (and its API base) are the user's saved MinerU key, held by the server
         const res = await mineruTransferStart({
           sourceProjectId: mineruSource === 'project' ? projectId : undefined,
           sourceMainFile: mineruSource === 'project' ? sourceMainFile : undefined,
@@ -168,8 +116,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
           targetMainFile,
           engine,
           layoutCheck,
-          llmConfig: buildLlmConfig(),
-          mineruConfig,
+          llmConfig,
         });
         setJobId(res.jobId);
 
@@ -191,7 +138,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
           targetMainFile,
           engine,
           layoutCheck,
-          llmConfig: buildLlmConfig(),
+          llmConfig,
         });
         setJobId(res.jobId);
         setStatus('started');
@@ -202,7 +149,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
       setRunning(false);
       setStatus('error');
     }
-  }, [transferMode, mineruSource, uploadedPdf, targetTemplateId, sourceMainFile, projectId, engine, layoutCheck, selectedTemplate, mineruApiBase, mineruToken]);
+  }, [transferMode, mineruSource, uploadedPdf, targetTemplateId, sourceMainFile, projectId, engine, layoutCheck, selectedTemplate]);
 
   const runGraph = useCallback(async (jid: string) => {
     // eslint-disable-next-line no-constant-condition
@@ -370,32 +317,7 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
 
       {/* MinerU API config — shown only in MinerU mode */}
       {transferMode === 'mineru' && (
-        <div className="tp-grid">
-          <div className="op-field">
-            <label className="op-field-label" htmlFor="tp-mineru-api">MinerU API</label>
-            <input
-              id="tp-mineru-api"
-              type="text"
-              className="op-input"
-              placeholder="https://mineru.net/api/v4"
-              value={mineruApiBase}
-              onChange={e => setMineruApiBase(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
-          <div className="op-field">
-            <label className="op-field-label" htmlFor="tp-mineru-token">MinerU Token</label>
-            <input
-              id="tp-mineru-token"
-              type="password"
-              className="op-input"
-              placeholder={t('输入 MinerU API Token...')}
-              value={mineruToken}
-              onChange={e => setMineruToken(e.target.value)}
-              autoComplete="off"
-            />
-          </div>
-        </div>
+        <AiKeysForm profiles={['mineru']} />
       )}
 
       {/* LLM Config — managed in header settings */}

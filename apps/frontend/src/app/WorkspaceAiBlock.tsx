@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getWorkspaceLlm, removeWorkspaceLlm, saveWorkspaceLlm } from '../api/client';
+import { getWorkspaceLlm, removeWorkspaceLlm, saveWorkspaceLlm, workspaceCredentialEvents } from '../api/client';
 import type { WorkspaceLlmStatus } from '../api/client';
 import { Button, FieldError } from '@design';
+import CredentialHistory from './CredentialHistory';
 
 interface Props {
   workspaceId: string;
@@ -18,15 +19,19 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
   const [endpoint, setEndpoint] = useState('');
   const [model, setModel] = useState('');
   const [apiKey, setApiKey] = useState('');
+  const [dailyLimit, setDailyLimit] = useState('');
   const [replacing, setReplacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+
+  const loadEvents = useCallback((before?: string) => workspaceCredentialEvents(workspaceId, before), [workspaceId]);
 
   const apply = useCallback((s: WorkspaceLlmStatus) => {
     setStatus(s);
     setEndpoint(s.endpoint || '');
     setModel(s.model || '');
     setApiKey('');
+    setDailyLimit(s.dailyLimit ? String(s.dailyLimit) : '');
     setReplacing(false);
   }, []);
 
@@ -45,10 +50,17 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
 
   const onSave = async (e: FormEvent) => {
     e.preventDefault();
+    const limit = dailyLimit.trim();
+    if (limit && !/^\d+$/.test(limit)) {
+      setError(t('The daily limit must be a whole number, or empty for no limit.'));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const res = await saveWorkspaceLlm(workspaceId, { endpoint, model, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) });
+      const res = await saveWorkspaceLlm(workspaceId, {
+        endpoint, model, ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}), ...(configured || limit ? { dailyLimit: limit ? Number(limit) : null } : {})
+      });
       if (!res.ok) {
         setError(res.error || t('Could not save the AI provider.'));
         return;
@@ -109,12 +121,23 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
             <Button variant="ghost" size="sm" type="button" onClick={() => setReplacing(true)}>{t('Replace key')}</Button>
           </div>
         )}
+      </div>
+      <div className="op-field">
+        <label className="op-field-label" htmlFor="ws-ai-limit">{t('Daily limit')}</label>
+        <input id="ws-ai-limit" className="op-input" inputMode="numeric" autoComplete="off" placeholder={t('No limit')} value={dailyLimit} onChange={(e) => setDailyLimit(e.target.value)} />
+        <span className="op-field-help">{t('AI requests per day (UTC) through this provider, for the whole workspace. Empty: no limit.')}</span>
+        {configured && status.usage && (
+          <span className="op-field-help" data-testid="ws-ai-usage">
+            {t('{{today}} requests today, {{month}} in the last 30 days', { today: status.usage.today, month: status.usage.last30Days })}
+          </span>
+        )}
         <FieldError message={error} />
       </div>
       <div className="home-block-actions">
         <Button type="submit" disabled={busy || (!configured && !apiKey.trim())}>{t('保存')}</Button>
         {configured && <Button variant="danger" type="button" onClick={onRemove} disabled={busy}>{t('Remove')}</Button>}
       </div>
+      <CredentialHistory load={loadEvents} reloadKey={status} />
     </form>
   );
 }

@@ -1,4 +1,4 @@
-import { apiFetch, clearInviteToken, clearSession, getInviteToken, getSession, setInviteToken, setSession, tokenForUrl } from './auth';
+import { apiFetch, cachedUrlToken, clearInviteToken, clearSession, ensureUrlToken, getInviteToken, getSession, setInviteToken, setSession } from './auth';
 
 export interface ProjectMeta {
   id: string;
@@ -26,6 +26,8 @@ export interface LLMConfig {
   endpoint: string;
   apiKey: string;
   model: string;
+  /** the UI sends only this: which of the user's saved keys to use (the server holds them) */
+  profile: 'llm' | 'search' | 'vision';
 }
 
 export interface TemplateMeta {
@@ -215,21 +217,70 @@ export function updateFileOrder(id: string, folder: string, order: string[]) {
   });
 }
 
-export async function uploadFiles(projectId: string, files: File[], basePath?: string) {
+type UploadPlan = { path: string; direct: false } | { path: string; direct: true; uploadId: string; url: string; headers: Record<string, string> };
+
+function relativePath(file: File, basePath?: string) {
+  const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
+  return basePath ? `${basePath}/${rel}` : rel;
+}
+
+/** PUT one file to its presigned URL (S3), reporting bytes sent. */
+function putToStorage(url: string, headers: Record<string, string>, file: File, onBytes?: (sent: number) => void) {
+  return new Promise<void>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', url);
+    Object.entries(headers).forEach(([k, v]) => xhr.setRequestHeader(k, v));
+    xhr.upload.onprogress = (e) => onBytes?.(e.loaded);
+    xhr.onload = () => (xhr.status >= 200 && xhr.status < 300 ? resolve() : reject(new Error(`Upload of ${file.name} failed (${xhr.status})`)));
+    xhr.onerror = () => reject(new Error(`Upload of ${file.name} failed`));
+    xhr.send(file);
+  });
+}
+
+/** The multipart upload through the API: text files always, and everything when direct uploads are off. */
+async function uploadThroughApi(projectId: string, entries: { file: File; path: string }[]) {
   const form = new FormData();
-  files.forEach((file) => {
-    const rel = (file as File & { webkitRelativePath?: string }).webkitRelativePath || file.name;
-    const finalPath = basePath ? `${basePath}/${rel}` : rel;
-    form.append('files', file, finalPath);
-  });
-  const res = await apiFetch(`/api/projects/${projectId}/upload`, {
-    method: 'POST',
-    body: form,
-  });
-  if (!res.ok) {
-    throw new Error(await errorMessage(res));
+  entries.forEach(({ file, path }) => form.append('files', file, path));
+  const res = await apiFetch(`/api/projects/${projectId}/upload`, { method: 'POST', body: form });
+  if (!res.ok) throw new Error(await errorMessage(res));
+  return res.json() as Promise<{ ok: boolean; files?: string[]; error?: string }>;
+}
+
+/**
+ * Upload files (keeping folder-relative paths). Binary files go straight to object storage with presigned URLs when
+ * the server offers them (S3_DIRECT_UPLOADS), so their bytes never pass through the API; text files, and everything
+ * when direct uploads are off, use the multipart endpoint.
+ */
+export async function uploadFiles(projectId: string, files: File[], basePath?: string, onProgress?: (fraction: number) => void) {
+  const entries = files.map((file) => ({ file, path: relativePath(file, basePath) }));
+  const start = await request<{ ok: boolean; direct?: boolean; files?: UploadPlan[]; error?: string }>(
+    `/api/projects/${projectId}/uploads`,
+    { method: 'POST', body: JSON.stringify({ files: entries.map(({ file, path }) => ({ path, size: file.size, contentType: file.type || 'application/octet-stream' })) }) }
+  );
+  if (!start.ok) throw new Error(start.error || 'Upload failed.');
+  if (!start.direct || !start.files) return uploadThroughApi(projectId, entries);
+  const plans = new Map(start.files.map((p) => [p.path, p]));
+  const viaApi = entries.filter((e) => !plans.get(e.path)?.direct);
+  const direct = entries.filter((e) => plans.get(e.path)?.direct);
+  const total = direct.reduce((n, e) => n + e.file.size, 0) || 1;
+  const sent = new Map<string, number>();
+  const report = () => onProgress?.([...sent.values()].reduce((a, b) => a + b, 0) / total);
+  const saved: string[] = [];
+  if (viaApi.length) saved.push(...((await uploadThroughApi(projectId, viaApi)).files || []));
+  const uploaded: string[] = [];
+  for (const { file, path } of direct) {
+    const plan = plans.get(path) as Extract<UploadPlan, { direct: true }>;
+    await putToStorage(plan.url, plan.headers, file, (n) => { sent.set(path, n); report(); });
+    uploaded.push(plan.uploadId);
   }
-  return res.json() as Promise<{ ok: boolean; files?: string[] }>;
+  if (uploaded.length) {
+    const done = await request<{ ok: boolean; files: string[]; failed: { path: string; error: string }[] }>(
+      `/api/projects/${projectId}/uploads/complete`, { method: 'POST', body: JSON.stringify({ uploadIds: uploaded }) }
+    );
+    saved.push(...done.files);
+    if (done.failed.length) throw new Error(done.failed.map((f) => `${f.path}: ${f.error}`).join('; '));
+  }
+  return { ok: true, files: saved };
 }
 
 export type InviteRole = 'editor' | 'commenter' | 'viewer';
@@ -260,8 +311,10 @@ export async function revokeCollabInvite(id: string, inviteId: string) {
 }
 
 export function resolveCollabToken(token: string) {
-  const qs = new URLSearchParams({ token }).toString();
-  return request<{ ok: boolean; projectId: string; projectName: string; role: string }>(`/api/collab/resolve?${qs}`);
+  return request<{ ok: boolean; projectId: string; projectName: string; role: string }>('/api/collab/resolve', {
+    method: 'POST',
+    body: JSON.stringify({ token })
+  });
 }
 
 export function flushCollabFile(id: string, filePath: string) {
@@ -301,20 +354,71 @@ export function runAgent(payload: {
     /** The editor's current text, which may be newer than the saved file. */
     content?: string;
   };
-}, signal?: AbortSignal) {
-  return request<{ ok: boolean; error?: string; reply: string; suggestion: string; patches?: { path: string; diff: string; content: string; original?: string }[] }>(`/api/agent/run`, {
-    method: 'POST',
-    body: JSON.stringify(payload),
-    signal
+}, signal?: AbortSignal, onProgress?: (line: string) => void) {
+  return runAiJob<{ ok: boolean; error?: string; reply: string; suggestion: string; patches?: { path: string; diff: string; content: string; original?: string }[] }>(
+    '/api/agent/run', payload, { signal, onProgress }
+  );
+}
+
+const AI_POLL_FAST_MS = 1000;
+const AI_POLL_SLOW_MS = 2000;
+const AI_POLL_SLOW_AFTER_MS = 30_000;
+const AI_POLL_TIMEOUT_MS = 15 * 60 * 1000;
+
+function abortError() {
+  return new DOMException('The request was aborted.', 'AbortError');
+}
+
+function sleep(ms: number, signal?: AbortSignal) {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) return reject(abortError());
+    const timer = setTimeout(() => { signal?.removeEventListener('abort', stop); resolve(); }, ms);
+    const stop = () => { clearTimeout(timer); reject(abortError()); };
+    signal?.addEventListener('abort', stop, { once: true });
   });
 }
 
-/** Progress lines of a running job (the in-place AI edit shows the latest). */
-export function jobProgress(jobId: string) {
-  return request<{ status: string; progressLog: string[] }>(`/api/jobs/${jobId}`);
+/**
+ * Start an AI job and wait for its answer without holding a request open: the endpoint answers `{jobId}` at once
+ * (`async: true`) and this polls GET /api/jobs/:id, resolving to the body the endpoint used to return. A reply without
+ * a jobId (a validation error) is returned as is. Aborting `signal` stops polling (and rejects with an AbortError);
+ * stopping the worker is the caller's `cancelJob`.
+ */
+export async function runAiJob<T>(
+  url: string,
+  body: Record<string, unknown> | FormData,
+  opts: { signal?: AbortSignal; onProgress?: (line: string) => void } = {}
+): Promise<T> {
+  const { signal, onProgress } = opts;
+  let first: { jobId?: string };
+  if (body instanceof FormData) {
+    body.set('async', 'true');
+    const res = await apiFetch(`${API_BASE}${url}`, { method: 'POST', body, signal });
+    if (!res.ok) throw new Error(await errorMessage(res));
+    first = await res.json();
+  } else {
+    first = await request<{ jobId?: string }>(url, { method: 'POST', body: JSON.stringify({ ...body, async: true }), signal });
+  }
+  if (!first.jobId) return first as T;
+  const started = Date.now();
+  let reported = 0;
+  for (;;) {
+    await sleep(Date.now() - started > AI_POLL_SLOW_AFTER_MS ? AI_POLL_SLOW_MS : AI_POLL_FAST_MS, signal);
+    const job = await request<{ status: string; progressLog: string[]; error: string; result?: T | null }>(
+      `/api/jobs/${first.jobId}`, { signal }
+    );
+    if (onProgress && job.progressLog.length > reported) {
+      reported = job.progressLog.length;
+      onProgress(job.progressLog[reported - 1]);
+    }
+    if (job.status === 'success' || job.status === 'failed') {
+      return (job.result ?? { ok: false, error: job.error || 'AI job failed.' }) as T;
+    }
+    if (Date.now() - started > AI_POLL_TIMEOUT_MS) return { ok: false, error: 'Timed out waiting for the AI job.' } as T;
+  }
 }
 
-/** Stop a running AI job: the waiting request returns and the worker stops before its next step. */
+/** Stop a running AI job: polling sees it failed (`cancelled`) and the worker stops before its next step. */
 export function cancelJob(jobId: string) {
   return request<{ ok: boolean; status: string }>(`/api/jobs/${jobId}/cancel`, { method: 'POST' });
 }
@@ -458,13 +562,7 @@ export function plotFromTable(payload: {
   retries?: number;
   llmConfig?: Partial<LLMConfig>;
 }) {
-  return request<{ ok: boolean; assetPath?: string; error?: string }>(
-    '/api/plot/from-table',
-    {
-      method: 'POST',
-      body: JSON.stringify(payload)
-    }
-  );
+  return runAiJob<{ ok: boolean; assetPath?: string; error?: string }>('/api/plot/from-table', payload);
 }
 
 export function callLLM(payload: {
@@ -474,10 +572,7 @@ export function callLLM(payload: {
   projectId?: string;
   llmConfig?: Partial<LLMConfig>;
 }) {
-  return request<{ ok: boolean; content?: string; error?: string }>('/api/llm', {
-    method: 'POST',
-    body: JSON.stringify(payload)
-  });
+  return runAiJob<{ ok: boolean; content?: string; error?: string }>('/api/llm', payload);
 }
 
 export async function importZip(payload: { file: File; projectName?: string; workspaceId?: string }) {
@@ -507,8 +602,8 @@ export function importArxivSSE(
     const params = new URLSearchParams({ arxivIdOrUrl: payload.arxivIdOrUrl });
     if (payload.projectName) params.set('projectName', payload.projectName);
     if (payload.workspaceId) params.set('workspaceId', payload.workspaceId);
-    const token = tokenForUrl();
-    if (token) params.set('token', token);
+    ensureUrlToken('import').then((token) => {
+    params.set('token', token);
     const es = new EventSource(`/api/projects/import-arxiv-sse?${params.toString()}`);
 
     es.addEventListener('progress', (e) => {
@@ -532,6 +627,7 @@ export function importArxivSSE(
       }
       reject(new Error('SSE connection failed'));
     });
+    }, reject);
   });
 }
 
@@ -552,14 +648,7 @@ export async function visionToLatex(payload: {
   if (payload.llmConfig) {
     form.append('llmConfig', JSON.stringify(payload.llmConfig));
   }
-  const res = await apiFetch('/api/vision/latex', {
-    method: 'POST',
-    body: form,
-  });
-  if (!res.ok) {
-    throw new Error(await errorMessage(res));
-  }
-  return res.json() as Promise<{ ok: boolean; latex?: string; assetPath?: string; error?: string }>;
+  return runAiJob<{ ok: boolean; latex?: string; assetPath?: string; error?: string }>('/api/vision/latex', form);
 }
 
 // ─── Transfer Agent API ───
@@ -660,10 +749,13 @@ export async function mineruTransferUploadPdf(jobId: string, pdfFile: File) {
   return res.json() as Promise<{ ok: boolean; pdfPath?: string }>;
 }
 
-/** URL for a project file's raw bytes, usable in <img>/<object> (they cannot send an Authorization header). */
+/**
+ * URL for a project file's raw bytes, usable in <img>/<object> (they cannot send an Authorization header). It carries
+ * the project's URL token, so call ensureUrlToken(projectId) first and re-render on subscribeUrlTokens (useUrlToken).
+ */
 export function blobUrl(projectId: string, path: string) {
   const params = new URLSearchParams({ path });
-  const token = tokenForUrl();
+  const token = cachedUrlToken(projectId);
   if (token) params.set('token', token);
   return `/api/projects/${projectId}/blob?${params.toString()}`;
 }
@@ -688,14 +780,14 @@ async function authCall<T>(url: string, body: unknown): Promise<T> {
 }
 
 export async function login(email: string, password: string): Promise<Account> {
-  const tokens = await authCall<{ access: string; refresh: string }>('/api/auth/login', { email, password });
-  setSession(tokens);
+  const tokens = await authCall<{ access: string }>('/api/auth/login', { email, password }); // the refresh token: a cookie
+  setSession({ access: tokens.access });
   return fetchMe();
 }
 
 export async function register(email: string, password: string, name?: string): Promise<Account> {
-  const res = await authCall<{ access: string; refresh: string; user: Account }>('/api/auth/register', { email, password, name });
-  setSession({ access: res.access, refresh: res.refresh });
+  const res = await authCall<{ access: string; user: Account }>('/api/auth/register', { email, password, name });
+  setSession({ access: res.access });
   return res.user;
 }
 
@@ -729,8 +821,8 @@ export async function resetPassword(uid: string, token: string, password: string
 
 /** Change the password while signed in. Other browsers are signed out; this one gets fresh tokens. */
 export async function changePassword(current: string, password: string) {
-  const res = await request<{ access: string; refresh: string }>('/api/auth/password/change', { method: 'POST', body: JSON.stringify({ current, password }) });
-  setSession({ access: res.access, refresh: res.refresh });
+  const res = await request<{ access: string }>('/api/auth/password/change', { method: 'POST', body: JSON.stringify({ current, password }) });
+  setSession({ access: res.access });
 }
 
 export type DeleteAccountResult =
@@ -752,14 +844,12 @@ export function clearLocalSession() {
 }
 
 export async function logout() {
-  const session = getSession();
-  clearSession(); // sign out locally first: it must work even if the server is unreachable
-  if (session) {
-    try {
-      await authCall('/api/auth/logout', { refresh: session.refresh });
-    } catch {
-      // the refresh token expires on its own
-    }
+  clearSession(); // sign out locally (and in the other tabs) first: it must work even if the server is unreachable
+  try {
+    // revokes the refresh cookie's token and deletes the cookie
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'same-origin', headers: { 'X-OpenPrism-Refresh': '1' } });
+  } catch {
+    // the refresh token expires on its own
   }
 }
 
@@ -889,6 +979,9 @@ export interface WorkspaceLlmStatus {
   model?: string;
   /** only for owners and admins */
   lastFour?: string;
+  /** owners and admins: AI requests per UTC day through this provider (null = no limit), and how many were made */
+  dailyLimit?: number | null;
+  usage?: { today: number; last30Days: number };
   updatedAt?: string;
   updatedBy?: string;
 }
@@ -896,7 +989,7 @@ export interface WorkspaceLlmStatus {
 export function getWorkspaceLlm(workspaceId: string) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`);
 }
-export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: string; model?: string; apiKey?: string }) {
+export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: string; model?: string; apiKey?: string; dailyLimit?: number | null }) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, {
     method: 'PUT',
     body: JSON.stringify(payload)
@@ -904,6 +997,52 @@ export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: stri
 }
 export function removeWorkspaceLlm(workspaceId: string) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, { method: 'DELETE' });
+}
+
+// ─── Your own AI keys (stored encrypted on the server) ───
+
+/** llm: assistant and agent; search and vision fall back to llm when unset; mineru: template transfer (endpoint = API base). */
+export type AiKeyProfile = 'llm' | 'search' | 'vision' | 'mineru';
+export interface AiKeyStatus { endpoint: string; model: string; lastFour: string; updatedAt: string }
+export interface AiKeys { ok: boolean; error?: string; profiles?: Record<AiKeyProfile, AiKeyStatus | null> }
+
+export function getAiKeys() {
+  return request<AiKeys>('/api/integrations/ai-keys');
+}
+/** A key is needed the first time and whenever the endpoint changes; the model can change on its own. */
+export function saveAiKey(profile: AiKeyProfile, payload: { endpoint?: string; model?: string; apiKey?: string }) {
+  return request<AiKeys>(`/api/integrations/ai-keys/${profile}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+export function removeAiKey(profile: AiKeyProfile) {
+  return request<AiKeys>(`/api/integrations/ai-keys/${profile}`, { method: 'DELETE' });
+}
+
+// ─── Credential history ───
+
+export interface CredentialEvent {
+  id: string;
+  createdAt: string;
+  kind: 'workspace_llm' | 'zotero' | 'user_llm' | 'user_mineru';
+  action: 'set' | 'rotated' | 'updated' | 'removed';
+  /** the key's last four characters after the change ('' when removed) */
+  lastFour: string;
+  /** non-secret fields that changed, e.g. {model: 'gpt-4o'} or {profile: 'search'} */
+  detail: Record<string, unknown>;
+  actor: { id: string; name: string } | null;
+  /** kept when the account that made the change is gone */
+  actorName: string;
+}
+export interface CredentialEventPage { ok: boolean; events: CredentialEvent[]; hasMore: boolean }
+
+/** Who set, rotated, changed or removed the workspace's AI provider (owners and admins). */
+export function workspaceCredentialEvents(workspaceId: string, before?: string) {
+  const q = before ? `?before=${encodeURIComponent(before)}` : '';
+  return request<CredentialEventPage>(`/api/workspaces/${encodeURIComponent(workspaceId)}/credential-events${q}`);
+}
+/** The signed-in user's own credential history (Zotero, their AI keys). */
+export function myCredentialEvents(before?: string) {
+  const q = before ? `?before=${encodeURIComponent(before)}` : '';
+  return request<CredentialEventPage>(`/api/integrations/credential-events${q}`);
 }
 
 // ─── Version history ───
@@ -949,7 +1088,7 @@ export function listVersions(projectId: string, opts: { limit?: number; before?:
 export function getVersion(projectId: string, versionId: string) {
   return request<{ ok: boolean; version: ProjectVersionDetail }>(`${versionsBase(projectId)}/${encodeURIComponent(versionId)}`);
 }
-/** A text file as it was in a version. Binaries are fetched with `versionFileUrl`. */
+/** A text file as it was in a version. */
 export function getVersionFile(projectId: string, versionId: string, path: string) {
   const params = new URLSearchParams({ path });
   return request<{ ok: boolean; kind: 'text'; path: string; content: string }>(
@@ -973,18 +1112,6 @@ export async function fetchVersionPdf(projectId: string, versionId: string): Pro
   if (!res.ok) throw new Error(await errorMessage(res));
   return res.blob();
 }
-/** URLs for <object>/<img>, which cannot send an Authorization header. */
-export function versionPdfUrl(projectId: string, versionId: string) {
-  const token = tokenForUrl();
-  return `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/pdf${token ? `?token=${encodeURIComponent(token)}` : ''}`;
-}
-export function versionFileUrl(projectId: string, versionId: string, path: string) {
-  const params = new URLSearchParams({ path });
-  const token = tokenForUrl();
-  if (token) params.set('token', token);
-  return `${versionsBase(projectId)}/${encodeURIComponent(versionId)}/file?${params.toString()}`;
-}
-
 /** Name a version (pins it) or clear its name with ''. Needs write access. */
 export function renameVersion(projectId: string, versionId: string, name: string) {
   return request<{ ok: boolean; error?: string; version?: ProjectVersionDetail }>(

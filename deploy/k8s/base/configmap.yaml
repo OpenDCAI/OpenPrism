@@ -14,12 +14,17 @@ data:
   S3_PUBLIC_ENDPOINT_URL: "http://garage:3900"
   S3_REGION: "garage"
   S3_BUCKET: "openprism"
+  S3_DIRECT_UPLOADS: "0"                               # 1 once S3_PUBLIC_ENDPOINT_URL is browser-reachable with bucket CORS (v0.1.0)
   LLM_ALLOW_PRIVATE_ENDPOINTS: "0"                    # keep 0: user-supplied LLM/MinerU URLs must be public
   OPENPRISM_MINERU_API_BASE: "https://mineru.net/api/v4"
   OPENPRISM_COLLAB_FLUSH_DEBOUNCE_MS: "800"
   OPENPRISM_COLLAB_TOKEN_TTL: "86400"
   COMPILE_TIMEOUT_SECONDS: "120"
   AI_WAIT_SECONDS: "300"
+  AI_RATE_PER_MINUTE: "30"                           # per user: llm, agent, vision, plot, transfer, arXiv import
+  COMPILE_RATE_PER_MINUTE: "30"
+  SERVER_LLM_KEY_USERS: "verified"                   # who may spend the operator's OPENPRISM_LLM_* key: all|verified|staff|none
+  SERVER_LLM_DAILY_QUOTA: "200"                      # such jobs per user per UTC day; 0 = no limit
   TEX_CACHE_DIR: "/tmp/openprism-tex-cache"
   APP_BASE_URL: "https://openprism.example.com"      # overlay: the URL people open; used for links in emails
   EMAIL_HOST: "smtp.example.com"                     # overlay: your SMTP relay (credentials go in openprism-core)

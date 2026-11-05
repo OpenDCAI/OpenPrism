@@ -155,7 +155,11 @@ REST_FRAMEWORK = {
     'DEFAULT_RENDERER_CLASSES': ['rest_framework.renderers.JSONRenderer'],
     'NUM_PROXIES': int(env('TRUSTED_PROXY_COUNT', '0')),  # reverse proxies in front of the API: rate limits key on the real client
     'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],  # only views that set throttle_scope
-    'DEFAULT_THROTTLE_RATES': {'auth': env('AUTH_RATE_LIMIT', '10000/min' if TESTING else '20/min')},
+    'DEFAULT_THROTTLE_RATES': {
+        'auth': env('AUTH_RATE_LIMIT', '10000/min' if TESTING else '20/min'),
+        # every tab refreshes on load (the access token lives in memory only); a refresh needs a valid refresh token
+        'refresh': env('AUTH_REFRESH_RATE_LIMIT', '10000/min' if TESTING else '120/min'),
+    },
     'EXCEPTION_HANDLER': 'common.exceptions.ok_error_handler',
 }
 
@@ -166,6 +170,13 @@ SIMPLE_JWT = {
     'ROTATE_REFRESH_TOKENS': True,       # each refresh issues a new refresh token…
     'BLACKLIST_AFTER_ROTATION': True,    # …and revokes the old one, so a stolen refresh token has a short life
 }
+
+# The refresh token lives in this httpOnly cookie (accounts/cookies.py); the access token only in the page's memory.
+REFRESH_COOKIE_NAME = 'openprism_refresh'
+REFRESH_COOKIE_SECURE = env_bool('REFRESH_COOKIE_SECURE', not DEBUG)  # browsers accept Secure cookies on http://localhost too
+# Origins whose pages may use the refresh cookie (an Origin header must be one of these): APP_BASE_URL and any extra
+# origins people open the app at (comma-separated), e.g. the nginx image on :8080 next to Vite on :5173 in dev.
+TRUSTED_ORIGINS = sorted({APP_BASE_URL, *(o.strip().rstrip('/') for o in env('TRUSTED_ORIGINS', '').split(',') if o.strip())})
 
 REDIS_URL = env('REDIS_URL', 'redis://localhost:6379/0')
 # Shared across replicas so rate limits (login attempts) are enforced per user, not per process.
@@ -188,17 +199,25 @@ CELERY_TASK_ROUTES = {
     'collab.tasks.*': {'queue': 'import'},
     'versions.tasks.*': {'queue': 'import'},
     'accounts.tasks.*': {'queue': 'import'},  # outgoing mail
+    'integrations.tasks.*': {'queue': 'import'},
 }
 CELERY_BEAT_SCHEDULE = {
     'reap-stale-jobs': {'task': 'jobs.tasks.reap_stale_jobs', 'schedule': 60.0},
     'cleanup-old-jobs': {'task': 'jobs.tasks.cleanup_old_jobs', 'schedule': 3600.0},
     'cleanup-expired-invites': {'task': 'collab.tasks.cleanup_expired_invites', 'schedule': 3600.0},
     'prune-versions': {'task': 'versions.tasks.prune_versions', 'schedule': 86400.0},
+    'prune-llm-usage': {'task': 'integrations.tasks.prune_llm_usage', 'schedule': 86400.0},
+    'cleanup-pending-uploads': {'task': 'projects.tasks.cleanup_pending_uploads', 'schedule': 900.0},
 }
 
 LLM_TIMEOUT_SECONDS = int(env('LLM_TIMEOUT_SECONDS', '180'))
 LLM_ALLOW_PRIVATE_ENDPOINTS = env_bool('LLM_ALLOW_PRIVATE_ENDPOINTS', False)  # true only for local models in dev
 AI_WAIT_SECONDS = int(env('AI_WAIT_SECONDS', '300'))  # how long an AI endpoint blocks waiting for its worker
+URL_TOKEN_SECONDS = int(env('URL_TOKEN_SECONDS', '3600'))  # lifetime of the scoped tokens in ?token= URLs
+MAX_UPLOAD_BYTES = int(env('MAX_UPLOAD_BYTES', str(200 * 1024 * 1024)))  # one uploaded file
+# Binary project files go from the browser straight to S3 (presigned PUT) instead of through the API. Needs
+# S3_PUBLIC_ENDPOINT_URL reachable by browsers and bucket CORS for the app's origins (manage.py configure_s3_cors).
+S3_DIRECT_UPLOADS = env_bool('S3_DIRECT_UPLOADS', False)
 COLLAB_FLUSH_DEBOUNCE_MS = int(env('OPENPRISM_COLLAB_FLUSH_DEBOUNCE_MS', '800'))
 COLLAB_INVITE_TTL_SECONDS = int(env('OPENPRISM_COLLAB_TOKEN_TTL', '86400'))
 COLLAB_ROOM_EVICT_SECONDS = float(env('COLLAB_ROOM_EVICT_SECONDS', '60'))  # keep an idle room this long
@@ -219,6 +238,17 @@ JOB_QUEUED_STALE_MINUTES = int(env('JOB_QUEUED_STALE_MINUTES', '30'))
 JOB_WAITING_STALE_MINUTES = int(env('JOB_WAITING_STALE_MINUTES', '60'))  # transfer left waiting for layout-check images
 JOB_RETENTION_HOURS = int(env('JOB_RETENTION_HOURS', '24'))
 AI_EDIT_RATE_PER_MINUTE = int(env('AI_EDIT_RATE_PER_MINUTE', '1000' if TESTING else '20'))  # in-place AI edit requests per user
+# Per-user requests per minute on the expensive endpoints: AI jobs (llm, agent, vision, plot, transfer, arXiv import)
+# and compiles (guests are counted per invite link).
+AI_RATE_PER_MINUTE = int(env('AI_RATE_PER_MINUTE', '1000' if TESTING else '30'))
+COMPILE_RATE_PER_MINUTE = int(env('COMPILE_RATE_PER_MINUTE', '1000' if TESTING else '30'))
+# Who may run AI jobs on the operator's key (OPENPRISM_LLM_* on the workers), i.e. with no workspace, saved or
+# browser key: all | verified (verified address) | staff | none. And how many such jobs per user per UTC day (0 = no limit).
+SERVER_LLM_KEY_USERS = env('SERVER_LLM_KEY_USERS', 'all').strip().lower()
+if SERVER_LLM_KEY_USERS not in ('all', 'verified', 'staff', 'none'):
+    raise ImproperlyConfigured('SERVER_LLM_KEY_USERS must be all, verified, staff or none.')
+SERVER_LLM_DAILY_QUOTA = int(env('SERVER_LLM_DAILY_QUOTA', '200'))
+LLM_USAGE_KEEP_DAYS = int(env('LLM_USAGE_KEEP_DAYS', '400'))
 VERSION_KEEP_UNNAMED = int(env('VERSION_KEEP_UNNAMED', '50'))  # unnamed versions kept per project; named ones are kept forever
 VERSION_KEEP_FAILED = int(env('VERSION_KEEP_FAILED', '10'))  # unnamed failed-compile versions kept per project, counted apart
 

@@ -3,9 +3,10 @@ import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { AppTopBar, Button, CrumbSep, FieldError, Modal } from '@design';
-import { changePassword, clearLocalSession, deleteAccount } from '../api/client';
+import { changePassword, clearLocalSession, deleteAccount, myCredentialEvents } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { MIN_PASSWORD } from './PasswordPages';
+import CredentialHistory from './CredentialHistory';
 
 function ChangePasswordSection() {
   const { t } = useTranslation();
@@ -148,6 +149,11 @@ export default function AccountPage() {
         <h1>{t('Account settings')}</h1>
         {account && <p className="account-who">{account.name ? `${account.name} · ` : ''}{account.email}</p>}
         <ChangePasswordSection />
+        <section className="account-section" aria-labelledby="account-keys">
+          <h2 id="account-keys">{t('Your keys')}</h2>
+          <p>{t('When your Zotero key and your own AI keys were set, replaced or removed.')}</p>
+          <CredentialHistory load={myCredentialEvents} />
+        </section>
         <DeleteAccountSection />
       </main>
     </div>

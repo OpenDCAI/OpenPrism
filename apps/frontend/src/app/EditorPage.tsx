@@ -34,7 +34,6 @@ import {
   listComments,
   replyToThread,
   setThreadResolved,
-  jobProgress,
   getProjectTree,
   fetchVersionPdf,
   restoreVersion,
@@ -56,7 +55,8 @@ import {
   setCollabServer
 } from '../api/client';
 import type { ArxivPaper, CommentThreadMeta, PdfFocus, RestoreVersionResult } from '../api/client';
-import { getInviteToken, tokenForUrl } from '../api/auth';
+import { ensureUrlToken, getInviteToken } from '../api/auth';
+import { useUrlToken } from '../api/useUrlToken';
 import { createTwoFilesPatch } from 'diff';
 import { merge3 } from './merge3';
 import { SplitDiffView, buildSplitDiff } from './SplitDiff';
@@ -94,7 +94,7 @@ import {
 } from '@design';
 import type { IconName, MenuEntry, SegmentOption } from '@design';
 import './editor-shell.css';
-import { dropLegacyLlmDefaults } from './llmDefaults';
+import AiKeysForm from './AiKeysForm';
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -138,16 +138,8 @@ type InlineEdit =
 
 type CompileEngine = 'pdflatex' | 'xelatex' | 'lualatex' | 'latexmk' | 'tectonic';
 
+/** What this browser keeps for the editor. AI keys are not here: they are stored on the server (AiKeysForm). */
 type AppSettings = {
-  llmEndpoint: string;
-  llmApiKey: string;
-  llmModel: string;
-  searchEndpoint: string;
-  searchApiKey: string;
-  searchModel: string;
-  visionEndpoint: string;
-  visionApiKey: string;
-  visionModel: string;
   compileEngine: CompileEngine;
 };
 
@@ -246,15 +238,6 @@ function fileIconClass(path: string) {
 
 const SETTINGS_KEY = 'openprism-settings-v1';
 const DEFAULT_SETTINGS: AppSettings = {
-  llmEndpoint: '',
-  llmApiKey: '',
-  llmModel: '',
-  searchEndpoint: '',
-  searchApiKey: '',
-  searchModel: '',
-  visionEndpoint: '',
-  visionApiKey: '',
-  visionModel: '',
   compileEngine: 'pdflatex'
 };
 
@@ -273,11 +256,7 @@ function loadSettings(): AppSettings {
       VALID_ENGINES.includes(engine as CompileEngine)
         ? (engine as CompileEngine)
         : DEFAULT_SETTINGS.compileEngine;
-    return dropLegacyLlmDefaults({
-      ...DEFAULT_SETTINGS,
-      ...parsed,
-      compileEngine
-    });
+    return { compileEngine };
   } catch {
     return DEFAULT_SETTINGS;
   }
@@ -286,7 +265,8 @@ function loadSettings(): AppSettings {
 function persistSettings(settings: AppSettings) {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify(settings));
+    const prev = JSON.parse(window.localStorage.getItem(SETTINGS_KEY) || '{}');
+    window.localStorage.setItem(SETTINGS_KEY, JSON.stringify({ ...prev, ...settings })); // other pages keep their fields here
   } catch {
     // ignore
   }
@@ -1377,6 +1357,7 @@ export default function EditorPage() {
   const { t, i18n } = useTranslation();
   const { projectId: routeProjectId } = useParams();
   const projectId = routeProjectId || '';
+  useUrlToken(projectId); // blobUrl() (figures, plots) reads it; this re-renders when it is minted or renewed
   const [settings, setSettings] = useState<AppSettings>(() => loadSettings());
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [projectName, setProjectName] = useState('');
@@ -1423,7 +1404,7 @@ export default function EditorPage() {
   );
   const aiRunRef = useRef(0);
   const aiAbortRef = useRef<AbortController | null>(null);
-  const aiJobRef = useRef<{ id: string; timer: number } | null>(null);
+  const aiJobRef = useRef<{ id: string } | null>(null);
   const openAiBarRef = useRef<() => boolean>(() => false);
   // Comments: every thread of the project, what the caller may do, and a selection waiting for its first comment.
   const [commentThreads, setCommentThreads] = useState<CommentThreadMeta[]>([]);
@@ -1571,18 +1552,7 @@ export default function EditorPage() {
   const readOnlyCompartment = useMemo(() => new Compartment(), []);
   const canWriteRef = useRef(false); // read when the editor view is (re)created
 
-  const {
-    llmEndpoint,
-    llmApiKey,
-    llmModel,
-    searchEndpoint,
-    searchApiKey,
-    searchModel,
-    visionEndpoint,
-    visionApiKey,
-    visionModel,
-    compileEngine
-  } = settings;
+  const { compileEngine } = settings;
 
   useEffect(() => {
     persistSettings(settings);
@@ -1611,32 +1581,10 @@ export default function EditorPage() {
     }
   }, [collabEnabled]);
 
-  const llmConfig = useMemo(
-    () => ({
-      endpoint: llmEndpoint,
-      apiKey: llmApiKey || undefined,
-      model: llmModel
-    }),
-    [llmEndpoint, llmApiKey, llmModel]
-  );
-
-  const searchLlmConfig = useMemo(() => {
-    const hasOverride = Boolean(searchEndpoint || searchApiKey || searchModel);
-    return {
-      endpoint: (hasOverride ? searchEndpoint : llmEndpoint) || llmEndpoint,
-      apiKey: (hasOverride ? searchApiKey : llmApiKey) || undefined,
-      model: (hasOverride ? searchModel : llmModel) || llmModel
-    };
-  }, [llmEndpoint, llmApiKey, llmModel, searchEndpoint, searchApiKey, searchModel]);
-
-  const visionLlmConfig = useMemo(() => {
-    const hasOverride = Boolean(visionEndpoint || visionApiKey || visionModel);
-    return {
-      endpoint: (hasOverride ? visionEndpoint : llmEndpoint) || llmEndpoint,
-      apiKey: (hasOverride ? visionApiKey : llmApiKey) || undefined,
-      model: (hasOverride ? visionModel : llmModel) || llmModel
-    };
-  }, [llmEndpoint, llmApiKey, llmModel, visionEndpoint, visionApiKey, visionModel]);
+  // The server holds the user's keys; requests only name which one (search and vision fall back to llm there).
+  const llmConfig = useMemo(() => ({ profile: 'llm' as const }), []);
+  const searchLlmConfig = useMemo(() => ({ profile: 'search' as const }), []);
+  const visionLlmConfig = useMemo(() => ({ profile: 'vision' as const }), []);
 
   useEffect(() => {
     if (!projectId) {
@@ -1708,7 +1656,7 @@ export default function EditorPage() {
     });
     const provider = new CollabProvider({
       serverUrl: normalizeServerUrl(collabServer) || (typeof window === 'undefined' ? '' : window.location.origin),
-      token: tokenForUrl, // read on every (re)connect, so a refreshed account token is picked up
+      token: () => ensureUrlToken(projectId), // a URL token for this project, fetched (or renewed) on every (re)connect
       projectId,
       filePath: activePath,
       doc: ydoc,
@@ -2946,8 +2894,14 @@ export default function EditorPage() {
   const handleUpload = async (fileList: FileList | null, basePath = '') => {
     if (!projectId || !fileList || fileList.length === 0) return;
     const files = Array.from(fileList);
-    await uploadFiles(projectId, files, basePath);
-    await refreshTree();
+    try {
+      await uploadFiles(projectId, files, basePath, (fraction) => setStatus(t('Uploading… {{percent}}%', { percent: Math.round(fraction * 100) })));
+      setStatus(t('Uploaded {{count}} files', { count: files.length }));
+    } catch (err) {
+      setStatus(t('Upload failed: {{error}}', { error: (err as Error).message }));
+    } finally {
+      await refreshTree();
+    }
   };
 
   const handleVisionSubmit = async () => {
@@ -4050,7 +4004,7 @@ export default function EditorPage() {
   };
 
   useEffect(() => () => {
-    if (aiJobRef.current) window.clearInterval(aiJobRef.current.timer); // leaving the editor ends the progress polling
+    aiAbortRef.current?.abort(); // leaving the editor ends the polling
   }, []);
 
   // People who cannot write (viewers, viewer links) get a read-only editor; the server drops their edits anyway.
@@ -4147,7 +4101,6 @@ export default function EditorPage() {
     const job = aiJobRef.current;
     aiJobRef.current = null;
     if (!job) return;
-    window.clearInterval(job.timer);
     if (cancel) void cancelJob(job.id).catch(() => {}); // the request was aborted anyway; this stops the worker
   };
 
@@ -4182,13 +4135,7 @@ export default function EditorPage() {
       const sel = state.selection.main;
       setAiBar((bar) => ({ ...bar, progress: t('Asking the AI…') }));
       const jobId = crypto.randomUUID();
-      const timer = window.setInterval(() => {
-        jobProgress(jobId).then((job) => {
-          const last = job.progressLog[job.progressLog.length - 1];
-          if (last && aiRunRef.current === run) setAiBar((bar) => (bar.busy ? { ...bar, progress: last } : bar));
-        }).catch(() => {}); // not created yet, or already gone
-      }, 1000);
-      aiJobRef.current = { id: jobId, timer };
+      aiJobRef.current = { id: jobId };
       const res = await runAgent({
         jobId,
         task: 'edit',
@@ -4207,7 +4154,9 @@ export default function EditorPage() {
           selection: sel.empty ? null : { text: state.sliceDoc(sel.from, sel.to) },
           content: state.doc.toString()
         }
-      }, controller.signal);
+      }, controller.signal, (last) => {
+        if (aiRunRef.current === run) setAiBar((bar) => (bar.busy ? { ...bar, progress: last } : bar));
+      });
       stopAiJob(false);
       if (run !== aiRunRef.current) return; // cancelled or closed meanwhile: drop the late answer
       if (!res.ok && !res.reply && res.error) throw new Error(res.error);
@@ -6277,7 +6226,7 @@ export default function EditorPage() {
       {settingsOpen && (
         <Modal
           title={t('AI & search settings')}
-          description={t('Model endpoints and keys are stored in this browser only.')}
+          description={t('Your own AI keys, used when the workspace provides none.')}
           size="lg"
           closeLabel={t('关闭')}
           onClose={() => setSettingsOpen(false)}
@@ -6294,96 +6243,7 @@ export default function EditorPage() {
                 {t('This workspace provides the AI provider{{model}}. Your own key is not used for its projects.', { model: workspaceProvider.model ? ` (${workspaceProvider.model})` : '' })}
               </div>
             )}
-            <div className="field">
-              <label>{t('LLM Endpoint')}</label>
-              <input
-                className="op-input"
-                value={llmEndpoint}
-                onChange={(e) => setSettings((prev) => ({ ...prev, llmEndpoint: e.target.value }))}
-                placeholder={t('Server default')}
-              />
-              <div className="muted">{t('支持 OpenAI 兼容的 base_url，例如 https://api.apiyi.com/v1')}</div>
-            </div>
-            <div className="field">
-              <label>{t('LLM Model')}</label>
-              <input
-                className="op-input"
-                value={llmModel}
-                onChange={(e) => setSettings((prev) => ({ ...prev, llmModel: e.target.value }))}
-                placeholder={t('Server default')}
-              />
-            </div>
-            <div className="field">
-              <label>{t('LLM API Key')}</label>
-              <input
-                className="op-input"
-                value={llmApiKey}
-                onChange={(e) => setSettings((prev) => ({ ...prev, llmApiKey: e.target.value }))}
-                placeholder="sk-..."
-                type="password"
-              />
-              {!llmApiKey && (
-                <div className="muted">{t('未配置 API Key 时将使用后端环境变量。')}</div>
-              )}
-            </div>
-            <div className="field">
-              <label>{t('Search LLM Endpoint (可选)')}</label>
-              <input
-                className="op-input"
-                value={searchEndpoint}
-                onChange={(e) => setSettings((prev) => ({ ...prev, searchEndpoint: e.target.value }))}
-                placeholder="https://api.apiyi.com/v1"
-              />
-              <div className="muted">{t('仅用于“检索/websearch”任务，留空则复用 LLM Endpoint。')}</div>
-            </div>
-            <div className="field">
-              <label>{t('Search LLM Model (可选)')}</label>
-              <input
-                className="op-input"
-                value={searchModel}
-                onChange={(e) => setSettings((prev) => ({ ...prev, searchModel: e.target.value }))}
-                placeholder="claude-sonnet-4-5-20250929-all"
-              />
-            </div>
-            <div className="field">
-              <label>{t('Search LLM API Key (可选)')}</label>
-              <input
-                className="op-input"
-                value={searchApiKey}
-                onChange={(e) => setSettings((prev) => ({ ...prev, searchApiKey: e.target.value }))}
-                placeholder="sk-..."
-                type="password"
-              />
-            </div>
-            <div className="field">
-              <label>{t('VLM Endpoint (可选)')}</label>
-              <input
-                className="op-input"
-                value={visionEndpoint}
-                onChange={(e) => setSettings((prev) => ({ ...prev, visionEndpoint: e.target.value }))}
-                placeholder="https://api.apiyi.com/v1"
-              />
-              <div className="muted">{t('仅用于图像识别，留空则复用 LLM Endpoint。')}</div>
-            </div>
-            <div className="field">
-              <label>{t('VLM Model (可选)')}</label>
-              <input
-                className="op-input"
-                value={visionModel}
-                onChange={(e) => setSettings((prev) => ({ ...prev, visionModel: e.target.value }))}
-                placeholder="gpt-4o"
-              />
-            </div>
-            <div className="field">
-              <label>{t('VLM API Key (可选)')}</label>
-              <input
-                className="op-input"
-                value={visionApiKey}
-                onChange={(e) => setSettings((prev) => ({ ...prev, visionApiKey: e.target.value }))}
-                placeholder="sk-..."
-                type="password"
-              />
-            </div>
+            <AiKeysForm onStatus={setStatus} />
           </div>
         </Modal>
       )}

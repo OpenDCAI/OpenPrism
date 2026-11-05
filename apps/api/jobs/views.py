@@ -1,12 +1,14 @@
+from django.conf import settings
 from django.http import HttpResponse
 from django.shortcuts import get_object_or_404
 from rest_framework.decorators import api_view, authentication_classes, permission_classes
 from rest_framework.exceptions import NotFound
 from rest_framework.response import Response
 
+from common import ratelimit, urltokens
 from projects import storage
 from collab.auth import IsUserOrGuest
-from projects.access import QueryTokenJWTAuthentication, get_project
+from projects.access import UrlTokenAuthentication, get_project
 from projects.models import Membership
 from projects.paths import InvalidPath, safe_path
 
@@ -87,6 +89,7 @@ def start_compile(request):
     engine = request.data.get('engine') or 'pdflatex'
     if not project_id:
         return fail('Missing projectId.')
+    ratelimit.enforce('compile', request.user, settings.COMPILE_RATE_PER_MINUTE)
     if engine not in SUPPORTED_ENGINES:
         return fail(f"Unsupported engine: {engine}. Supported: {', '.join(SUPPORTED_ENGINES)}")
     project = get_project(request, project_id)
@@ -118,10 +121,12 @@ def job_status(request, pk):
 
 
 @api_view(['GET'])
-@authentication_classes([QueryTokenJWTAuthentication])
+@authentication_classes([UrlTokenAuthentication])
 @permission_classes([IsUserOrGuest])
 def job_pdf(request, pk):
     job = get_job(request, pk)
+    if not job.project_id or not urltokens.allows_project(request, job.project_id):
+        raise NotFound('Job not found')  # a URL token opens its own project's jobs only
     key = job.result.get('pdfKey')
     if not key:
         raise NotFound('No PDF for this job')

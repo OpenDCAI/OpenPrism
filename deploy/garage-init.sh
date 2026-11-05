@@ -22,4 +22,7 @@ garage bucket info "$BUCKET" >/dev/null 2>&1 || garage bucket create "$BUCKET"
 garage key info "$KEY_ID" >/dev/null 2>&1 || garage key import --yes -n openprism-dev "$KEY_ID" "$SECRET"
 garage bucket allow --read --write --owner "$BUCKET" --key "$KEY_ID"
 
+# Direct uploads: browsers PUT binary files to the bucket, so it needs CORS for the app's origins (idempotent).
+"${DC[@]}" exec -T api python manage.py configure_s3_cors
+
 echo "Garage ready: bucket=$BUCKET key=$KEY_ID endpoint=http://localhost:3900"

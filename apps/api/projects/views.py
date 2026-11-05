@@ -5,6 +5,7 @@ import time
 import zipfile
 from datetime import timezone as dt_timezone
 
+from django.conf import settings
 from django.db import transaction
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
@@ -16,15 +17,17 @@ from rest_framework.response import Response
 from ai import arxiv
 from ai.i18n import get_lang
 from collab.auth import IsUserOrGuest
+from common import ratelimit, urltokens
 from common.uploads import PathMultiPartParser, upload_path
 from common.zips import iter_zip_files
 from jobs.models import Job
 from templates_app import service as templates
 from templates_app.models import Template
 
+from . import direct_uploads
 from . import files as pfiles
 from .tasks import import_arxiv
-from .access import QueryTokenJWTAuthentication, get_project, user_projects
+from .access import UrlTokenAuthentication, get_project, user_projects
 from .models import Membership, Project, ProjectFile, Workspace
 from .paths import InvalidPath, safe_path
 from .tex import extract_document_body, merge_template_body
@@ -262,7 +265,7 @@ def file_item(request, pk):
 
 
 @api_view(['GET'])
-@authentication_classes([QueryTokenJWTAuthentication])
+@authentication_classes([UrlTokenAuthentication])
 @permission_classes([IsUserOrGuest])
 def blob(request, pk):
     project = get_project(request, pk)
@@ -301,6 +304,35 @@ def upload(request, pk):
             return fail(str(exc), 409)
         saved.append(path)
     return Response({'ok': True, 'files': saved})
+
+
+@api_view(['POST'])
+@permission_classes([IsUserOrGuest])
+def uploads_start(request, pk):
+    """Plan an upload of {files: [{path, size, contentType}]}: presigned PUT URLs for binary files (direct to S3),
+    `direct: false` for text files (send them to /upload). With direct uploads off: {ok, direct: false}."""
+    project = get_project(request, pk, write=True)
+    if not settings.S3_DIRECT_UPLOADS:
+        return Response({'ok': True, 'direct': False})
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        planned = direct_uploads.start(project, request.user, b.get('files'))
+    except direct_uploads.UploadError as exc:
+        return fail(str(exc))
+    return Response({'ok': True, 'direct': True, 'files': planned})
+
+
+@api_view(['POST'])
+@permission_classes([IsUserOrGuest])
+def uploads_complete(request, pk):
+    """{uploadIds}: register the files PUT to S3 (each one's size is checked first)."""
+    project = get_project(request, pk, write=True)
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        saved, failed = direct_uploads.complete(project, request.user, b.get('uploadIds'))
+    except direct_uploads.UploadError as exc:
+        return fail(str(exc))
+    return Response({'ok': not failed, 'files': saved, 'failed': failed})
 
 
 @api_view(['GET'])
@@ -391,21 +423,48 @@ def convert_template(request, pk):
 
 # ---- arXiv import (server-sent events) --------------------------------------------------------------
 
+@api_view(['POST'])
+@permission_classes([IsUserOrGuest])
+def url_token(request):
+    """Mint a short-lived token for `?token=` URLs: scope `project` (that project's files, PDFs, versions, job PDFs and
+    collaboration websocket; members and that project's invite guests) or `import` (the arXiv import stream; accounts).
+    Header credentials only: a URL token cannot mint another."""
+    b = request.data if isinstance(request.data, dict) else {}
+    scope = b.get('scope') or urltokens.PROJECT
+    if scope == urltokens.IMPORT:
+        if getattr(request.user, 'is_guest', False):
+            raise PermissionDenied('Guests cannot import projects.')
+        token, expires = urltokens.mint(request.user, urltokens.IMPORT)
+    elif scope == urltokens.PROJECT:
+        project = get_project(request, b.get('projectId'))
+        token, expires = urltokens.mint(request.user, urltokens.PROJECT, project.id)
+    else:
+        return fail('scope must be project or import.')
+    return Response({'ok': True, 'token': token, 'expiresAt': expires.isoformat().replace('+00:00', 'Z'),
+                     'expiresIn': settings.URL_TOKEN_SECONDS})  # clients count from receipt: their clock may be off
+
+
 def _sse(event, data):
     return f'event: {event}\ndata: {json.dumps(data)}\n\n'.encode()
 
 
 @api_view(['GET'])
-@authentication_classes([QueryTokenJWTAuthentication])
+@authentication_classes([UrlTokenAuthentication])
 def import_arxiv_sse(request):
     """Create a project from an arXiv paper. EventSource cannot set headers, so auth is `?token=`.
 
     The download/extract runs in a worker (queue `import`); this response just relays its progress.
     """
+    claims = urltokens.claims_of(request)
+    if getattr(request.user, 'is_guest', False) or (claims and claims.scope != urltokens.IMPORT):
+        raise PermissionDenied('This link cannot start an import.')
     arxiv_id = arxiv.extract_id(request.query_params.get('arxivIdOrUrl'))
     headers = {'Cache-Control': 'no-cache', 'X-Accel-Buffering': 'no'}  # no proxy buffering, or events arrive in a lump
     if not arxiv_id:
         return StreamingHttpResponse(iter([_sse('error', {'error': 'Invalid arXiv ID.'})]),
+                                     content_type='text/event-stream', headers=headers)
+    if ratelimit.hit('ai', ratelimit.ident_for(request.user), settings.AI_RATE_PER_MINUTE):
+        return StreamingHttpResponse(iter([_sse('error', {'error': 'Too many requests: try again in a minute.'})]),
                                      content_type='text/event-stream', headers=headers)
     workspace = _default_workspace(request.user, request.query_params.get('workspaceId'))
     name = request.query_params.get('projectName') or f'arxiv-{arxiv_id}'

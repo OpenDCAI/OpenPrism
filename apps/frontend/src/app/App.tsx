@@ -8,6 +8,7 @@ import CollabJoinPage from './CollabJoinPage';
 import AccountPage from './AccountPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordPages';
 import { VerifyBanner, VerifyEmailPage, VerifyGate } from './VerifyEmail';
+import KeysMovedNotice from './KeysMovedNotice';
 import LoginPage, { safeNext } from './LoginPage';
 import { useAuth } from '../auth/AuthProvider';
 import type { GuestInfo } from '../auth/AuthProvider';
@@ -106,7 +107,10 @@ function VerifiedAccountRoutes({ account }: { account: Account }) {
         <Route path="/register" element={<Navigate to={afterLogin} replace />} />
         <Route path="*" element={<Navigate to="/projects" replace />} />
       </Routes>
-      {account.emailVerified === false && <VerifyBanner email={account.email} />}
+      <div className="app-banners">
+        {account.emailVerified === false && <VerifyBanner email={account.email} />}
+        <KeysMovedNotice accountId={account.id} />
+      </div>
     </WorkspaceProvider>
   );
 }

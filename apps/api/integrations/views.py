@@ -1,5 +1,6 @@
 import re
 
+from django.db import transaction
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
@@ -10,8 +11,8 @@ from projects.models import Membership, ProjectFile
 from projects.workspaces import membership_for, require_admin
 from projects.paths import InvalidPath, safe_path
 
-from . import bibtex, crypto, llmconfig, zotero
-from .models import WorkspaceLlmConfig, ZoteroConnection
+from . import audit, bibtex, crypto, llmconfig, userkeys, zotero
+from .models import CredentialEvent, WorkspaceLlmConfig, ZoteroConnection
 
 
 def _status(conn):
@@ -26,7 +27,9 @@ def zotero_connection(request):
     if request.method == 'GET':
         return Response(_status(conn))
     if request.method == 'DELETE':
-        ZoteroConnection.objects.filter(user=request.user).delete()
+        with transaction.atomic():
+            if ZoteroConnection.objects.filter(user=request.user).delete()[0]:
+                audit.record(CredentialEvent.ZOTERO, CredentialEvent.REMOVED, request.user, owner=request.user)
         return Response({'ok': True})
     api_key = str((request.data or {}).get('apiKey') or '').strip() if isinstance(request.data, dict) else ''
     if not api_key or len(api_key) > 200:
@@ -35,9 +38,15 @@ def zotero_connection(request):
         zotero_id, username = zotero.verify_key(api_key)
     except zotero.ZoteroError as exc:
         return Response({'ok': False, 'error': str(exc)})
-    conn, _ = ZoteroConnection.objects.update_or_create(user=request.user, defaults={
-        'zotero_user_id': zotero_id, 'username': username, 'last_four': api_key[-4:],
-        'api_key_encrypted': crypto.encrypt(api_key)})
+    if conn is not None and crypto.decrypt(conn.api_key_encrypted) == api_key and conn.zotero_user_id == zotero_id:
+        return Response(_status(conn))  # the same key again: nothing changes, nothing is recorded
+    with transaction.atomic():
+        rotated = conn is not None
+        conn, _ = ZoteroConnection.objects.update_or_create(user=request.user, defaults={
+            'zotero_user_id': zotero_id, 'username': username, 'last_four': api_key[-4:],
+            'api_key_encrypted': crypto.encrypt(api_key)})
+        audit.record(CredentialEvent.ZOTERO, CredentialEvent.ROTATED if rotated else CredentialEvent.SET, request.user,
+                     owner=request.user, last_four=conn.last_four, detail={'username': username})
     return Response(_status(conn))
 
 
@@ -187,7 +196,8 @@ def _llm_status(config, membership):
             'updatedAt': config.updated_at.isoformat().replace('+00:00', 'Z'),
             'updatedBy': (config.updated_by.name or config.updated_by.email) if config.updated_by else ''}
     if can_manage:
-        body['lastFour'] = config.last_four
+        from ai.usage import workspace_usage
+        body.update(lastFour=config.last_four, dailyLimit=config.daily_limit, usage=workspace_usage(config.workspace_id))
     return body
 
 
@@ -199,11 +209,49 @@ def workspace_llm(request, pk):
         return Response(_llm_status(config, membership))
     require_admin(request.user, pk)
     if request.method == 'DELETE':
-        WorkspaceLlmConfig.objects.filter(workspace_id=pk).delete()
+        llmconfig.remove(membership.workspace, request.user)
         return Response(_llm_status(None, membership))
     b = request.data if isinstance(request.data, dict) else {}
     try:
-        config = llmconfig.save(membership.workspace, request.user, b.get('endpoint'), b.get('model'), b.get('apiKey'))
+        extra = {'daily_limit': b['dailyLimit']} if 'dailyLimit' in b else {}
+        config = llmconfig.save(membership.workspace, request.user, b.get('endpoint'), b.get('model'), b.get('apiKey'), **extra)
     except llmconfig.LlmConfigError as exc:
         return Response({'ok': False, 'error': str(exc)})
     return Response(_llm_status(config, membership))
+
+
+@api_view(['GET'])
+def workspace_credential_events(request, pk):
+    """The workspace's credential history, for owners and admins (others 403, non-members 404)."""
+    membership = membership_for(request.user, pk)
+    require_admin(request.user, pk)
+    return Response(audit.page(CredentialEvent.objects.filter(workspace=membership.workspace),
+                               request.query_params.get('before'), request.query_params.get('limit')))
+
+
+@api_view(['GET'])
+def my_credential_events(request):
+    """The signed-in user's own credential history (Zotero, their AI keys)."""
+    return Response(audit.page(CredentialEvent.objects.filter(owner=request.user),
+                               request.query_params.get('before'), request.query_params.get('limit')))
+
+
+@api_view(['GET'])
+def ai_keys(request):
+    """The user's own AI key profiles: endpoint, model and last four characters; never the key."""
+    return Response({'ok': True, 'profiles': userkeys.status(request.user)})
+
+
+@api_view(['PUT', 'DELETE'])
+def ai_key(request, profile):
+    if profile not in userkeys.PROFILES:
+        return Response({'ok': False, 'error': 'Unknown key profile.'}, status=404)
+    if request.method == 'DELETE':
+        userkeys.remove(request.user, profile)
+    else:
+        b = request.data if isinstance(request.data, dict) else {}
+        try:
+            userkeys.save(request.user, profile, b.get('endpoint'), b.get('model'), b.get('apiKey'))
+        except llmconfig.LlmConfigError as exc:
+            return Response({'ok': False, 'error': str(exc)})
+    return Response({'ok': True, 'profiles': userkeys.status(request.user)})

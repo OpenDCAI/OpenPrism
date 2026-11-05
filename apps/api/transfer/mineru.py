@@ -27,9 +27,11 @@ def resolve_config(public=None, token=''):
     def text(key):
         return public[key].strip() if isinstance(public.get(key), str) else ''
 
+    token = (token or '').strip()
     return {
-        'apiBase': (public.get('apiBase') or settings.MINERU_API_BASE).strip().rstrip('/'),
-        'token': (token or settings.MINERU_TOKEN or '').strip(),
+        # the operator's token only ever goes to the operator's MinerU (a request's own apiBase needs its own token)
+        'apiBase': ((public.get('apiBase') if token else '') or settings.MINERU_API_BASE).strip().rstrip('/'),
+        'token': token or (settings.MINERU_TOKEN or '').strip(),
         'modelVersion': public.get('modelVersion') or 'vlm',
         'isOcr': public['isOcr'] if isinstance(public.get('isOcr'), bool) else None,
         'enableFormula': public['enableFormula'] if isinstance(public.get('enableFormula'), bool) else True,

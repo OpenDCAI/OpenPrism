@@ -10,7 +10,10 @@ from django.db import transaction
 from rest_framework.decorators import api_view, parser_classes
 from rest_framework.response import Response
 
-from ai.views import split_llm_config, workspace_first
+from ai import usage
+from integrations import userkeys
+from integrations.models import UserCredential
+from ai.views import limit_rate, split_llm_config
 from common import secrets as job_secrets
 from common.uploads import PathMultiPartParser
 from jobs.models import Job
@@ -62,15 +65,21 @@ def _create_job(request, mode, b):
         memberships__user=request.user, memberships__role__in=Membership.WRITE_ROLES).order_by('created_at').first()
     if workspace is None:
         return None, bad('You do not have a workspace you can write to.', 403)
-    public, secrets = workspace_first(request, workspace, *split_llm_config(b.get('llmConfig')))
+    public, secrets, key_source = usage.resolve(request, workspace, *split_llm_config(b.get('llmConfig')))
+    usage.charge(request, key_source, workspace)
     params = {
         'mode': mode, 'sourceProjectId': str(source.id) if source else '', 'sourceMainFile': b.get('sourceMainFile') or '',
         'targetMainFile': b['targetMainFile'], 'engine': b.get('engine') or 'pdflatex',
-        'layoutCheck': bool(b.get('layoutCheck')), 'llmConfig': public,
+        'layoutCheck': bool(b.get('layoutCheck')), 'llmConfig': public, 'keySource': key_source,
     }
     if mode == 'mineru':
-        secrets['mineruToken'] = str((b.get('mineruConfig') or {}).get('token') or '')
-        params['mineruConfig'] = mineru.public_part(b.get('mineruConfig'))
+        mineru_cfg = mineru.public_part(b.get('mineruConfig'))
+        secrets['mineruToken'] = str((b.get('mineruConfig') or {}).get('token') or '').strip()
+        saved = None if secrets['mineruToken'] else userkeys.resolve(request.user, UserCredential.MINERU)
+        if saved:  # the user's saved MinerU token, with the API base saved alongside it (or the server's)
+            secrets['mineruToken'] = saved[1]
+            mineru_cfg['apiBase'] = saved[0].get('endpoint', '')
+        params['mineruConfig'] = mineru_cfg
     with transaction.atomic():
         target = Project.objects.create(workspace=workspace, created_by=request.user,
                                         name=f"{source.name if source else 'Untitled'} ({template.label})")
@@ -84,6 +93,7 @@ def _create_job(request, mode, b):
 
 @api_view(['POST'])
 def start(request):
+    limit_rate(request)
     b = request.data if isinstance(request.data, dict) else {}
     if not all(b.get(k) for k in ('sourceProjectId', 'sourceMainFile', 'targetTemplateId', 'targetMainFile')):
         return bad('Missing required fields.')
@@ -96,6 +106,7 @@ def start(request):
 
 @api_view(['POST'])
 def start_mineru(request):
+    limit_rate(request)
     b = request.data if isinstance(request.data, dict) else {}
     if not b.get('targetTemplateId') or not b.get('targetMainFile'):
         return bad('Missing targetTemplateId or targetMainFile.')

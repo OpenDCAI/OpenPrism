@@ -76,15 +76,21 @@ services:
       DJANGO_ALLOWED_HOSTS: ${DJANGO_ALLOWED_HOSTS:-localhost,127.0.0.1,api}
       LLM_ALLOW_PRIVATE_ENDPOINTS: ${LLM_ALLOW_PRIVATE_ENDPOINTS:-0} # 1 lets workspace admins point at a local model (Ollama, vLLM)
       TRUSTED_PROXY_COUNT: "1" # the nginx web container: rate limits must key on the real client, not on it
+      AI_RATE_PER_MINUTE: ${AI_RATE_PER_MINUTE:-30} # per user: llm, agent, vision, plot, transfer, arXiv import
+      COMPILE_RATE_PER_MINUTE: ${COMPILE_RATE_PER_MINUTE:-30}
+      SERVER_LLM_KEY_USERS: ${SERVER_LLM_KEY_USERS:-all} # who may use OPENPRISM_LLM_*: all | verified | staff | none
+      SERVER_LLM_DAILY_QUOTA: ${SERVER_LLM_DAILY_QUOTA:-200} # jobs per user per UTC day on that key; 0 = no limit
       DATABASE_URL: postgres://${POSTGRES_USER:-openprism}:${POSTGRES_PASSWORD:-openprism}@postgres:5432/${POSTGRES_DB:-openprism}
       REDIS_URL: redis://redis:6379/0
       S3_ENDPOINT_URL: http://garage:3900
       S3_PUBLIC_ENDPOINT_URL: ${S3_PUBLIC_ENDPOINT_URL:-http://localhost:3900}
+      S3_DIRECT_UPLOADS: ${S3_DIRECT_UPLOADS:-1} # browsers PUT binary uploads straight to Garage (needs garage-init.sh's CORS)
       S3_REGION: ${S3_REGION:-garage}
       S3_BUCKET: ${S3_BUCKET:-openprism}
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:-GK000000000000000000000001}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:-0000000000000000000000000000000000000000000000000000000000000001}
       APP_BASE_URL: ${APP_BASE_URL:-http://localhost:5173} # links in emails
+      TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-http://localhost:8080} # more origins that may use the sign-in cookie (the web image)
       EMAIL_HOST: ${EMAIL_HOST:-mailpit} # dev: every mail lands in Mailpit, read it at http://localhost:8025
       EMAIL_PORT: ${EMAIL_PORT:-1025}
       EMAIL_HOST_USER: ${EMAIL_HOST_USER:-}

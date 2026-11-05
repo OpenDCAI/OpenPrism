@@ -29,7 +29,7 @@ def _touch(project):
     Project.objects.filter(pk=project.pk).update(updated_at=timezone.now())
 
 
-def _assert_can_create(project, path):
+def assert_can_create(project, path):
     """A path may not sit under a file, nor replace a directory."""
     parts = path.split('/')
     ancestors = ['/'.join(parts[:i]) for i in range(1, len(parts))]
@@ -53,7 +53,7 @@ def _comments_under(project, path):
 
 def write_text(project, path, content):
     path = safe_path(path)
-    _assert_can_create(project, path)
+    assert_can_create(project, path)
     with transaction.atomic():
         obj, _ = project.files.update_or_create(
             path=path,
@@ -66,7 +66,7 @@ def write_text(project, path, content):
 
 def write_binary(project, path, data, content_type=None):
     path = safe_path(path)
-    _assert_can_create(project, path)
+    assert_can_create(project, path)
     content_type = content_type or mimetypes.guess_type(path)[0] or 'application/octet-stream'
     key = f'projects/{project.id}/{uuid.uuid4().hex}'
     storage.put_bytes(key, data, content_type)
@@ -80,6 +80,24 @@ def write_binary(project, path, data, content_type=None):
         )
         _touch(project)
     if old_key:
+        storage.delete_keys([old_key])
+    return obj
+
+
+def register_binary(project, path, key, size, content_type):
+    """Make `path` the binary already stored at `key` (a direct upload); the object it replaces is deleted."""
+    path = safe_path(path)
+    assert_can_create(project, path)
+    with transaction.atomic():
+        existing = project.files.filter(path=path).first()
+        old_key = existing.s3_key if existing else ''
+        obj, _ = project.files.update_or_create(
+            path=path,
+            defaults={'kind': ProjectFile.BINARY, 'content': '', 's3_key': key, 'size': size,
+                      'content_type': content_type or mimetypes.guess_type(path)[0] or 'application/octet-stream'},
+        )
+        _touch(project)
+    if old_key and old_key != key:
         storage.delete_keys([old_key])
     return obj
 
@@ -117,7 +135,7 @@ def mkdir(project, path):
         if existing.kind != ProjectFile.DIR:
             raise FileExistsError(path)
         return existing
-    _assert_can_create(project, path)
+    assert_can_create(project, path)
     return project.files.create(path=path, kind=ProjectFile.DIR)
 
 
@@ -238,7 +256,7 @@ def apply_changes(project, writes, removals):
                     if existing and existing.kind == ProjectFile.DIR and project.files.filter(path__startswith=path + '/').exists():
                         raise IsADirectoryError(f'{path} is a directory')
                     if not existing:
-                        _assert_can_create(project, path)
+                        assert_can_create(project, path)
                     if w['kind'] == 'text':
                         defaults = {'kind': ProjectFile.TEXT, 'content': w['text'], 's3_key': '',
                                     'size': len(w['text'].encode('utf-8')), 'content_type': 'text/plain'}

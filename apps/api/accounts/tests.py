@@ -67,7 +67,7 @@ class SessionTests(TestCase):
         self.assertEqual([(w['name'], w['kind']) for w in workspaces], [('Personal', 'Personal')])
 
     def test_refresh_rotates_and_revokes_the_old_token(self):
-        old = self.login().data['refresh']
+        old = self.login().cookies['openprism_refresh'].value  # browsers get it only as an httpOnly cookie
         new = self.client.post('/api/auth/refresh', {'refresh': old}, format='json').data
         self.assertIn('access', new)
         self.assertNotEqual(new['refresh'], old)                                   # rotated
@@ -75,7 +75,7 @@ class SessionTests(TestCase):
         self.assertEqual(self.client.post('/api/auth/refresh', {'refresh': new['refresh']}, format='json').status_code, 200)
 
     def test_logout_revokes_the_refresh_token(self):
-        refresh = self.login().data['refresh']
+        refresh = self.login().cookies['openprism_refresh'].value
         self.assertTrue(self.client.post('/api/auth/logout', {'refresh': refresh}, format='json').data['ok'])
         self.assertEqual(self.client.post('/api/auth/refresh', {'refresh': refresh}, format='json').status_code, 401)
         self.assertTrue(self.client.post('/api/auth/logout', {'refresh': 'garbage'}, format='json').data['ok'])  # idempotent

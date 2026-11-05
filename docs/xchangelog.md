@@ -129,3 +129,27 @@
 - [x] #41 **Failed transfers clean up.** A failed template transfer (error, compile give-up, timeout, dead worker, or a
       layout check left unanswered for an hour) deletes its unfinished target project; the job keeps its error and the
       panel says the project was removed.
+
+## v0.0.8 - Security issues
+
+- [x] #47 **AI clients poll the job.** The AI endpoints answer `{jobId}` at once with `async: true` and the frontend polls
+      `/api/jobs/:id` through one helper (`runAiJob`), so no AI request holds a web thread; blocking stays, deprecated,
+      for old clients.
+- [x] #48 **Limits on expensive work.** Per-user rate limits on AI endpoints and compiles; the server's AI key has a
+      policy (`SERVER_LLM_KEY_USERS`) and a per-user daily quota; workspace providers can have a daily limit; jobs are
+      counted per day by the key that paid (admins see today and 30 days). Found and fixed: a request naming its own
+      endpoint without a key had the operator's LLM key (and MinerU token) sent to that endpoint.
+- [x] #49 **Credential audit log.** Who set, replaced, changed or removed a workspace AI provider or a Zotero key, and
+      when; shown as Key history to workspace admins and, for one's own keys, on the Account page.
+- [x] #50 **Users' AI keys on the server.** LLM, search, vision and MinerU keys are saved encrypted on the server
+      (last four shown, never returned; a new endpoint needs the key again) instead of in plain-text localStorage;
+      requests name a profile; keys left by older builds move to the server once and leave the browser.
+- [x] #51 **Scoped URL tokens.** `?token=` takes only an hour-long token for one project (or the arXiv import),
+      minted on demand and re-checked on every use; account and invite tokens no longer appear in any URL (invite
+      links are resolved by POST).
+- [x] #52 **Session cookie.** The refresh token is an httpOnly, SameSite=Strict cookie (refresh and logout need a
+      custom header and a trusted Origin) and the access token lives in memory; tabs take turns refreshing and share
+      tokens and sign-outs; older builds' stored tokens move into the cookie once.
+- [x] #53 **Direct uploads.** Binary project files go from the browser straight to object storage with presigned
+      PUT URLs (size checked before they join the project; abandoned uploads cleaned up); text files still go through
+      the API. Bucket CORS is set by `garage-init.sh`.
