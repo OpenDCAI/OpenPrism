@@ -80,6 +80,8 @@ v0.1.0.
 - [ ] **The dev clock steps make every page load's cookie refresh a chance to be refused** (`iat` in the future); the
       client retries once after 1.5 s. Fixing the clock (or a deliberate leeway decision) would remove the retry. See
       the v0.0.10 flaky-401 item.
+- [ ] **The dev api's hot reload can hang** ("Waiting for connections to close") while a browser holds an SSE stream or
+      websocket open; `docker compose up -d --force-recreate api` recovers. Consider `--timeout-graceful-shutdown`.
 - [ ] **AI usage counts requests, not tokens.** Record the providers' reported `usage` per job for spend accounting.
 
 ## v0.0.9 - Collaboration Enhancements
