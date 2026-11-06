@@ -1,0 +1,52 @@
+# OpenPrism behind the cluster's external Caddy2 (reference; this repo does not apply it).
+#
+# Path of a request: browser -> Caddy (TLS) -> any node's NodePort 31081 -> Service `web` (nginx) -> Service `api`.
+# CHANGE ME: the hostname and the node addresses. Every node can serve the NodePort, so list at least two.
+#
+# Keep the NodePort in step with `nodePort` in deploy/helm/openprism/values.yaml (iot-portal uses 31080, graderthan
+# 31801) and the hostname with `host:` there, because the app builds its links and allowed hosts from it.
+openprism.cent-su.org {
+	# Uploads (project files, template and project ZIPs) go through the app, which allows 200 MB.
+	request_body {
+		max_size 200MB
+	}
+
+	reverse_proxy 10.0.0.11:31081 10.0.0.12:31081 {
+		# Take a node out of rotation when nginx stops answering; the app's own /healthz is nginx's.
+		health_uri /healthz
+		health_interval 10s
+		health_timeout 3s
+		lb_policy round_robin
+		lb_try_duration 5s
+
+		# Server-sent events (arXiv import progress) and websockets (/api/collab live editing) must not be buffered.
+		flush_interval -1
+
+		transport http {
+			dial_timeout 5s
+			# Long jobs stream for a while with no bytes in flight; nginx behind us allows an hour too.
+			read_timeout 1h
+			write_timeout 1h
+		}
+
+		# On a config reload keep live editing sessions open for a while instead of dropping every websocket at once.
+		stream_close_delay 5m
+
+		# Caddy sets X-Forwarded-For / -Proto / -Host itself and replaces any the client sent. The app counts the hops
+		# (TRUSTED_PROXY_COUNT = 2: this proxy, then the web nginx) and takes the real client from them.
+	}
+
+	# Short-lived URL tokens travel in ?token= for images, PDFs, event streams and websockets: keep them out of the
+	# access log. (Authorization and cookies are redacted by Caddy unless log_credentials is turned on.)
+	log {
+		format filter {
+			wrap json
+			request>uri query {
+				delete token
+			}
+		}
+	}
+
+	# nginx already sends Referrer-Policy and X-Content-Type-Options; add transport security only.
+	header Strict-Transport-Security "max-age=31536000"
+}
