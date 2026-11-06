@@ -34,17 +34,6 @@ with their log (newest 10 unnamed, separately from the 50 successful); storage i
 retention is an optional per-workspace setting that always keeps each project's newest version; PDF comparison is done
 in the browser by pixel diff.
 
-## v0.0.4.1 follow-ups (found while building it)
-
-- [ ] **New model fields have no database default, so old code breaks during a rollout.** `ProjectVersion.status`,
-      `log_key` and `log_size` (and any later field) use Django defaults, which the old code does not send: between the
-      migration and the worker restart, every version insert failed (the compile still succeeded, the version was lost).
-      Use `db_default` for new non-null fields, and document "restart workers after migrating" for compose.
-- [ ] **The PDF comparison's highlight paints both versions' ink** where a word changed, so the changed text is hard to
-      read in Highlight mode; consider tinting only the after page's pixels and outlining removed areas.
-- [ ] **The Compare dialog closes at phone width when the editor collapses its right panel** (it lives inside the
-      Versions panel). Opening it at phone width works.
-
 ## v0.0.5 - AI Assistance for LaTeX tasks
 
 Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
@@ -96,11 +85,9 @@ Moved to `docs/todo.md` (issues #57-#62). Decided: a `JWT_LEEWAY_SECONDS` settin
 compose dev stack) for the devcontainer's clock steps; CI on GitHub Actions runs typecheck, the k8s render and the API and
 AI-worker suites on every push, and adds the TeX-worker and browser suites on `main` and `release/*`.
 
-## v0.0.10 follow-ups (found while building it)
+## v0.0.10.1 - Live-editing names
 
-- [ ] **Signed-in people show up as "Guest" to each other in live editing** (bug, collab): the editor's display name
-      defaults to `loadCollabName() || 'Guest'` (localStorage), not the account's name. Default to the account's name
-      (and the invite guest's chosen name), keeping the field to override it. Found by `e2e/collab-typing.spec.ts`.
+Moved to `docs/todo.md` (issue #63). Decided: accounts default to their account name; a typed name is kept per account.
 
 ## v0.0.11 - Operations
 
@@ -182,3 +169,13 @@ cluster. Do a full run on a local `kind` cluster, then fix whatever breaks.
       writes reach open rooms, the Zotero add could always write, and restore could write text files behind live rooms
       (binary/removed files still need thought). Simplify both and their editor code.
 
+## v0.1.5 follow-ups (found while building it)
+
+- [ ] **New model fields have no database default, so old code breaks during a rollout.** `ProjectVersion.status`,
+      `log_key` and `log_size` (and any later field) use Django defaults, which the old code does not send: between the
+      migration and the worker restart, every version insert failed (the compile still succeeded, the version was lost).
+      Use `db_default` for new non-null fields, and document "restart workers after migrating" for compose.
+- [ ] **The PDF comparison's highlight paints both versions' ink** where a word changed, so the changed text is hard to
+      read in Highlight mode; consider tinting only the after page's pixels and outlining removed areas.
+- [ ] **The Compare dialog closes at phone width when the editor collapses its right panel** (it lives inside the
+      Versions panel). Opening it at phone width works.
