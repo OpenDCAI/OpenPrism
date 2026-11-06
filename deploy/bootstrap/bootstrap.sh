@@ -36,6 +36,13 @@ if k get secret "$creds" >/dev/null 2>&1; then
   exit 0
 fi
 
+# A run that died before its cleanup (the runner was killed, the connection dropped) leaves its temporary objects
+# behind, and `create` would then fail with "already exists" forever (#72). Remove them first, under both Secret names
+# this script has used.
+k delete job openprism-bootstrap --ignore-not-found --wait=true >/dev/null
+k delete secret openprism-bootstrap-pg openprism-bootstrap-s3 openprism-bootstrap-minio --ignore-not-found >/dev/null
+k delete configmap openprism-bootstrap-scripts --ignore-not-found >/dev/null
+
 work="$(mktemp -d)"; chmod 700 "$work"
 cleanup() {
   k delete job openprism-bootstrap --ignore-not-found --wait=false >/dev/null 2>&1 || true
