@@ -90,7 +90,8 @@ import {
   Modal,
   PanelHeader,
   SegmentedControl,
-  Select
+  Select,
+  useWorkspace
 } from '@design';
 import type { IconName, MenuEntry, SegmentOption } from '@design';
 import './editor-shell.css';
@@ -279,19 +280,27 @@ function persistSettings(settings: AppSettings) {
   }
 }
 
-function loadCollabName() {
+/**
+ * A live-editing name the person typed, kept per account (`<key>:<userId>`): one browser can sign in as several people.
+ * Invite guests use the plain key, which `guestWorkspaces()` reads as well.
+ */
+function collabNameKey(userId: string | null) {
+  return userId ? `${COLLAB_NAME_KEY}:${userId}` : COLLAB_NAME_KEY;
+}
+
+function loadCollabName(userId: string | null) {
   if (typeof window === 'undefined') return '';
   try {
-    return window.localStorage.getItem(COLLAB_NAME_KEY) || '';
+    return window.localStorage.getItem(collabNameKey(userId))?.trim() || '';
   } catch {
     return '';
   }
 }
 
-function persistCollabName(name: string) {
+function persistCollabName(userId: string | null, name: string) {
   if (typeof window === 'undefined') return;
   try {
-    window.localStorage.setItem(COLLAB_NAME_KEY, name);
+    window.localStorage.setItem(collabNameKey(userId), name);
   } catch {
     // ignore
   }
@@ -1516,7 +1525,10 @@ export default function EditorPage() {
   const [collabEnabled, setCollabEnabled] = useState(() => Boolean(getCollabToken()));
   const [collabStatus, setCollabStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   const [collabServer, setCollabServerState] = useState(() => getCollabServer() || (typeof window === 'undefined' ? '' : window.location.origin));
-  const [collabName, setCollabName] = useState(() => loadCollabName() || 'Guest');
+  // Others see this name on your caret: one you typed, else your account's name (guests have none of their own).
+  const { user: wsUser, guest: wsGuest } = useWorkspace();
+  const collabUserId = wsGuest ? null : wsUser.id;
+  const [collabName, setCollabName] = useState(() => loadCollabName(collabUserId) || (wsGuest ? 'Guest' : wsUser.name) || 'Guest');
   const [collabToken] = useState(() => getCollabToken());
   const [collabPeers, setCollabPeers] = useState<{ id: number; name: string; color: string }[]>([]);
   const editorHostRef = useRef<HTMLDivElement | null>(null);
@@ -1572,7 +1584,6 @@ export default function EditorPage() {
   }, [collabServer]);
 
   useEffect(() => {
-    persistCollabName(collabName);
     collabColorRef.current = pickCollabColor(collabName);
     if (collabDocRef.current) {
       collabDocRef.current.awareness.setLocalStateField('user', {
@@ -5268,7 +5279,10 @@ export default function EditorPage() {
                       <input
                         className="op-input"
                         value={collabName}
-                        onChange={(e) => setCollabName(e.target.value)}
+                        onChange={(e) => {
+                          setCollabName(e.target.value);
+                          persistCollabName(collabUserId, e.target.value); // only a typed name is kept
+                        }}
                         placeholder={t('显示名称')}
                       />
                       <button
