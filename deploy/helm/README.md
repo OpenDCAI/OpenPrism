@@ -5,7 +5,7 @@ and a per-release `migrate` Job. Postgres, Redis and MinIO are the cluster's hos
 belong to the external Caddy2 (see `deploy/caddy/`, issue #67). The GitHub Actions workflow (issue #66) runs the install. The earlier kustomize tree (`deploy/k8s`, with
 kind, ingress-nginx and KEDA) was removed in v0.1.0; see git history.
 
-**Status: the chart renders and lints; it has never been applied to the cluster.** Treat the first deploy as a test.
+**Status: deployed on the cent cluster since v0.1.0.3 (revision 2 = v0.1.0.4), serving https://openprism.cent-su.org.** The first install failed twice and the causes are in the issue history (#69 to #74); the checks that are still open are listed under *Unverified*.
 
 ## Try it locally
 
@@ -53,7 +53,9 @@ deploy/bootstrap/bootstrap.sh            # namespace defaults to openprism; need
 - **Redis** has no per-app role on this server: the app uses the shared `REDIS_PASSWORD` and database index `redis.db` (3).
 - Tested: `pg-init.sh` against Postgres 16 (idempotent, rotates the password, refuses a foreign-owned database),
   `s3-init.py` against an S3-compatible test server (creates the bucket, idempotent, leaves nothing behind), and the
-  orchestration with a fake `kubectl` in five modes. **Not yet run on the real cluster.**
+  orchestration with a fake `kubectl` in five modes. **Run on the real cluster:** the manual bootstrap workflow (Postgres role and
+  database, bucket, `openprism-app-creds`) and the first-deploy step succeeded; the failure diagnostics were exercised on
+  the cluster by the Helm step (#73) and only against a fake `kubectl` for the bootstrap.
 
 ## Releasing (issue #66)
 
@@ -165,13 +167,17 @@ User-supplied API keys never reach Kubernetes Secrets or Postgres; they live in 
 - User-supplied API keys live in Redis only for the length of a job, never in Secrets.
 - Migrations must stay backward compatible with the previous release for the duration of a rolling update.
 
-## Unverified (nothing has run on the cluster yet)
+## Unverified
 
-In rough order of risk:
+The app is serving (`/api/health` through Caddy reports the deployed version; sign-in is required for the API). Not yet
+checked on the cluster, in rough order of risk:
 
-- The bootstrap Job on the real cluster (the scripts are tested; the Job itself has not run).
-- Read-only root filesystems for the TeX worker (`HOME` and caches are redirected to `/tmp`; `xelatex` / `lualatex`
-  font caches under a read-only root have not been exercised in a pod).
-- Pod Security admission on the shared cluster and whether it admits these pods.
-- The `--wait-for-jobs` flag and everything else the runner's `helm` version supports.
-- Whether the websocket (`/api/collab`) survives Caddy and the NodePort (see `deploy/caddy/README.md`).
+- **Live editing** (`/api/collab` websocket) through Caddy and the NodePort, large uploads (150 MB and above) and the
+  arXiv-import event stream; see `deploy/caddy/README.md`. Needs a browser session against the live site.
+- **Compiling LaTeX** in `worker-compile` with a read-only root filesystem: `pdflatex`, `xelatex`, `lualatex` and
+  `latexmk` inside the pod, caches under `/tmp`, and the compile hardening still holding.
+- **No NetworkPolicies** are installed: `worker-compile` has no network isolation (see the security model above).
+- **The app uses the object store's root S3 key** unless `OPENPRISM_S3_ACCESS_KEY` / `_SECRET_KEY` exist (see the
+  bootstrap section); to change it, delete `openprism-app-creds`, add the secrets, re-run the bootstrap workflow and redeploy.
+- **Registration is open** (`REGISTRATION_MODE`) and no SMTP credentials are set, so account mail may not be delivered.
+- A rolling update while a compile or transfer is running (the grace periods are set, the behaviour is not tested).

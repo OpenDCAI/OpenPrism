@@ -185,8 +185,46 @@
 
 ## v0.1.0 - Deploy to the cent Kubernetes cluster
 
+- [x] #64 **Bootstrap of the hosted Postgres and storage.** `deploy/bootstrap`: a short-lived Job creates role and
+      database `openprism` (generated password) and the bucket; the credentials live only in the cluster Secret
+      `openprism-app-creds`; the root Postgres credentials are loaded only while that Secret is missing. Run on the
+      cluster via the manual "Bootstrap hosted services" workflow.
+- [x] #65 **Helm chart `deploy/helm/openprism`** replaces the kustomize tree: api, web (NodePort 31081), three workers,
+      beat and a per-revision migrate Job against the cluster's hosted Postgres, Redis and MinIO. Installed (revision 1)
+      and upgraded (revision 2) on the cluster.
+- [x] #66 **Release workflow** `.github/workflows/deploy-cent-k8s.yaml` on the self-hosted runner: a `vX.Y.Z` tag
+      (equal to `apps/api/VERSION`) builds four images, deploys, checks every rollout and smoke-tests the public URL;
+      `workflow_dispatch` can redeploy an existing tag without rebuilding. v0.1.0.4 went through it green.
 - [x] #68 **CI checks the deployment; the kustomize tree is gone.** The `deploy-checks` job lints and renders the Helm
       chart (asserting the NodePort, the fixed `api` Service name, no Ingress or data services, no root credentials,
       required inputs enforced), validates the Caddy config and runs ShellCheck on the deploy scripts. `deploy/k8s`
       (kustomize, kind, ingress-nginx, KEDA) is removed; its security model and unverified list moved to
       `deploy/helm/README.md`. CI green on `release/v0.1.0` (run on commit 50f6485).
+
+## v0.1.0.1 - v0.1.0 follow-up fixes
+
+- [x] #69 **Image builds exhausted the shared runner's disk.** Images build one at a time, each is removed after
+      pushing (only this release's tag and dangling layers), and the first step fails early with the free space.
+
+## v0.1.0.2 - v0.1.0.1 follow-up fixes
+
+- [x] #70 **The bootstrap failed silently.** On failure it prints the Job and pod status, events and container logs
+      before cleaning up, gives up early when no pod is created or an image cannot be pulled, and can be run alone
+      from the "Bootstrap hosted services" workflow.
+
+## v0.1.0.3 - v0.1.0.2 follow-up fixes
+
+- [x] #71 **The MinIO client image could not be pulled** (MinIO no longer distributes `mc`; `minio/mc` is archived).
+      The bucket is created with a plain S3 client (`deploy/bootstrap/s3-init.py`, boto3 in the release's `api` image).
+      Consequence recorded in the docs: the S3 API cannot create keys, so the app uses the key pair it is given
+      (`OPENPRISM_S3_*` if set, otherwise the store's root key).
+
+## v0.1.0.4 - v0.1.0.3 follow-up fixes
+
+- [x] #72 **A leftover temporary Secret blocked every later bootstrap.** The script now clears them first.
+- [x] #73 **A failed Helm install left no evidence.** `deploy/diagnose.sh` prints pods, events, node capacity and
+      container logs before the workflow rolls back itself (`helm rollback`, or uninstall on a first install); an
+      existing release can be redeployed without rebuilding. The migrate Job name no longer contains dots.
+- [x] #74 **The API pods failed their probes with 400.** Probes reach the pod by IP, which Django's `ALLOWED_HOSTS`
+      refuses; they now send `Host: api`. CI asserts it.
+

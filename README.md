@@ -171,4 +171,4 @@ The values in `.env.sample` (all-zero Garage secrets, `dev-insecure-change-me`) 
 
 ## Deployment
 
-Production runs on the cent Kubernetes cluster: pushing a `vX.Y.Z` tag runs `.github/workflows/deploy-cent-k8s.yaml`, which builds the four images and installs the Helm chart in `deploy/helm/openprism` (Postgres, Redis and MinIO are the cluster's hosted services; an external Caddy2 proxies a NodePort). The chart has been linted and rendered but **not yet applied to the cluster**; read `deploy/helm/README.md` first.
+Production runs on the cent Kubernetes cluster at https://openprism.cent-su.org: pushing a `vX.Y.Z` tag runs `.github/workflows/deploy-cent-k8s.yaml`, which builds the four images and installs the Helm chart in `deploy/helm/openprism` (Postgres, Redis and MinIO are the cluster's hosted services; an external Caddy2 proxies a NodePort). v0.1.0.4 is the first release that went through the whole pipeline; read `deploy/helm/README.md` for operating it and for what is still unverified.
