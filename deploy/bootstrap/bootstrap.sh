@@ -74,13 +74,53 @@ k create configmap openprism-bootstrap-scripts \
 k delete job openprism-bootstrap --ignore-not-found --wait=true >/dev/null
 sed -e "s|__PG_IMAGE__|${pg_image}|" -e "s|__MC_IMAGE__|${mc_image}|" "$here/job.yaml" | k apply -f - >/dev/null
 
-echo "bootstrap: waiting for the Job"
-if ! k wait --for=condition=complete job/openprism-bootstrap --timeout=600s; then
-  echo "bootstrap: Job failed; logs follow" >&2
-  k logs job/openprism-bootstrap --all-containers --tail=100 >&2 || true
-  exit 1
-fi
-k logs job/openprism-bootstrap --all-containers --tail=20
+# Everything an operator needs to see why the Job did not finish, printed BEFORE the cleanup trap deletes it.
+# `describe` lists a container's state and events and only the NAMES of the Secrets it reads, never their values.
+diagnose() {
+  {
+    echo "::group::bootstrap diagnostics"
+    echo "--- job and pods"
+    k get job,pod -l app.kubernetes.io/name=bootstrap -o wide 2>&1 || true
+    echo "--- job events (a pod that was never created, e.g. refused by admission or a quota, is explained here)"
+    k describe job openprism-bootstrap 2>&1 | sed -n '/^Events:/,$p' || true
+    echo "--- pod details (container states and events)"
+    k describe pod -l app.kubernetes.io/name=bootstrap 2>&1 | sed -n '/^Init Containers:/,/^Volumes:/p;/^Events:/,$p' || true
+    echo "--- namespace events"
+    k get events --sort-by=.lastTimestamp 2>&1 | tail -25 || true
+    echo "--- container logs"
+    for pod in $(k get pods -l app.kubernetes.io/name=bootstrap -o name 2>/dev/null); do
+      for c in postgres minio; do
+        echo "[$pod/$c]"; k logs "$pod" -c "$c" --tail=50 --request-timeout=20s 2>&1 || true
+      done
+    done
+    echo "::endgroup::"
+  } >&2
+}
+fail() { echo "::error::bootstrap: $1" >&2; diagnose; exit 1; }
+
+# Wait for the Job. A pod stuck on an image pull will not recover by waiting, so give up on that early.
+timeout="${BOOTSTRAP_TIMEOUT:-600}"; pull_grace="${BOOTSTRAP_PULL_GRACE:-90}"
+echo "bootstrap: waiting for the Job (up to ${timeout}s)"
+start=$SECONDS; stuck_since=0
+while :; do
+  succeeded="$(k get job openprism-bootstrap -o jsonpath='{.status.succeeded}' 2>/dev/null || true)"
+  failed="$(k get job openprism-bootstrap -o jsonpath='{.status.failed}' 2>/dev/null || true)"
+  [ "${succeeded:-0}" -ge 1 ] && break
+  [ "${failed:-0}" -ge 1 ] && fail "the Job failed"
+  # No pod at all well after the Job was created means the cluster refused to create it (Pod Security, quota, webhook).
+  pods="$(k get pods -l app.kubernetes.io/name=bootstrap -o name 2>/dev/null || true)"
+  [ -z "$pods" ] && [ $((SECONDS - start)) -ge "${BOOTSTRAP_NO_POD_GRACE:-60}" ] && fail "no pod was created for the Job (see the job events)"
+  waiting="$(k get pods -l app.kubernetes.io/name=bootstrap -o jsonpath='{range .items[*]}{range .status.initContainerStatuses[*]}{.state.waiting.reason}{"\n"}{end}{range .status.containerStatuses[*]}{.state.waiting.reason}{"\n"}{end}{end}' 2>/dev/null || true)"
+  if grep -qE 'ImagePullBackOff|ErrImagePull|InvalidImageName|CreateContainerConfigError' <<<"$waiting"; then
+    [ "$stuck_since" -eq 0 ] && stuck_since=$SECONDS
+    [ $((SECONDS - stuck_since)) -ge "$pull_grace" ] && fail "a pod cannot start (image pull or container config): $(tr '\n' ' ' <<<"$waiting")"
+  else
+    stuck_since=0
+  fi
+  [ $((SECONDS - start)) -ge "$timeout" ] && fail "timed out after ${timeout}s waiting for the Job"
+  sleep 5
+done
+k logs job/openprism-bootstrap --all-containers --tail=20 --request-timeout=20s || true
 
 # Only now, with the services prepared, record the app's credentials.
 cat > "$work/app.env" <<ENV

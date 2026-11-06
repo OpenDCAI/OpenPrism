@@ -11,3 +11,7 @@
 
 - [ ] #69 Image builds exhaust the shared runner's disk
 
+## v0.1.0.2 - v0.1.0.1 follow-up fixes
+
+- [ ] #70 The bootstrap fails silently when its pod cannot start, and cannot be retried alone
+
