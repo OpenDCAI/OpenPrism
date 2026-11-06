@@ -59,6 +59,12 @@ workflow must never gain a `pull_request` trigger.
    and a smoke test of the public URL that requires `/api/health` to report the new version.
 3. To redeploy an existing tag: Actions, run the workflow, and pick the tag under "Use workflow from".
 
+**Runner disk (#69).** The images build on the shared cluster runner, one at a time, and each is removed from the runner
+once pushed (only this release's tag and dangling layers; other repositories' images are left alone). The first step of
+every build fails early with the free space if less than 12 GB is available under Docker's data root; plan for about
+20 GB free, since the TeX image alone is ~6 GB plus its build stages. If it fails there, free space on the runner
+(`docker image prune`, old `_work` directories) and re-run the workflow from the tag.
+
 Repository secrets used: `GHCR_USERNAME`, `GHCR_PASSWORD`, `KUBECONFIG_CENT_BASE64`, `POSTGRES_HOST/PORT`,
 `REDIS_HOST/PORT/PASSWORD`, `MINIO_HOST/PORT`, `DJANGO_SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY`; for the bootstrap only,
 on the first deploy: `POSTGRES_USER/PASSWORD`, `MINIO_ROOT_USER/PASSWORD`; optional: `EMAIL_HOST_USER`,
