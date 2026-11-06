@@ -1,4 +1,4 @@
-# What runs when (#61): every push and pull request gets the quick checks (typecheck, the Kubernetes render, the API and
+# What runs when (#61): every push and pull request gets the quick checks (typecheck, the Helm chart and Caddy checks, the API and
 # AI-worker suites); pushes and pull requests to main and release/* also build the TeX worker (TeX Live plus the
 # tectonic bundle, ~6 GB) and run its suite and the full browser suite against the compose stack.
 name: CI
@@ -24,23 +24,38 @@ jobs:
       - run: npm ci
       - run: npm run typecheck
 
-  k8s-render:
+  deploy-checks:
+    # The Helm chart, the Caddy reference config and the deploy scripts: all static, none of it touches a cluster.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Render every overlay, and production with the KEDA component
+      - uses: azure/setup-helm@v4
+        with: {version: v3.16.4}
+      - name: Lint and render the Helm chart
         run: |
           set -euo pipefail
-          for overlay in local production; do
-            kubectl kustomize "deploy/k8s/overlays/$overlay" > "/tmp/$overlay.yaml"
-            echo "$overlay: $(grep -c '^kind:' "/tmp/$overlay.yaml") objects"
-          done
-          # kustomize only loads paths inside the kustomization's tree, so the combination lives next to the overlays.
-          mkdir -p deploy/k8s/overlays/ci-keda
-          printf '%s\n' 'apiVersion: kustomize.config.k8s.io/v1beta1' 'kind: Kustomization' \
-            'resources: [../production]' 'components: [../../components/keda]' > deploy/k8s/overlays/ci-keda/kustomization.yaml
-          kubectl kustomize deploy/k8s/overlays/ci-keda > /tmp/keda.yaml
-          echo "production+keda: $(grep -c '^kind:' /tmp/keda.yaml) objects"
+          chart=deploy/helm/openprism
+          helm lint "$chart" -f "$chart/ci/test-values.yaml"
+          helm template openprism "$chart" -f "$chart/ci/test-values.yaml" -n openprism > /tmp/render.yaml
+          echo "rendered $(grep -c '^kind:' /tmp/render.yaml) objects"
+          # What the deployment relies on: the one NodePort, the fixed `api` Service name nginx proxies to, no data
+          # services or Ingress, and no root credentials in the app.
+          grep -q 'type: NodePort' /tmp/render.yaml
+          grep -qE '^  name: api$' /tmp/render.yaml
+          ! grep -qE '^kind: (Ingress|StatefulSet|PersistentVolumeClaim)$' /tmp/render.yaml
+          ! grep -qiE 'POSTGRES_PASSWORD|MINIO_ROOT' /tmp/render.yaml
+          # Required inputs are enforced: no image tag and no secrets must fail, not render a broken release.
+          ! helm template openprism "$chart" -f "$chart/ci/test-values.yaml" --set image.tag= >/dev/null 2>&1
+          ! helm template openprism "$chart" -f "$chart/ci/test-values.yaml" --set secrets.DJANGO_SECRET_KEY= >/dev/null 2>&1
+      - name: Validate the Caddy config
+        run: |
+          docker run --rm -v "$PWD/deploy/caddy:/c:ro" caddy:2-alpine \
+            caddy validate --config /c/openprism.Caddyfile --adapter caddyfile
+      - name: Check the deploy scripts
+        run: |
+          set -euo pipefail
+          for f in deploy/bootstrap/*.sh deploy/smoke-release.sh; do bash -n "$f"; echo "syntax ok: $f"; done
+          shellcheck -S warning deploy/bootstrap/*.sh deploy/smoke-release.sh
 
   api-tests:
     runs-on: ubuntu-latest

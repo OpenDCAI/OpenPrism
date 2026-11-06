@@ -14,7 +14,7 @@ This is a reboot of OpenPrism. Project north-star goals:
 
 ## Architecture
 
-OpenPrism is a set of containers, orchestrated locally by Docker Compose and in production by Kubernetes (`deploy/k8s`).
+OpenPrism is a set of containers, orchestrated locally by Docker Compose and in production by Kubernetes (`deploy/helm`).
 
 | Component | Tech | Role |
 |---|---|---|
@@ -35,12 +35,12 @@ Repository layout:
 apps/frontend/   React 18 + TypeScript + Vite single-page app
 apps/api/        Django project (accounts, projects, templates_app, jobs, ai, transfer, collab)
 design/          Shared UI design system, imported by the frontend as @design
-deploy/          Garage bootstrap script and Kubernetes manifests (deploy/k8s)
+deploy/          Garage bootstrap script (compose), the Helm chart (`deploy/helm`), the one-time bootstrap of the hosted Postgres/MinIO (`deploy/bootstrap`) and the Caddy reference config (`deploy/caddy`)
 templates/       Built-in conference templates (ACL, CVPR, NeurIPS, ICML)
 compose.yaml     Local stack definition
 ```
 
-See `CLAUDE.md` for detailed design notes and `deploy/k8s/README.md` for Kubernetes (the manifests have not yet been applied to a real cluster).
+See `CLAUDE.md` for detailed design notes and `deploy/helm/README.md` for Kubernetes (the chart has not yet been applied to the cluster).
 
 ## Running locally
 
@@ -171,4 +171,4 @@ The values in `.env.sample` (all-zero Garage secrets, `dev-insecure-change-me`) 
 
 ## Deployment
 
-Kubernetes manifests (Kustomize) live in `deploy/k8s`. They have been rendered and statically checked but **not applied to a cluster yet**; read `deploy/k8s/README.md` before relying on them.
+Production runs on the cent Kubernetes cluster: pushing a `vX.Y.Z` tag runs `.github/workflows/deploy-cent-k8s.yaml`, which builds the four images and installs the Helm chart in `deploy/helm/openprism` (Postgres, Redis and MinIO are the cluster's hosted services; an external Caddy2 proxies a NodePort). The chart has been linted and rendered but **not yet applied to the cluster**; read `deploy/helm/README.md` first.
