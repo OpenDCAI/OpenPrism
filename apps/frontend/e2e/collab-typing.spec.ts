@@ -65,13 +65,50 @@ test('two people typing in the same file at once both keep their text, and see e
   const expected = 'Line one. Owner wrote this.\nLine two.\nLine three. Member wrote this.';
   await expect.poll(() => editorText(a.page), { timeout: 15_000 }).toContain(expected);
   await expect.poll(() => editorText(b.page), { timeout: 15_000 }).toContain(expected);
-  // Each sees the other's caret.
+  // Each sees the other's caret, labelled with the other's account name (no name given: the email's local part).
   await expect(a.page.locator('.cm-ySelectionCaret')).toHaveCount(1);
   await expect(b.page.locator('.cm-ySelectionCaret')).toHaveCount(1);
+  await expect(a.page.locator('.cm-ySelectionInfo')).toHaveText(member.user.email.split('@')[0]);
+  await expect(b.page.locator('.cm-ySelectionInfo')).toHaveText(owner.user.email.split('@')[0]);
 
   await api(owner, `/api/projects/${id}/collab/flush`, 'POST', { path: 'main.tex' });
   await expect.poll(async () => (await api(owner, `/api/projects/${id}/file?path=main.tex`)).content as string, { timeout: 15_000 })
     .toContain(expected);
+  await a.context.close();
+  await b.context.close();
+});
+
+test('a typed display name is what others see and is kept for that account; an invite guest shows as Guest', async ({ browser }) => {
+  const owner = await newAccount('typing');
+  const member = await newAccount('typing');
+  const wsId = await newWorkspace(owner, `Names ${Date.now() % 100000}`);
+  await inviteMember(owner, wsId, member.user.email, 'editor');
+  const id = await newProject(owner, 'Live paper', { 'main.tex': doc }, undefined, wsId);
+
+  const a = await openLive(browser, owner, id);
+  await a.page.getByPlaceholder('Display name').fill('Ada Lovelace');
+  await a.page.reload();
+  await expect(a.page.locator('.cm-content')).toContainText('Line three.');
+  // The editor remembers open panels; open Collaboration only if the reload did not.
+  if (!(await a.page.getByPlaceholder('Display name').isVisible())) {
+    await a.page.getByRole('button', { name: 'Collaboration', exact: true }).click();
+  }
+  await expect(a.page.getByPlaceholder('Display name')).toHaveValue('Ada Lovelace');
+  await a.page.getByRole('button', { name: 'Connect', exact: true }).click();
+
+  const b = await openLive(browser, member, id);
+  await expect(b.page.getByPlaceholder('Display name')).toHaveValue(member.user.email.split('@')[0]); // not the owner's
+  await caretAtEndOfLine(a.page, 1);
+  await expect(b.page.locator('.cm-ySelectionInfo')).toHaveText('Ada Lovelace');
+
+  const invite = await api(owner, `/api/projects/${id}/collab/invite`, 'POST', { role: 'editor' }) as { token: string };
+  const guestContext = await browser.newContext();
+  const guest = await guestContext.newPage();
+  await guest.goto(`/collab?token=${encodeURIComponent(invite.token)}`);
+  await guest.waitForSelector('.cm-editor');
+  await caretAtEndOfLine(guest, 2);
+  await expect(b.page.locator('.cm-ySelectionInfo').filter({ hasText: 'Guest' })).toHaveCount(1);
+  await guestContext.close();
   await a.context.close();
   await b.context.close();
 });
