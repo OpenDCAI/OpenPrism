@@ -158,7 +158,7 @@ jobs:
             echo "openprism-app-creds is missing: bootstrapping Postgres and MinIO (see deploy/bootstrap)"
           fi
 
-      - name: Bootstrap Postgres and MinIO (first deploy only)
+      - name: Bootstrap Postgres and the bucket (first deploy only)
         if: steps.creds.outputs.needed == 'true'
         env:
           NAMESPACE: ${{ env.K8S_NAMESPACE }}
@@ -168,8 +168,12 @@ jobs:
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           MINIO_HOST: ${{ secrets.MINIO_HOST }}
           MINIO_PORT: ${{ secrets.MINIO_PORT }}
-          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
-          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+          # The S3 API cannot create users or keys, so the app uses this key pair: a dedicated one when the repo has
+          # OPENPRISM_S3_ACCESS_KEY / OPENPRISM_S3_SECRET_KEY, otherwise the store's root key (see deploy/helm/README.md).
+          S3_ACCESS_KEY: ${{ secrets.OPENPRISM_S3_ACCESS_KEY || secrets.MINIO_ROOT_USER }}
+          S3_SECRET_KEY: ${{ secrets.OPENPRISM_S3_SECRET_KEY || secrets.MINIO_ROOT_PASSWORD }}
+          # The S3 step runs in this release's api image (boto3), already built by the previous job.
+          API_IMAGE: ghcr.io/cent-ischool/openprism/api:${{ github.ref_name }}
         run: |
           export KUBECONFIG="$PWD/$KUBE_CONFIG"
           bash deploy/bootstrap/bootstrap.sh

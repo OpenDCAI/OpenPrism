@@ -15,3 +15,7 @@
 
 - [ ] #70 The bootstrap fails silently when its pod cannot start, and cannot be retried alone
 
+## v0.1.0.3 - v0.1.0.2 follow-up fixes
+
+- [ ] #71 The bootstrap's MinIO client image cannot be pulled (replaced by the plain S3 client)
+

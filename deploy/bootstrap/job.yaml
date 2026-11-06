@@ -1,7 +1,9 @@
-# One-off Job run by bootstrap.sh. It uses the cluster's root Postgres / MinIO credentials (from temporary Secrets that
-# bootstrap.sh deletes afterwards) to create the app's database, role, bucket and bucket-limited MinIO user.
-# The scripts come from the ConfigMap openprism-bootstrap-scripts (pg-init.sh, minio-init.sh): the same files that are
-# tested in deploy/bootstrap. __PG_IMAGE__ and __MC_IMAGE__ are filled in by bootstrap.sh.
+# One-off Job run by bootstrap.sh. It uses the cluster's root Postgres credentials and the S3 key pair (from temporary
+# Secrets that bootstrap.sh deletes afterwards) to create the app's database and role, and its bucket.
+# The scripts come from the ConfigMap openprism-bootstrap-scripts (pg-init.sh, s3-init.py): the same files that are
+# tested in deploy/bootstrap. __PG_IMAGE__ and __API_IMAGE__ are filled in by bootstrap.sh. The S3 step runs in this
+# release's api image (it carries boto3 and is already pulled from ghcr.io), because the MinIO client image can no
+# longer be pulled anywhere (#71).
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -17,6 +19,7 @@ spec:
     spec:
       restartPolicy: Never
       automountServiceAccountToken: false
+      imagePullSecrets: [{name: ghcr-login-secret}]
       securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
       initContainers:
         - name: postgres
@@ -27,15 +30,14 @@ spec:
           resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 128Mi}}
           volumeMounts: [{name: scripts, mountPath: /scripts, readOnly: true}]
       containers:
-        - name: minio
-          image: __MC_IMAGE__
-          command: ["sh", "/scripts/minio-init.sh"]
-          envFrom: [{secretRef: {name: openprism-bootstrap-minio}}]
+        - name: s3
+          image: __API_IMAGE__
+          command: ["python", "/scripts/s3-init.py"]
+          envFrom: [{secretRef: {name: openprism-bootstrap-s3}}]
           env:
             - {name: HOME, value: /tmp}
-            - {name: MC_CONFIG_DIR, value: /tmp/.mc}
           securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
-          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 128Mi}}
+          resources: {requests: {cpu: 50m, memory: 96Mi}, limits: {memory: 256Mi}}
           volumeMounts:
             - {name: scripts, mountPath: /scripts, readOnly: true}
             - {name: tmp, mountPath: /tmp}

@@ -55,6 +55,7 @@ jobs:
         run: |
           set -euo pipefail
           for f in deploy/bootstrap/*.sh deploy/smoke-release.sh; do bash -n "$f"; echo "syntax ok: $f"; done
+          python3 -m py_compile deploy/bootstrap/s3-init.py && echo "syntax ok: s3-init.py"
           shellcheck -S warning deploy/bootstrap/*.sh deploy/smoke-release.sh
 
   api-tests:
