@@ -1,0 +1,50 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: web
+  labels: {{- include "openprism.labels" (dict "root" . "name" "web") | nindent 4 }}
+spec:
+  replicas: {{ .Values.web.replicas }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app.kubernetes.io/name: web}}
+  template:
+    metadata:
+      labels: {{- include "openprism.labels" (dict "root" . "name" "web") | nindent 8 }}
+    spec:
+      serviceAccountName: openprism-app
+      {{- include "openprism.imagePullSecrets" . | nindent 6 }}
+      terminationGracePeriodSeconds: 30
+      securityContext: {runAsNonRoot: true, runAsUser: 101, runAsGroup: 101, seccompProfile: {type: RuntimeDefault}}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app.kubernetes.io/name: web}}}
+      containers:
+        - name: web
+          image: {{ include "openprism.image" (dict "root" . "name" "web") }}
+          ports: [{name: http, containerPort: 8080}]
+          readinessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 5, failureThreshold: 2}
+          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 15, failureThreshold: 3}
+          lifecycle: {preStop: {exec: {command: ["sleep", "5"]}}}
+          securityContext:
+            {{- include "openprism.locked" . | nindent 12 }}
+          resources: {{- toYaml .Values.web.resources | nindent 12 }}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 128Mi}}
+---
+# The one door into the app. The external Caddy2 proxies the public hostname to <node>:nodePort.
+apiVersion: v1
+kind: Service
+metadata:
+  name: web
+  labels: {{- include "openprism.labels" (dict "root" . "name" "web") | nindent 4 }}
+spec:
+  type: NodePort
+  selector: {app.kubernetes.io/name: web}
+  ports: [{name: http, port: 80, targetPort: http, nodePort: {{ .Values.nodePort }}}]
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata: {name: web}
+spec:
+  minAvailable: 1
+  selector: {matchLabels: {app.kubernetes.io/name: web}}

@@ -1,0 +1,33 @@
+# Database migrations. A Job's pod template is immutable, so each Helm revision gets its own Job (the name carries the
+# revision) and Helm removes the previous one. It is not a Helm hook, so the ConfigMap and Secrets exist on the first
+# install; the other pods wait for it in their wait-for-migrations init container.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: {{ printf "migrate-%s-r%d" (.Values.image.tag | toString | trunc 12) .Release.Revision }}
+  labels: {{- include "openprism.labels" (dict "root" . "name" "migrate") | nindent 4 }}
+spec:
+  backoffLimit: 4
+  activeDeadlineSeconds: 900
+  ttlSecondsAfterFinished: 86400
+  template:
+    metadata:
+      labels: {{- include "openprism.labels" (dict "root" . "name" "migrate") | nindent 8 }}
+    spec:
+      serviceAccountName: openprism-app
+      {{- include "openprism.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: OnFailure
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: migrate
+          image: {{ include "openprism.image" (dict "root" . "name" "api") }}
+          command: ["python", "manage.py", "migrate", "--noinput"]
+          {{- include "openprism.envFrom" . | nindent 10 }}
+          env:
+            {{- include "openprism.env" . | nindent 12 }}
+          securityContext:
+            {{- include "openprism.locked" . | nindent 12 }}
+          resources: {requests: {cpu: 100m, memory: 192Mi}, limits: {memory: 512Mi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}

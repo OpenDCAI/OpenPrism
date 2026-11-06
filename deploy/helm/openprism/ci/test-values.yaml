@@ -1,0 +1,12 @@
+# Used by `helm lint` / `helm template` in CI and locally: dummy values for everything the workflow supplies.
+image:
+  tag: 0123456789abcdef0123456789abcdef01234567
+host: openprism.test.example
+postgres: {host: pg.test, port: 5432}
+redis: {host: redis.test, port: 6379}
+s3: {host: minio.test, port: 9000}
+secrets:
+  DJANGO_SECRET_KEY: not-a-real-key
+  CREDENTIAL_ENCRYPTION_KEY: not-a-real-key
+  REDIS_PASSWORD: "p@ss:w/rd"
+  OPENPRISM_LLM_API_KEY: not-a-real-key

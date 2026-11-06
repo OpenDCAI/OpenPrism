@@ -1,0 +1,35 @@
+# Celery beat: the scheduler (reaps stuck jobs, deletes old ones, expires invites). Exactly one replica, ever: two
+# would schedule every task twice, so updates replace the pod instead of surging.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: beat
+  labels: {{- include "openprism.labels" (dict "root" . "name" "beat") | nindent 4 }}
+spec:
+  replicas: 1
+  strategy: {type: Recreate}
+  selector: {matchLabels: {app.kubernetes.io/name: beat}}
+  template:
+    metadata:
+      labels: {{- include "openprism.labels" (dict "root" . "name" "beat") | nindent 8 }}
+      annotations: {{- include "openprism.configChecksum" . | nindent 8 }}
+    spec:
+      serviceAccountName: openprism-app
+      {{- include "openprism.imagePullSecrets" . | nindent 6 }}
+      terminationGracePeriodSeconds: 30
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      initContainers:
+        {{- include "openprism.waitForMigrations" (dict "root" . "image" "api") | nindent 8 }}
+      containers:
+        - name: beat
+          image: {{ include "openprism.image" (dict "root" . "name" "api") }}
+          args: ["celery", "-A", "config", "beat", "-l", "info", "--schedule", "/tmp/celerybeat-schedule"]
+          {{- include "openprism.envFrom" . | nindent 10 }}
+          env:
+            {{- include "openprism.env" . | nindent 12 }}
+          securityContext:
+            {{- include "openprism.locked" . | nindent 12 }}
+          resources: {requests: {cpu: 20m, memory: 128Mi}, limits: {cpu: 250m, memory: 256Mi}}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}
