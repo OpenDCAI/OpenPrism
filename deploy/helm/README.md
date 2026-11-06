@@ -28,6 +28,9 @@ export MINIO_HOST=...    MINIO_PORT=...    MINIO_ROOT_USER=... MINIO_ROOT_PASSWO
 deploy/bootstrap/bootstrap.sh            # needs kubectl access (KUBECONFIG); namespace defaults to openprism
 ```
 
+- **Retrying alone (#70):** Actions, workflow "Bootstrap hosted services", Run workflow (manual only, same runner and
+  secrets). On failure the log shows the Job and pod status, their events and per-container logs before everything is
+  cleaned up, and it gives up early when no pod gets created or an image cannot be pulled.
 - It generates a database password and an S3 secret (hex), runs `pg-init.sh` (postgres image) and `minio-init.sh`
   (`mc`) in a short-lived Job, and only after the Job succeeds stores the result in the cluster Secret
   `openprism-app-creds` (`db-password`, `s3-access-key`, `s3-secret-key`). Nothing is stored in GitHub.
