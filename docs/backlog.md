@@ -80,29 +80,19 @@ AI-worker suites on every push, and adds the TeX-worker and browser suites on `m
 Moved to `docs/todo.md` (issue #63). Decided: accounts default to their account name; a typed name is kept per account.
 
 
-## v0.1.0 Run the Kubernetes manifests on a real cluster
+## v0.1.0 Deploy to the cent Kubernetes cluster
 
-`deploy/k8s` has been rendered with `kubectl kustomize` and checked for internal consistency, but never applied to a
-cluster. Do a full run on a local `kind` cluster, then fix whatever breaks.
+Moved to `docs/todo.md` (issues #64-#68): a Helm chart and a GitHub Actions workflow replace `deploy/k8s`, exposing a
+NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, Redis and MinIO.
 
-**How**
-1. `deploy/k8s/build-images.sh dev`
-2. `deploy/k8s/kind/kind-up.sh` (creates the cluster with Calico, metrics-server and ingress-nginx, and loads the images)
-3. `deploy/k8s/deploy.sh local`, then use the app at http://localhost:8088 and re-run the browser scenario (sign in,
-   compile, invite link, two browsers editing live).
-
-**Check, in rough order of risk** (the same list as "Unverified" in `deploy/k8s/README.md`)
-- [ ] The Garage init Job (`overlays/local/garage-init-job.yaml`): it uses Garage's admin API (`/v1/layout`,
-      `/v1/bucket`, `/v1/key/import`, ...) written from memory of the v1.0 API. Confirm each call, or switch to the CLI.
+**Still to check once it runs on the cluster** (carried over from the old kind plan, now against the real cluster)
 - [ ] Read-only root filesystem for the TeX worker: compile with `pdflatex`, `xelatex`, `lualatex` and `latexmk` inside
       a pod, and confirm the caches under `/tmp` work and the compile hardening still holds.
-- [ ] NetworkPolicies on a real CNI: the default-deny policy must not break kubelet probes; `worker-compile` must have
-      no internet; the workers that call LLM providers must reach only public HTTPS.
-- [ ] HorizontalPodAutoscalers read CPU (needs metrics-server).
-- [ ] `components/keda`: install KEDA and apply the component.
+- [ ] NetworkPolicies on the cluster's CNI (the chart ships them off): default-deny must not break kubelet probes;
+      `worker-compile` must have no internet; the workers that call LLM providers must reach only public HTTPS.
+- [ ] Autoscaling (HPA or KEDA) is not in the chart; decide whether the shared cluster needs it.
 - [ ] Rolling update: change an image tag mid-job and confirm a running compile/transfer finishes rather than being killed.
-- [ ] The `migrate` Job and the init containers that wait for it, including a second `deploy.sh` run (Job recreation).
-- [ ] Production overlay placeholders (CIDRs, hostname, ingress-controller namespace label) against a real cluster.
+- [ ] Direct browser uploads need a browser-reachable MinIO address and bucket CORS (`S3_DIRECT_UPLOADS` is off).
 
 - [ ] **The plot sandbox is defence in depth, not a real sandbox** (moved from v0.0.8): AST check, builtin whitelist,
       scrubbed environment, non-dumpable worker, rlimits. LaTeX and plot code also share a user with the worker process,
