@@ -1,0 +1,44 @@
+# One-off Job run by bootstrap.sh. It uses the cluster's root Postgres / MinIO credentials (from temporary Secrets that
+# bootstrap.sh deletes afterwards) to create the app's database, role, bucket and bucket-limited MinIO user.
+# The scripts come from the ConfigMap openprism-bootstrap-scripts (pg-init.sh, minio-init.sh): the same files that are
+# tested in deploy/bootstrap. __PG_IMAGE__ and __MC_IMAGE__ are filled in by bootstrap.sh.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openprism-bootstrap
+  labels: {app.kubernetes.io/name: bootstrap, app.kubernetes.io/part-of: openprism}
+spec:
+  backoffLimit: 1
+  activeDeadlineSeconds: 600
+  ttlSecondsAfterFinished: 600
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: bootstrap, app.kubernetes.io/part-of: openprism}
+    spec:
+      restartPolicy: Never
+      automountServiceAccountToken: false
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      initContainers:
+        - name: postgres
+          image: __PG_IMAGE__
+          command: ["sh", "/scripts/pg-init.sh"]
+          envFrom: [{secretRef: {name: openprism-bootstrap-pg}}]
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 128Mi}}
+          volumeMounts: [{name: scripts, mountPath: /scripts, readOnly: true}]
+      containers:
+        - name: minio
+          image: __MC_IMAGE__
+          command: ["sh", "/scripts/minio-init.sh"]
+          envFrom: [{secretRef: {name: openprism-bootstrap-minio}}]
+          env:
+            - {name: HOME, value: /tmp}
+            - {name: MC_CONFIG_DIR, value: /tmp/.mc}
+          securityContext: {allowPrivilegeEscalation: false, readOnlyRootFilesystem: true, capabilities: {drop: [ALL]}}
+          resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 128Mi}}
+          volumeMounts:
+            - {name: scripts, mountPath: /scripts, readOnly: true}
+            - {name: tmp, mountPath: /tmp}
+      volumes:
+        - {name: scripts, configMap: {name: openprism-bootstrap-scripts}}
+        - {name: tmp, emptyDir: {sizeLimit: 64Mi}}

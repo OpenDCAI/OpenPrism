@@ -1,0 +1,59 @@
+{{/*
+The three Celery workers differ only in image, queues and sizing, so one template renders them from values.workers.
+- compile:  untrusted LaTeX. No LLM credentials (it never reads openprism-ai).
+- transfer: LLM calls plus repeated compiles (template transfer; tasks up to 31 minutes).
+- ai:       LLM, vision, plot (LLM-written Python), agent, arXiv import, and account mail.
+SIGTERM starts a warm shutdown, so terminationGracePeriodSeconds must exceed the task's hard time limit or a rolling
+update would kill a job part-way through.
+*/}}
+{{- range $name, $w := .Values.workers }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: worker-{{ $name }}
+  labels: {{- include "openprism.labels" (dict "root" $ "name" (printf "worker-%s" $name)) | nindent 4 }}
+spec:
+  replicas: {{ $w.replicas }}
+  strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
+  selector: {matchLabels: {app.kubernetes.io/name: worker-{{ $name }}}}
+  template:
+    metadata:
+      labels: {{- include "openprism.labels" (dict "root" $ "name" (printf "worker-%s" $name)) | nindent 8 }}
+      annotations: {{- include "openprism.configChecksum" $ | nindent 8 }}
+    spec:
+      serviceAccountName: openprism-app
+      {{- include "openprism.imagePullSecrets" $ | nindent 6 }}
+      terminationGracePeriodSeconds: {{ $w.terminationGracePeriodSeconds }}
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      topologySpreadConstraints:
+        - {maxSkew: 1, topologyKey: kubernetes.io/hostname, whenUnsatisfiable: ScheduleAnyway, labelSelector: {matchLabels: {app.kubernetes.io/name: worker-{{ $name }}}}}
+      initContainers:
+        {{- include "openprism.waitForMigrations" (dict "root" $ "image" $w.image) | nindent 8 }}
+      containers:
+        - name: worker
+          image: {{ include "openprism.image" (dict "root" $ "name" $w.image) }}
+          args: ["celery", "-A", "config", "worker", "-Q", {{ $w.queues | quote }}, "-l", "info", "--concurrency", {{ $w.concurrency | quote }}, "--hostname", "worker-{{ $name }}@%h"]
+          envFrom:
+            - configMapRef: {name: openprism-config}
+            - secretRef: {name: openprism-core}
+            {{- if $w.aiSecret }}
+            - secretRef: {name: openprism-ai, optional: true}   # LLM / MinerU credentials: only this worker sees them
+            {{- end }}
+          env:
+            - {name: HOME, value: /tmp}
+            {{- include "openprism.env" $ | nindent 12 }}
+          # Celery answers a broadcast ping when the worker is alive and connected to the broker.
+          livenessProbe:
+            exec: {command: ["sh", "-c", "celery -A config inspect ping -d worker-{{ $name }}@$HOSTNAME"]}
+            initialDelaySeconds: 30
+            periodSeconds: 60
+            timeoutSeconds: 20
+            failureThreshold: 3
+          securityContext:
+            {{- include "openprism.locked" $ | nindent 12 }}
+          resources: {{- toYaml $w.resources | nindent 12 }}
+          volumeMounts: [{name: tmp, mountPath: /tmp}]
+      volumes:
+        - {name: tmp, emptyDir: {sizeLimit: {{ $w.tmpSize }}}}
+{{- end }}

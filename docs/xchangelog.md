@@ -182,3 +182,11 @@
 - [x] #63 **Live-editing carets show the account's name, not "Guest".** A signed-in person's caret label defaults to
       their account name; a name typed in the editor is kept per account (`openprism-collab-name:<userId>`) and only
       when typed. Invite guests keep the shared `openprism-collab-name` key and the "Guest" default.
+
+## v0.1.0 - Deploy to the cent Kubernetes cluster
+
+- [x] #68 **CI checks the deployment; the kustomize tree is gone.** The `deploy-checks` job lints and renders the Helm
+      chart (asserting the NodePort, the fixed `api` Service name, no Ingress or data services, no root credentials,
+      required inputs enforced), validates the Caddy config and runs ShellCheck on the deploy scripts. `deploy/k8s`
+      (kustomize, kind, ingress-nginx, KEDA) is removed; its security model and unverified list moved to
+      `deploy/helm/README.md`. CI green on `release/v0.1.0` (run on commit 50f6485).
