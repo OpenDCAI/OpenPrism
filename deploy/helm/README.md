@@ -2,7 +2,8 @@
 
 `deploy/helm/openprism` deploys the app tier only: `api`, `web`, `worker-compile`, `worker-transfer`, `worker-ai`, `beat`
 and a per-release `migrate` Job. Postgres, Redis and MinIO are the cluster's hosted services; TLS and the public hostname
-belong to the external Caddy2 (see `deploy/caddy/`, issue #67). The GitHub Actions workflow (issue #66) runs the install.
+belong to the external Caddy2 (see `deploy/caddy/`, issue #67). The GitHub Actions workflow (issue #66) runs the install. The earlier kustomize tree (`deploy/k8s`, with
+kind, ingress-nginx and KEDA) was removed in v0.1.0; see git history.
 
 **Status: the chart renders and lints; it has never been applied to the cluster.** Treat the first deploy as a test.
 
@@ -110,6 +111,29 @@ helm upgrade --install openprism deploy/helm/openprism -n openprism \
 - **Not included (decided for the shared cluster):** Ingress, NetworkPolicies, autoscaling, Postgres/Redis/MinIO.
   See `docs/backlog.md` (v0.1.0) for what still needs checking once it runs.
 
+## Security model
+
+The compile worker executes documents written by whoever can edit a project, including invited guests. The layers:
+
+1. **In the process** (`apps/api/jobs/compile.py`, `config/hardening.py`): TeX runs with an allow-listed environment (no
+   credentials), no shell escape, paranoid file access (except LuaTeX, which cannot run that way), `latexmk` without its
+   rc files, `biber` without config, and the worker marks itself non-dumpable so children cannot read its
+   `/proc/<pid>/environ`. LuaTeX's Lua `io.open` can still read any *file* the worker's user can read, so keep
+   credentials out of files in the image and out of mounted volumes.
+2. **In the pod** (in the chart): non-root, read-only root filesystem, all capabilities dropped, no service-account token,
+   CPU / memory / ephemeral-storage limits, seccomp `RuntimeDefault`.
+3. **On the network: NOT in the chart.** The old kustomize manifests had default-deny NetworkPolicies (`worker-compile`
+   could reach only DNS and the data services; the LLM-calling workers got public HTTPS only). The chart ships none
+   because the cluster's CNI enforcement is unknown and the data services are now outside the namespace. **Until they
+   are added, `worker-compile` can reach whatever the pod network allows**, so untrusted LaTeX has no network
+   isolation beyond layers 1 and 2. They remain in git history (`deploy/k8s/base/networkpolicies.yaml` before v0.1.0)
+   and are tracked in `docs/backlog.md` (v0.1.0).
+4. **Stronger, optional:** run `worker-compile` and `worker-ai` under a sandboxed runtime (`runtimeClassName: gvisor` or
+   Kata); the right fix for LLM-written plot code and LaTeX sharing a user with the worker process.
+
+Secrets are split by need: only `worker-transfer` and `worker-ai` receive `openprism-ai` (LLM and MinerU keys).
+User-supplied API keys never reach Kubernetes Secrets or Postgres; they live in Redis for the length of a job.
+
 ## Operating notes (carried over from the old kustomize README)
 
 - Each API pod can use up to `ASGI_THREADS` (16) database connections plus the collaboration pool; with several replicas
@@ -117,3 +141,15 @@ helm upgrade --install openprism deploy/helm/openprism -n openprism \
 - LaTeX and plot code run untrusted input. Prefer a cluster-wide `podPidsLimit`, and consider a sandboxed runtime
   (`runtimeClassName: gvisor` or Kata) for `worker-compile` and `worker-ai`.
 - User-supplied API keys live in Redis only for the length of a job, never in Secrets.
+- Migrations must stay backward compatible with the previous release for the duration of a rolling update.
+
+## Unverified (nothing has run on the cluster yet)
+
+In rough order of risk:
+
+- `bootstrap/minio-init.sh` (`mc` commands) and the bootstrap Job on the real cluster; `pg-init.sh` is tested.
+- Read-only root filesystems for the TeX worker (`HOME` and caches are redirected to `/tmp`; `xelatex` / `lualatex`
+  font caches under a read-only root have not been exercised in a pod).
+- Pod Security admission on the shared cluster and whether it admits these pods.
+- The `--wait-for-jobs` flag and everything else the runner's `helm` version supports.
+- Whether the websocket (`/api/collab`) survives Caddy and the NodePort (see `deploy/caddy/README.md`).

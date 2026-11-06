@@ -88,7 +88,8 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
 **Still to check once it runs on the cluster** (carried over from the old kind plan, now against the real cluster)
 - [ ] Read-only root filesystem for the TeX worker: compile with `pdflatex`, `xelatex`, `lualatex` and `latexmk` inside
       a pod, and confirm the caches under `/tmp` work and the compile hardening still holds.
-- [ ] NetworkPolicies on the cluster's CNI (the chart ships them off): default-deny must not break kubelet probes;
+- [ ] **NetworkPolicies are missing from the chart** (the old kustomize ones are in git history, `deploy/k8s/base/networkpolicies.yaml`
+      before v0.1.0): first find out whether the cluster's CNI enforces them. Default-deny must not break kubelet probes;
       `worker-compile` must have no internet; the workers that call LLM providers must reach only public HTTPS.
 - [ ] Autoscaling (HPA or KEDA) is not in the chart; decide whether the shared cluster needs it.
 - [ ] Rolling update: change an image tag mid-job and confirm a running compile/transfer finishes rather than being killed.
@@ -106,7 +107,7 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
 ## v0.1.1 - Operations
 
 - [ ] **No observability.** No metrics, structured logs, tracing or alerts; no view of queue depth, failed jobs, or
-      websocket counts. (Queue depth is also the better autoscaling signal, see the KEDA component.)
+      websocket counts. (Queue depth is also the better autoscaling signal, KEDA scaled on it in the removed kustomize tree.)
 - [ ] **No backup or restore story** for Postgres or the object store, and the local-cluster data stores are single
       instances.
 - [ ] **Data-service defaults are placeholders.** Everything in `.env.sample` and `overlays/local` (passwords, storage
