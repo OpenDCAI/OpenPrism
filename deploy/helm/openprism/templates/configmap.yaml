@@ -1,0 +1,23 @@
+# Non-secret settings shared by the API and every worker.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openprism-config
+data:
+  DJANGO_DEBUG: "0"
+  DJANGO_ALLOWED_HOSTS: {{ printf "%s,api" (required "host is required" .Values.host) | quote }}
+  APP_BASE_URL: {{ printf "https://%s" .Values.host | quote }}
+  DJANGO_BEHIND_TLS_PROXY: "1"                 # Caddy terminates TLS and sets X-Forwarded-Proto; the web nginx forwards it
+  TRUSTED_PROXY_COUNT: {{ .Values.trustedProxyCount | quote }}
+  S3_ENDPOINT_URL: {{ printf "%s://%s:%v" .Values.s3.scheme (required "s3.host is required" .Values.s3.host) .Values.s3.port | quote }}
+  S3_PUBLIC_ENDPOINT_URL: {{ printf "%s://%s:%v" .Values.s3.scheme .Values.s3.host .Values.s3.port | quote }}
+  S3_REGION: {{ .Values.s3.region | quote }}
+  S3_BUCKET: {{ .Values.s3.bucket | quote }}
+  S3_DIRECT_UPLOADS: "0"                        # MinIO is not browser-reachable: uploads go through the API
+  EMAIL_HOST: {{ .Values.mail.host | quote }}
+  EMAIL_PORT: {{ .Values.mail.port | quote }}
+  EMAIL_USE_TLS: {{ .Values.mail.tls | quote }}
+  DEFAULT_FROM_EMAIL: {{ .Values.mail.from | quote }}
+  {{- range $k, $v := .Values.config }}
+  {{ $k }}: {{ $v | quote }}
+  {{- end }}

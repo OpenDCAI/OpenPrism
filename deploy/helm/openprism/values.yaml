@@ -1,0 +1,108 @@
+# OpenPrism on the cent cluster. The deploy workflow overrides image.tag and the secrets; everything else is set here
+# or in an extra values file (-f). Postgres, Redis and MinIO are the cluster's hosted services: set where they live.
+
+image:
+  registry: ghcr.io/cent-ischool/openprism   # images are <registry>/{api,web,worker-tex,worker-ai}:<tag>
+  tag: ""                                    # required: the workflow passes the git sha
+  pullSecrets: [ghcr-login-secret]           # created by the workflow from GHCR_USERNAME / GHCR_PASSWORD
+
+# Public hostname served by the external Caddy2 (TLS ends there). Used for APP_BASE_URL, allowed hosts and mail links.
+host: openprism.example.com
+
+# The web Service is the only entry point. Caddy proxies the hostname to <node-ip>:nodePort (cluster range 30000-32767;
+# 31080 belongs to iot-portal).
+nodePort: 31081
+
+# Caddy plus the web nginx sit in front of the API: rate limits key on the real client through both.
+trustedProxyCount: 2
+
+# Hosted data services (the workflow fills host and port from the POSTGRES_*, REDIS_* and MINIO_* secrets).
+postgres:
+  host: postgres.example.svc
+  port: 5432
+  database: openprism
+  user: openprism            # created, with its password, by the bootstrap Job
+redis:
+  host: redis.example.svc
+  port: 6379
+  db: 3                      # a database index of our own: the Redis server is shared with other apps
+s3:
+  scheme: http
+  host: minio.example.svc
+  port: 9000
+  region: us-east-1          # MinIO's default; the app signs with sigv4 and path-style addressing
+  bucket: openprism
+
+# Created by the bootstrap Job with keys db-password, s3-access-key and s3-secret-key. Never set by hand or in GitHub.
+credentialsSecret: openprism-app-creds
+
+mail:
+  host: smtp.example.com
+  port: 587
+  tls: "1"
+  from: "OpenPrism <no-reply@openprism.example.com>"
+
+# Rendered into the openprism-core / openprism-ai Secrets. The workflow passes these with --set-file so values with
+# commas or backslashes survive. Only the first three are required; the AI keys are optional server-side defaults.
+secrets:
+  DJANGO_SECRET_KEY: ""
+  CREDENTIAL_ENCRYPTION_KEY: ""   # Fernet key(s); never change once users have stored keys (comma-separated rotates)
+  REDIS_PASSWORD: ""
+  EMAIL_HOST_USER: ""
+  EMAIL_HOST_PASSWORD: ""
+  OPENPRISM_LLM_API_KEY: ""
+  OPENPRISM_LLM_ENDPOINT: ""
+  OPENPRISM_LLM_MODEL: ""
+  OPENPRISM_MINERU_TOKEN: ""
+
+# Extra ConfigMap entries (or overrides), e.g. SERVER_LLM_KEY_USERS. Defaults are the application's own.
+config:
+  ASGI_THREADS: "16"                      # caps the API's thread pool, and so its database connections per pod
+  LOG_LEVEL: "INFO"
+  LLM_ALLOW_PRIVATE_ENDPOINTS: "0"        # keep 0: user-supplied LLM / MinerU URLs must be public
+  OPENPRISM_MINERU_API_BASE: "https://mineru.net/api/v4"
+  OPENPRISM_COLLAB_FLUSH_DEBOUNCE_MS: "800"
+  OPENPRISM_COLLAB_TOKEN_TTL: "86400"
+  COMPILE_TIMEOUT_SECONDS: "120"
+  AI_WAIT_SECONDS: "300"
+  AI_RATE_PER_MINUTE: "30"                # per user: llm, agent, vision, plot, transfer, arXiv import
+  COMPILE_RATE_PER_MINUTE: "30"
+  SERVER_LLM_KEY_USERS: "verified"        # who may spend the operator's OPENPRISM_LLM_* key: all|verified|staff|none
+  SERVER_LLM_DAILY_QUOTA: "200"           # such jobs per user per UTC day; 0 = no limit
+  TEX_CACHE_DIR: "/tmp/openprism-tex-cache"
+
+api:
+  replicas: 2
+  resources: {requests: {cpu: 250m, memory: 384Mi}, limits: {cpu: "1", memory: 1Gi}}
+web:
+  replicas: 2
+  resources: {requests: {cpu: 20m, memory: 32Mi}, limits: {cpu: 500m, memory: 128Mi}}
+
+workers:
+  compile:     # untrusted LaTeX: never reads the LLM credentials
+    image: worker-tex
+    queues: compile
+    concurrency: 2
+    replicas: 2
+    terminationGracePeriodSeconds: 360      # task hard limit is 330 s
+    tmpSize: 2Gi
+    aiSecret: false
+    resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "2", memory: 3Gi, ephemeral-storage: 2Gi}}
+  transfer:    # template transfer: LLM calls plus compiles
+    image: worker-tex
+    queues: transfer
+    concurrency: 2
+    replicas: 1
+    terminationGracePeriodSeconds: 1900     # task hard limit is 1860 s
+    tmpSize: 2Gi
+    aiSecret: true
+    resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "2", memory: 3Gi, ephemeral-storage: 2Gi}}
+  ai:          # LLM, vision, plot, agent, arXiv import, account mail
+    image: worker-ai
+    queues: ai,import
+    concurrency: 4
+    replicas: 2
+    terminationGracePeriodSeconds: 1000     # task hard limit is 960 s
+    tmpSize: 1Gi
+    aiSecret: true
+    resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 2Gi, ephemeral-storage: 1Gi}}
