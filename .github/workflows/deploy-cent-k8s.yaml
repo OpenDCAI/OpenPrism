@@ -3,7 +3,8 @@ run-name: ${{ github.actor }} is releasing ${{ github.ref_name }}
 
 # Modelled on cent-ischool/graderthan: a release happens ONLY on a version tag (vX.Y.Z), never on a plain push.
 # Per CLAUDE.md the release branch merges to main and is tagged; the tag must equal apps/api/VERSION.
-# workflow_dispatch re-deploys an existing tag: pick the tag in "Use workflow from".
+# workflow_dispatch re-deploys an existing release without rebuilding it: give `tag` (its images must already exist)
+# and leave `build` off. Chart, scripts and this workflow come from the ref you run it on.
 #
 # Runs on the cluster's self-hosted runner (the repo is public, so this workflow must never run on pull_request).
 on:
@@ -11,6 +12,17 @@ on:
     tags:
       - 'v*'
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to deploy, e.g. v0.1.0.3 (blank = the tag this run was started from)"
+        required: false
+        type: string
+        default: ""
+      build:
+        description: "Build and push the images first (only from a release tag; leave off when giving `tag`)"
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   contents: read
@@ -33,6 +45,7 @@ jobs:
     name: Check the tag
     runs-on: [self-hosted, linux, cent]
     outputs:
+      tag: ${{ steps.v.outputs.tag }}
       version: ${{ steps.v.outputs.version }}
     steps:
       - uses: actions/checkout@v4
@@ -40,22 +53,38 @@ jobs:
         env:
           REF_TYPE: ${{ github.ref_type }}
           REF_NAME: ${{ github.ref_name }}
+          INPUT_TAG: ${{ inputs.tag }}
+          INPUT_BUILD: ${{ inputs.build }}
         run: |
           set -euo pipefail
-          if [ "$REF_TYPE" != "tag" ]; then
-            echo "::error::Releases run from a version tag. Choose a tag in 'Use workflow from', not the branch $REF_NAME."
-            exit 1
+          if [ -n "$INPUT_TAG" ]; then
+            # Redeploying an existing release: the images are not rebuilt, so they must already exist.
+            case "$INPUT_TAG" in v[0-9]*.[0-9]*.[0-9]*) ;; *) echo "::error::tag '$INPUT_TAG' is not a release tag like v0.1.0"; exit 1;; esac
+            if [ "$INPUT_BUILD" = "true" ]; then
+              echo "::error::Building under the existing tag $INPUT_TAG from ref $REF_NAME would label other code as that release. Set build to false."
+              exit 1
+            fi
+            tag="$INPUT_TAG"
+          else
+            if [ "$REF_TYPE" != "tag" ]; then
+              echo "::error::Releases run from a version tag. Run from a tag, or give the 'tag' input to redeploy an existing release."
+              exit 1
+            fi
+            version="$(tr -d '[:space:]' < apps/api/VERSION)"
+            if [ "$REF_NAME" != "v$version" ]; then
+              echo "::error::Tag $REF_NAME does not match apps/api/VERSION (v$version). Bump the version on the release branch, then tag."
+              exit 1
+            fi
+            tag="$REF_NAME"
           fi
-          version="$(tr -d '[:space:]' < apps/api/VERSION)"
-          if [ "$REF_NAME" != "v$version" ]; then
-            echo "::error::Tag $REF_NAME does not match apps/api/VERSION (v$version). Bump the version on the release branch, then tag."
-            exit 1
-          fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "version=${tag#v}" >> "$GITHUB_OUTPUT"
 
   build:
     name: Build & push ${{ matrix.image }}
     needs: [check]
+    # A redeploy of an existing tag (build off) skips this whole job.
+    if: ${{ github.event_name == 'push' || inputs.build }}
     runs-on: [self-hosted, linux, cent]
     strategy:
       # The runner is one shared machine with a finite disk (the TeX image alone is ~6 GB, #69): build one image at a
@@ -88,7 +117,7 @@ jobs:
         with:
           image: ${{ matrix.image }}
           registry: ghcr.io
-          tags: ${{ github.ref_name }}
+          tags: ${{ needs.check.outputs.tag }}
           dockerfile: ${{ matrix.dockerfile }}
           directory: ${{ matrix.directory }}
           target: ${{ matrix.target }}
@@ -102,7 +131,7 @@ jobs:
       - name: Free the runner's disk
         if: always()
         env:
-          IMAGE_REF: ghcr.io/cent-ischool/${{ matrix.image }}:${{ github.ref_name }}
+          IMAGE_REF: ghcr.io/cent-ischool/${{ matrix.image }}:${{ needs.check.outputs.tag }}
         run: |
           docker image rm "$IMAGE_REF" 2>&1 || true
           docker image prune -f 2>&1 | tail -1 || true
@@ -110,10 +139,12 @@ jobs:
   deploy:
     name: Deploy to the cluster
     needs: [check, build]
+    # build is skipped on a redeploy; any other result than success or skipped stops the deploy.
+    if: ${{ !cancelled() && needs.check.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: [self-hosted, linux, cent]
     env:
       VERSION: ${{ needs.check.outputs.version }}
-      TAG: ${{ github.ref_name }}
+      TAG: ${{ needs.check.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
 
@@ -173,7 +204,7 @@ jobs:
           S3_ACCESS_KEY: ${{ secrets.OPENPRISM_S3_ACCESS_KEY || secrets.MINIO_ROOT_USER }}
           S3_SECRET_KEY: ${{ secrets.OPENPRISM_S3_SECRET_KEY || secrets.MINIO_ROOT_PASSWORD }}
           # The S3 step runs in this release's api image (boto3), already built by the previous job.
-          API_IMAGE: ghcr.io/cent-ischool/openprism/api:${{ github.ref_name }}
+          API_IMAGE: ghcr.io/cent-ischool/openprism/api:${{ needs.check.outputs.tag }}
         run: |
           export KUBECONFIG="$PWD/$KUBE_CONFIG"
           bash deploy/bootstrap/bootstrap.sh
@@ -181,6 +212,7 @@ jobs:
       # Secrets go to files (never into the command line or the script text) and into the chart with --set-file, so
       # values containing commas, quotes or backslashes survive.
       - name: Helm upgrade --install
+        id: helm
         env:
           POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
           POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
@@ -218,7 +250,26 @@ jobs:
             --set-string redis.host="$REDIS_HOST"       --set-string redis.port="$REDIS_PORT" \
             --set-string s3.host="$MINIO_HOST"          --set-string s3.port="$MINIO_PORT" \
             "${setfile[@]}" \
-            --atomic --wait --wait-for-jobs --timeout 20m
+            --wait --wait-for-jobs --timeout 15m
+
+      # Why did it not become ready? Printed while the pods still exist, then the release is put back the way it was:
+      # --atomic would remove the pods (and the evidence) before anything could be read.
+      - name: Diagnose the failed release
+        if: ${{ failure() && steps.helm.outcome == 'failure' }}
+        run: |
+          export KUBECONFIG="$PWD/$KUBE_CONFIG" NAMESPACE="$K8S_NAMESPACE"
+          bash deploy/diagnose.sh
+
+      - name: Roll back the failed release
+        if: ${{ failure() && steps.helm.outcome == 'failure' }}
+        run: |
+          # First install: nothing earlier to return to, so remove it. Upgrade: restore the previous revision.
+          revisions="$(helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" history "$HELM_RELEASE" 2>/dev/null | tail -n +2 | wc -l)"
+          if [ "$revisions" -gt 1 ]; then
+            helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" rollback "$HELM_RELEASE" --wait --timeout 10m
+          else
+            helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" uninstall "$HELM_RELEASE" || true
+          fi
 
       # helm --wait already gated on readiness; naming each Deployment makes a worker that never came up fail here
       # by name instead of passing silently.

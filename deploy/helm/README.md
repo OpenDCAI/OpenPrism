@@ -67,7 +67,13 @@ workflow must never gain a `pull_request` trigger.
    then deploys: kubeconfig from `KUBECONFIG_CENT_BASE64`, namespace and `ghcr-login-secret`, the bootstrap **only if**
    `openprism-app-creds` is missing, `helm upgrade --install --atomic --wait`, `rollout status` for every Deployment,
    and a smoke test of the public URL that requires `/api/health` to report the new version.
-3. To redeploy an existing tag: Actions, run the workflow, and pick the tag under "Use workflow from".
+3. **Redeploy without rebuilding** (e.g. to retry a failed install, #73): Actions, run "Release - build images & deploy",
+   set `tag` to an existing release (its images must exist) and turn `build` off. Chart, scripts and workflow come from
+   the ref you run it on, so a fix on a branch can be tried against already-built images.
+4. **When Helm does not become ready** the workflow does not roll back first: `deploy/diagnose.sh` prints the pods, jobs,
+   events, node capacity and, per pod, container states, events and logs (also the previous run), and only then the
+   release is rolled back (`helm rollback` if an earlier revision exists, else uninstalled). Run it by hand with
+   `KUBECONFIG=... NAMESPACE=openprism deploy/diagnose.sh`.
 
 **Runner disk (#69).** The images build on the shared cluster runner, one at a time, and each is removed from the runner
 once pushed (only this release's tag and dangling layers; other repositories' images are left alone). The first step of

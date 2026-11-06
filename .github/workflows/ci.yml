@@ -44,6 +44,9 @@ jobs:
           grep -qE '^  name: api$' /tmp/render.yaml
           ! grep -qE '^kind: (Ingress|StatefulSet|PersistentVolumeClaim)$' /tmp/render.yaml
           ! grep -qiE 'POSTGRES_PASSWORD|MINIO_ROOT' /tmp/render.yaml
+          # The API's probes reach the pod by IP: they must send a Host that DJANGO_ALLOWED_HOSTS accepts (#74).
+          [ "$(grep -c 'name: Host, value: api' /tmp/render.yaml)" -eq 3 ]
+          grep -qE 'DJANGO_ALLOWED_HOSTS: "[^"]*,api"' /tmp/render.yaml
           # Required inputs are enforced: no image tag and no secrets must fail, not render a broken release.
           ! helm template openprism "$chart" -f "$chart/ci/test-values.yaml" --set image.tag= >/dev/null 2>&1
           ! helm template openprism "$chart" -f "$chart/ci/test-values.yaml" --set secrets.DJANGO_SECRET_KEY= >/dev/null 2>&1
@@ -54,9 +57,9 @@ jobs:
       - name: Check the deploy scripts
         run: |
           set -euo pipefail
-          for f in deploy/bootstrap/*.sh deploy/smoke-release.sh; do bash -n "$f"; echo "syntax ok: $f"; done
+          for f in deploy/bootstrap/*.sh deploy/smoke-release.sh deploy/diagnose.sh; do bash -n "$f"; echo "syntax ok: $f"; done
           python3 -m py_compile deploy/bootstrap/s3-init.py && echo "syntax ok: s3-init.py"
-          shellcheck -S warning deploy/bootstrap/*.sh deploy/smoke-release.sh
+          shellcheck -S warning deploy/bootstrap/*.sh deploy/smoke-release.sh deploy/diagnose.sh
 
   api-tests:
     runs-on: ubuntu-latest

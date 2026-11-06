@@ -28,10 +28,12 @@ spec:
           {{- include "openprism.envFrom" . | nindent 10 }}
           env:
             {{- include "openprism.env" . | nindent 12 }}
-          startupProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 3, failureThreshold: 40}
-          livenessProbe: {httpGet: {path: /healthz, port: http}, periodSeconds: 15, timeoutSeconds: 3, failureThreshold: 3}
+          # Probes reach the pod by its IP, so their Host header would be 10.x.x.x:8000, which Django's ALLOWED_HOSTS
+          # refuses with a 400 (#74). They send Host: api instead; `api` is always in DJANGO_ALLOWED_HOSTS.
+          startupProbe: {httpGet: {path: /healthz, port: http, httpHeaders: [{name: Host, value: api}]}, periodSeconds: 3, failureThreshold: 40}
+          livenessProbe: {httpGet: {path: /healthz, port: http, httpHeaders: [{name: Host, value: api}]}, periodSeconds: 15, timeoutSeconds: 3, failureThreshold: 3}
           # /readyz checks Postgres, Redis and S3: a pod that cannot reach them leaves rotation instead of restarting.
-          readinessProbe: {httpGet: {path: /readyz, port: http}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 2}
+          readinessProbe: {httpGet: {path: /readyz, port: http, httpHeaders: [{name: Host, value: api}]}, periodSeconds: 10, timeoutSeconds: 5, failureThreshold: 2}
           lifecycle: {preStop: {exec: {command: ["sleep", "5"]}}}   # let endpoint removal propagate before SIGTERM
           securityContext:
             {{- include "openprism.locked" . | nindent 12 }}
