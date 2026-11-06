@@ -16,6 +16,34 @@ helm template openprism deploy/helm/openprism -f deploy/helm/openprism/ci/test-v
 `ci/test-values.yaml` holds dummy values for everything the workflow supplies. Without `image.tag` and the three
 required secrets the render fails on purpose.
 
+## One-time bootstrap (issue #64)
+
+The hosted Postgres and MinIO are shared, so the app gets its own database, role, bucket and bucket-limited MinIO user
+instead of running as root. `deploy/bootstrap/bootstrap.sh` does it once and is safe to re-run:
+
+```bash
+export POSTGRES_HOST=... POSTGRES_PORT=... POSTGRES_USER=... POSTGRES_PASSWORD=...   # root
+export MINIO_HOST=...    MINIO_PORT=...    MINIO_ROOT_USER=... MINIO_ROOT_PASSWORD=...
+deploy/bootstrap/bootstrap.sh            # needs kubectl access (KUBECONFIG); namespace defaults to openprism
+```
+
+- It generates a database password and an S3 secret (hex), runs `pg-init.sh` (postgres image) and `minio-init.sh`
+  (`mc`) in a short-lived Job, and only after the Job succeeds stores the result in the cluster Secret
+  `openprism-app-creds` (`db-password`, `s3-access-key`, `s3-secret-key`). Nothing is stored in GitHub.
+- The root credentials live in two temporary Secrets that are deleted when the script ends, even on failure; they are
+  never mounted into app pods and never appear in a command line.
+- If `openprism-app-creds` exists it does nothing. To rotate on purpose: delete that Secret, run the bootstrap, redeploy.
+- Postgres: role `openprism` (no superuser, createdb or createrole) owns database `openprism`; everyone else's CONNECT is
+  revoked. It refuses a database of that name owned by someone else. The role can still connect to other databases that
+  grant CONNECT to PUBLIC (the Postgres default); it owns nothing in them.
+- MinIO: bucket `openprism`, policy `openprism-openprism` (`s3:*` on that bucket only), user `openprism` (the access key).
+- Redis has no per-app role on this server: the app uses the shared `REDIS_PASSWORD` and database index `redis.db` (3).
+- Images: `postgres:16-alpine` and `minio/mc:latest` (override with `PG_IMAGE` / `MC_IMAGE`); the cluster must be able to
+  pull them. Pin `mc` once a release has been verified.
+- Tested here: `pg-init.sh` against a real Postgres 16 (idempotent, rotates the password, refuses a foreign-owned
+  database) and the orchestration with a fake `kubectl`. **Not yet run:** `minio-init.sh` (no MinIO image could be
+  pulled in the dev container) and anything against the real cluster.
+
 ## How a release is installed
 
 ```bash
