@@ -4,7 +4,7 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "migrate-%s-r%d" (.Values.image.tag | toString | trunc 12) .Release.Revision }}
+  name: {{ printf "migrate-%s-r%d" (.Values.image.tag | toString | replace "." "-" | lower | trunc 12) .Release.Revision }}
   labels: {{- include "openprism.labels" (dict "root" . "name" "migrate") | nindent 4 }}
 spec:
   backoffLimit: 4

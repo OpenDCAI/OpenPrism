@@ -19,3 +19,8 @@
 
 - [ ] #71 The bootstrap's MinIO client image cannot be pulled (replaced by the plain S3 client)
 
+## v0.1.0.4 - v0.1.0.3 follow-up fixes
+
+- [ ] #72 A leftover temporary Secret from a failed run blocks every later bootstrap
+- [ ] #73 A failed Helm install leaves no evidence, and a redeploy needs a full rebuild
+
