@@ -176,3 +176,9 @@
 - [x] #61 **CI** on GitHub Actions: typecheck, the k8s render and the API and AI-worker suites on every push; the TeX
       worker and the full browser suite (web image on :8080) on `main` and `release/*`.
 - [x] #62 **`design/reference/` untracked.** It was already tracked; it is now kept out of the web build context.
+
+## v0.0.10.1 - Live-editing names
+
+- [x] #63 **Live-editing carets show the account's name, not "Guest".** A signed-in person's caret label defaults to
+      their account name; a name typed in the editor is kept per account (`openprism-collab-name:<userId>`) and only
+      when typed. Invite guests keep the shared `openprism-collab-name` key and the "Guest" default.

@@ -34,17 +34,6 @@ with their log (newest 10 unnamed, separately from the 50 successful); storage i
 retention is an optional per-workspace setting that always keeps each project's newest version; PDF comparison is done
 in the browser by pixel diff.
 
-## v0.0.4.1 follow-ups (found while building it)
-
-- [ ] **New model fields have no database default, so old code breaks during a rollout.** `ProjectVersion.status`,
-      `log_key` and `log_size` (and any later field) use Django defaults, which the old code does not send: between the
-      migration and the worker restart, every version insert failed (the compile still succeeded, the version was lost).
-      Use `db_default` for new non-null fields, and document "restart workers after migrating" for compose.
-- [ ] **The PDF comparison's highlight paints both versions' ink** where a word changed, so the changed text is hard to
-      read in Highlight mode; consider tinting only the after page's pixels and outlining removed areas.
-- [ ] **The Compare dialog closes at phone width when the editor collapses its right panel** (it lives inside the
-      Versions panel). Opening it at phone width works.
-
 ## v0.0.5 - AI Assistance for LaTeX tasks
 
 Moved to `docs/todo.md` (issues #27-#31). Design notes live in those issues.
@@ -71,17 +60,7 @@ needs the key again); short-lived scoped URL tokens are the only `?token=` crede
 cookie and the access token in memory; presigned direct uploads for binary project files. The gVisor/Kata item moved to
 v0.1.0.
 
-## v0.0.8 follow-ups (found while building it)
 
-- [ ] **The arXiv import stream holds a web thread for up to 16 minutes** (`import_arxiv_sse` relays the job's progress
-      over SSE). Move it to the same job polling as the AI endpoints.
-- [ ] **Template ZIP upload and project ZIP import still pass through the API** (direct uploads cover project files
-      only).
-- [ ] **The client's refresh retry after 1.5 s (`api/auth.ts`) was for the dev clock steps**, which `JWT_LEEWAY_SECONDS`
-      (#57) now absorbs in the compose stack. Remove the retry once browser runs show it is never taken.
-- [ ] **The dev api's hot reload can hang** ("Waiting for connections to close") while a browser holds an SSE stream or
-      websocket open; `docker compose up -d --force-recreate api` recovers. Consider `--timeout-graceful-shutdown`.
-- [ ] **AI usage counts requests, not tokens.** Record the providers' reported `usage` per job for spend accounting.
 
 ## v0.0.9 - Collaboration Enhancements
 
@@ -96,21 +75,9 @@ Moved to `docs/todo.md` (issues #57-#62). Decided: a `JWT_LEEWAY_SECONDS` settin
 compose dev stack) for the devcontainer's clock steps; CI on GitHub Actions runs typecheck, the k8s render and the API and
 AI-worker suites on every push, and adds the TeX-worker and browser suites on `main` and `release/*`.
 
-## v0.0.10 follow-ups (found while building it)
+## v0.0.10.1 - Live-editing names
 
-- [ ] **Signed-in people show up as "Guest" to each other in live editing** (bug, collab): the editor's display name
-      defaults to `loadCollabName() || 'Guest'` (localStorage), not the account's name. Default to the account's name
-      (and the invite guest's chosen name), keeping the field to override it. Found by `e2e/collab-typing.spec.ts`.
-
-## v0.0.11 - Operations
-
-- [ ] **No observability.** No metrics, structured logs, tracing or alerts; no view of queue depth, failed jobs, or
-      websocket counts. (Queue depth is also the better autoscaling signal, see the KEDA component.)
-- [ ] **No backup or restore story** for Postgres or the object store, and the local-cluster data stores are single
-      instances.
-- [ ] **Data-service defaults are placeholders.** Everything in `.env.sample` and `overlays/local` (passwords, storage
-      keys, `DJANGO_SECRET_KEY`) is for development only; a real deployment needs generated secrets and a rotation plan.
-
+Moved to `docs/todo.md` (issue #63). Decided: accounts default to their account name; a typed name is kept per account.
 
 
 ## v0.1.0 Run the Kubernetes manifests on a real cluster
@@ -146,7 +113,17 @@ cluster. Do a full run on a local `kind` cluster, then fix whatever breaks.
 - Whether to add PgBouncer in front of Postgres (connection count grows with API replicas).
 
 
-## v0.1.1 follow-ups (found while building in-place AI editing)
+## v0.1.1 - Operations
+
+- [ ] **No observability.** No metrics, structured logs, tracing or alerts; no view of queue depth, failed jobs, or
+      websocket counts. (Queue depth is also the better autoscaling signal, see the KEDA component.)
+- [ ] **No backup or restore story** for Postgres or the object store, and the local-cluster data stores are single
+      instances.
+- [ ] **Data-service defaults are placeholders.** Everything in `.env.sample` and `overlays/local` (passwords, storage
+      keys, `DJANGO_SECRET_KEY`) is for development only; a real deployment needs generated secrets and a rotation plan.
+
+
+## v0.1.2 follow-ups (found while building in-place AI editing)
 
 - [ ] **Accepting a proposal writes other files by REST, even when someone has them open live** (known collaboration
       limitation). A multi-file proposal only goes through the shared document for the active file.
@@ -159,7 +136,7 @@ cluster. Do a full run on a local `kind` cluster, then fix whatever breaks.
       before the job row exists is lost.
 
 
-## v0.1.2 follow-ups (found while building account management and comments)
+## v0.1.3 follow-ups (found while building account management and comments)
 
 - [ ] **No way to change the account's email address** (it would need re-verification and must not orphan invitations).
 - [ ] **Comment notifications.** Nobody is told about a new comment or reply (mail digest, @mentions, an unread count).
@@ -170,15 +147,38 @@ cluster. Do a full run on a local `kind` cluster, then fix whatever breaks.
       ~800 ms; the editor re-places them against its live text, but the API's `anchor` may briefly disagree.
 - [ ] **Two owners can no longer demote each other** (owners are fixed once made); decide whether an owner may step down.
 
-## v0.1.3 follow-ups (security follow ups)
+## v0.1.4 follow-ups (security follow ups)
 
 - [ ] **The plot sandbox is defence in depth, not a real sandbox** (AST check, builtin whitelist, scrubbed environment,
       non-dumpable worker, rlimits). LaTeX and plot code also share a user with the worker process, and LuaTeX can read
       any file that user can read. Run these workers under gVisor/Kata and cap pids (see the Kubernetes item)
 
-## v0.1.4 follow-ups (found while building it)
+## v0.1.5 follow-ups (found while building it)
 
 - [ ] **Zotero's `applied: false` hand-back and version restore's 409 for open files predate #54.** Now that REST text
       writes reach open rooms, the Zotero add could always write, and restore could write text files behind live rooms
       (binary/removed files still need thought). Simplify both and their editor code.
 
+## v0.1.6 follow-ups (found while building it)
+
+- [ ] **New model fields have no database default, so old code breaks during a rollout.** `ProjectVersion.status`,
+      `log_key` and `log_size` (and any later field) use Django defaults, which the old code does not send: between the
+      migration and the worker restart, every version insert failed (the compile still succeeded, the version was lost).
+      Use `db_default` for new non-null fields, and document "restart workers after migrating" for compose.
+- [ ] **The PDF comparison's highlight paints both versions' ink** where a word changed, so the changed text is hard to
+      read in Highlight mode; consider tinting only the after page's pixels and outlining removed areas.
+- [ ] **The Compare dialog closes at phone width when the editor collapses its right panel** (it lives inside the
+      Versions panel). Opening it at phone width works.
+
+
+## v0.1.7 follow-ups (found while building it)
+
+- [ ] **The arXiv import stream holds a web thread for up to 16 minutes** (`import_arxiv_sse` relays the job's progress
+      over SSE). Move it to the same job polling as the AI endpoints.
+- [ ] **Template ZIP upload and project ZIP import still pass through the API** (direct uploads cover project files
+      only).
+- [ ] **The client's refresh retry after 1.5 s (`api/auth.ts`) was for the dev clock steps**, which `JWT_LEEWAY_SECONDS`
+      (#57) now absorbs in the compose stack. Remove the retry once browser runs show it is never taken.
+- [ ] **The dev api's hot reload can hang** ("Waiting for connections to close") while a browser holds an SSE stream or
+      websocket open; `docker compose up -d --force-recreate api` recovers. Consider `--timeout-graceful-shutdown`.
+- [ ] **AI usage counts requests, not tokens.** Record the providers' reported `usage` per job for spend accounting.
