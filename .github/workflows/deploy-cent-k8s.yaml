@@ -58,7 +58,10 @@ jobs:
     needs: [check]
     runs-on: [self-hosted, linux, cent]
     strategy:
-      fail-fast: true
+      # The runner is one shared machine with a finite disk (the TeX image alone is ~6 GB, #69): build one image at a
+      # time, and do not let one failed push cancel the slow build of another.
+      max-parallel: 1
+      fail-fast: false
       matrix:
         include:
           - {image: openprism/api,         directory: apps/api, dockerfile: apps/api/Dockerfile,          target: api}
@@ -68,6 +71,17 @@ jobs:
           - {image: openprism/web,         directory: .,        dockerfile: apps/frontend/Dockerfile,     target: ''}
     steps:
       - uses: actions/checkout@v4
+
+      - name: Check free disk space on the runner
+        run: |
+          root="$(docker info --format '{{.DockerRootDir}}')"
+          free_gb="$(df -BG --output=avail "$root" | tail -1 | tr -dc '0-9')"
+          echo "Docker data root $root has ${free_gb} GB free"
+          docker system df || true
+          if [ "$free_gb" -lt 12 ]; then
+            echo "::error::Only ${free_gb} GB free under $root; the images need about 12 GB. Free space on the runner (docker image prune, old _work directories) and re-run."
+            exit 1
+          fi
 
       - name: Build and push image
         uses: mr-smithers-excellent/docker-build-push@v6
@@ -82,6 +96,16 @@ jobs:
           username: ${{ secrets.GHCR_USERNAME }}
           password: ${{ secrets.GHCR_PASSWORD }}
           pushImage: true
+
+      # The image is in the registry now; the runner has no use for it. Only this release's tag and dangling layers are
+      # removed: other repositories' images and caches on the shared runner are left alone.
+      - name: Free the runner's disk
+        if: always()
+        env:
+          IMAGE_REF: ghcr.io/cent-ischool/${{ matrix.image }}:${{ github.ref_name }}
+        run: |
+          docker image rm "$IMAGE_REF" 2>&1 || true
+          docker image prune -f 2>&1 | tail -1 || true
 
   deploy:
     name: Deploy to the cluster
