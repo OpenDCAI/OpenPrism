@@ -1,15 +1,19 @@
 #!/usr/bin/env bash
 # One-time (idempotent) preparation of the cluster's hosted Postgres and MinIO for OpenPrism.
 #
-# Uses the root credentials only inside a short-lived Job; the app then runs with credentials this script generates
-# and stores in the cluster Secret openprism-app-creds (never in GitHub). If that Secret already exists, nothing
-# happens, so re-running never rotates credentials. To rotate on purpose: delete the Secret, run this, redeploy.
+# Postgres: root credentials are used only inside a short-lived Job to create the app's own role and database; the
+# app then runs with a generated password stored in the cluster Secret openprism-app-creds (never in GitHub).
+# Object storage: the plain S3 API can create a bucket but not users or keys, so the app uses the S3 key pair given in
+# S3_ACCESS_KEY / S3_SECRET_KEY (a dedicated key if one is supplied, otherwise whatever the caller passes) and the
+# Job checks that it can write, read and delete in the bucket. If openprism-app-creds already exists nothing happens,
+# so re-running never rotates credentials. To rotate on purpose: delete the Secret, run this, redeploy.
 #
 # Needs kubectl access to the cluster (KUBECONFIG) and, in the environment:
 #   POSTGRES_HOST POSTGRES_PORT POSTGRES_USER POSTGRES_PASSWORD      (root)
-#   MINIO_HOST MINIO_PORT MINIO_ROOT_USER MINIO_ROOT_PASSWORD        (root)
+#   MINIO_HOST MINIO_PORT S3_ACCESS_KEY S3_SECRET_KEY                (S3 endpoint and the key pair the app will use)
+#   API_IMAGE  (this release's api image, e.g. ghcr.io/cent-ischool/openprism/api:v0.1.0.3)
 # Optional: NAMESPACE (openprism), APP_DB_USER/APP_DB_NAME (openprism), S3_BUCKET (openprism), S3_SCHEME (http),
-#           PG_IMAGE, MC_IMAGE.
+#           S3_REGION (us-east-1), PG_IMAGE.
 set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -18,10 +22,9 @@ app_user="${APP_DB_USER:-openprism}"
 app_db="${APP_DB_NAME:-openprism}"
 bucket="${S3_BUCKET:-openprism}"
 pg_image="${PG_IMAGE:-postgres:16-alpine}"
-mc_image="${MC_IMAGE:-minio/mc:latest}"   # pin once a release has been verified on the cluster
 creds=openprism-app-creds
 
-for v in POSTGRES_HOST POSTGRES_USER POSTGRES_PASSWORD MINIO_HOST MINIO_ROOT_USER MINIO_ROOT_PASSWORD; do
+for v in POSTGRES_HOST POSTGRES_USER POSTGRES_PASSWORD MINIO_HOST S3_ACCESS_KEY S3_SECRET_KEY API_IMAGE; do
   [ -n "${!v:-}" ] || { echo "::error::$v is empty" >&2; exit 1; }
 done
 k() { kubectl -n "$ns" "$@"; }
@@ -36,7 +39,7 @@ fi
 work="$(mktemp -d)"; chmod 700 "$work"
 cleanup() {
   k delete job openprism-bootstrap --ignore-not-found --wait=false >/dev/null 2>&1 || true
-  k delete secret openprism-bootstrap-pg openprism-bootstrap-minio --ignore-not-found >/dev/null 2>&1 || true
+  k delete secret openprism-bootstrap-pg openprism-bootstrap-s3 --ignore-not-found >/dev/null 2>&1 || true
   k delete configmap openprism-bootstrap-scripts --ignore-not-found >/dev/null 2>&1 || true
   rm -rf "$work"
 }
@@ -44,8 +47,6 @@ trap cleanup EXIT
 
 # Hex only: the password goes into a postgres:// URL unescaped.
 db_password="$(openssl rand -hex 24)"
-s3_secret="$(openssl rand -hex 24)"
-s3_user="$app_user"
 
 # Credentials reach kubectl through files, never through argv (visible in `ps` on the runner).
 umask 077
@@ -58,21 +59,20 @@ APP_DB_USER=${app_user}
 APP_DB_NAME=${app_db}
 APP_DB_PASSWORD=${db_password}
 ENV
-cat > "$work/minio.env" <<ENV
-MINIO_ENDPOINT=${S3_SCHEME:-http}://${MINIO_HOST}:${MINIO_PORT:-9000}
-MINIO_ROOT_USER=${MINIO_ROOT_USER}
-MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
-APP_S3_USER=${s3_user}
-APP_S3_SECRET=${s3_secret}
-BUCKET=${bucket}
+cat > "$work/s3.env" <<ENV
+S3_ENDPOINT=${S3_SCHEME:-http}://${MINIO_HOST}:${MINIO_PORT:-9000}
+S3_ACCESS_KEY=${S3_ACCESS_KEY}
+S3_SECRET_KEY=${S3_SECRET_KEY}
+S3_BUCKET=${bucket}
+S3_REGION=${S3_REGION:-us-east-1}
 ENV
 k create secret generic openprism-bootstrap-pg --from-env-file="$work/pg.env" >/dev/null
-k create secret generic openprism-bootstrap-minio --from-env-file="$work/minio.env" >/dev/null
+k create secret generic openprism-bootstrap-s3 --from-env-file="$work/s3.env" >/dev/null
 k create configmap openprism-bootstrap-scripts \
-  --from-file=pg-init.sh="$here/pg-init.sh" --from-file=minio-init.sh="$here/minio-init.sh" >/dev/null
+  --from-file=pg-init.sh="$here/pg-init.sh" --from-file=s3-init.py="$here/s3-init.py" >/dev/null
 
 k delete job openprism-bootstrap --ignore-not-found --wait=true >/dev/null
-sed -e "s|__PG_IMAGE__|${pg_image}|" -e "s|__MC_IMAGE__|${mc_image}|" "$here/job.yaml" | k apply -f - >/dev/null
+sed -e "s|__PG_IMAGE__|${pg_image}|" -e "s|__API_IMAGE__|${API_IMAGE}|" "$here/job.yaml" | k apply -f - >/dev/null
 
 # Everything an operator needs to see why the Job did not finish, printed BEFORE the cleanup trap deletes it.
 # `describe` lists a container's state and events and only the NAMES of the Secrets it reads, never their values.
@@ -89,7 +89,7 @@ diagnose() {
     k get events --sort-by=.lastTimestamp 2>&1 | tail -25 || true
     echo "--- container logs"
     for pod in $(k get pods -l app.kubernetes.io/name=bootstrap -o name 2>/dev/null); do
-      for c in postgres minio; do
+      for c in postgres s3; do
         echo "[$pod/$c]"; k logs "$pod" -c "$c" --tail=50 --request-timeout=20s 2>&1 || true
       done
     done
@@ -125,8 +125,8 @@ k logs job/openprism-bootstrap --all-containers --tail=20 --request-timeout=20s 
 # Only now, with the services prepared, record the app's credentials.
 cat > "$work/app.env" <<ENV
 db-password=${db_password}
-s3-access-key=${s3_user}
-s3-secret-key=${s3_secret}
+s3-access-key=${S3_ACCESS_KEY}
+s3-secret-key=${S3_SECRET_KEY}
 ENV
 k create secret generic "$creds" --from-env-file="$work/app.env" >/dev/null
 echo "bootstrap: created Secret $creds"
