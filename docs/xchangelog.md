@@ -195,6 +195,10 @@
 - [x] #66 **Release workflow** `.github/workflows/deploy-cent-k8s.yaml` on the self-hosted runner: a `vX.Y.Z` tag
       (equal to `apps/api/VERSION`) builds four images, deploys, checks every rollout and smoke-tests the public URL;
       `workflow_dispatch` can redeploy an existing tag without rebuilding. v0.1.0.4 went through it green.
+- [x] #67 **Caddy2 reference configuration** `deploy/caddy/openprism.Caddyfile` and README (hostname, node addresses,
+      NodePort 31081; 200 MB bodies, unbuffered streaming, hour-long timeouts, `?token=` removed from the log). Validated and
+      exercised against a real Caddy with a stand-in upstream (limit, log filter, header replacement, SSE flushing,
+      failover). The site is served through Caddy; the checks that need the live site are deferred (see the backlog).
 - [x] #68 **CI checks the deployment; the kustomize tree is gone.** The `deploy-checks` job lints and renders the Helm
       chart (asserting the NodePort, the fixed `api` Service name, no Ingress or data services, no root credentials,
       required inputs enforced), validates the Caddy config and runs ShellCheck on the deploy scripts. `deploy/k8s`

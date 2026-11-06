@@ -94,6 +94,9 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
 - [ ] Autoscaling (HPA or KEDA) is not in the chart; decide whether the shared cluster needs it.
 - [ ] Rolling update: change an image tag mid-job and confirm a running compile/transfer finishes rather than being killed.
 - [ ] Direct browser uploads need a browser-reachable MinIO address and bucket CORS (`S3_DIRECT_UPLOADS` is off).
+- [ ] **Checks through the live Caddy** (deferred from #67, to be done when a production check is wanted; development
+      testing happens in the dev environment): live editing over `/api/collab` in two browsers, a 150 MB upload, the
+      arXiv-import event stream, and that `?token=` does not appear in Caddy's access log.
 
 - [ ] **The plot sandbox is defence in depth, not a real sandbox** (moved from v0.0.8): AST check, builtin whitelist,
       scrubbed environment, non-dumpable worker, rlimits. LaTeX and plot code also share a user with the worker process,
