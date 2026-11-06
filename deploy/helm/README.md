@@ -17,36 +17,43 @@ helm template openprism deploy/helm/openprism -f deploy/helm/openprism/ci/test-v
 `ci/test-values.yaml` holds dummy values for everything the workflow supplies. Without `image.tag` and the three
 required secrets the render fails on purpose.
 
-## One-time bootstrap (issue #64)
+## One-time bootstrap (issues #64, #70, #71)
 
-The hosted Postgres and MinIO are shared, so the app gets its own database, role, bucket and bucket-limited MinIO user
-instead of running as root. `deploy/bootstrap/bootstrap.sh` does it once and is safe to re-run:
+The hosted Postgres is shared, so the app gets its own role and database instead of running as root; the bucket is
+created once. `deploy/bootstrap/bootstrap.sh` does it and is safe to re-run. The deploy workflow runs it on the first
+deploy (only while Secret `openprism-app-creds` is missing); it can also be run alone:
+
+- **From Actions:** workflow "Bootstrap hosted services", Run workflow, with `release_tag` = a tag whose images are
+  already built (it runs the S3 step in that release's `api` image). Manual only, same runner and secrets.
+- **By hand**, with `kubectl` on the cluster:
 
 ```bash
-export POSTGRES_HOST=... POSTGRES_PORT=... POSTGRES_USER=... POSTGRES_PASSWORD=...   # root
-export MINIO_HOST=...    MINIO_PORT=...    MINIO_ROOT_USER=... MINIO_ROOT_PASSWORD=...
-deploy/bootstrap/bootstrap.sh            # needs kubectl access (KUBECONFIG); namespace defaults to openprism
+export POSTGRES_HOST=... POSTGRES_PORT=... POSTGRES_USER=... POSTGRES_PASSWORD=...   # root, used only for the role/database
+export MINIO_HOST=... MINIO_PORT=... S3_ACCESS_KEY=... S3_SECRET_KEY=...             # the key pair the app will use
+export API_IMAGE=ghcr.io/cent-ischool/openprism/api:vX.Y.Z                            # carries boto3
+deploy/bootstrap/bootstrap.sh            # namespace defaults to openprism; needs ghcr-login-secret there
 ```
 
-- **Retrying alone (#70):** Actions, workflow "Bootstrap hosted services", Run workflow (manual only, same runner and
-  secrets). On failure the log shows the Job and pod status, their events and per-container logs before everything is
-  cleaned up, and it gives up early when no pod gets created or an image cannot be pulled.
-- It generates a database password and an S3 secret (hex), runs `pg-init.sh` (postgres image) and `minio-init.sh`
-  (`mc`) in a short-lived Job, and only after the Job succeeds stores the result in the cluster Secret
+- A short-lived Job runs `pg-init.sh` (postgres image) and `s3-init.py` (the `api` image; plain S3 API through boto3,
+  path-style, sigv4). Only after it succeeds does the script store the result in the cluster Secret
   `openprism-app-creds` (`db-password`, `s3-access-key`, `s3-secret-key`). Nothing is stored in GitHub.
-- The root credentials live in two temporary Secrets that are deleted when the script ends, even on failure; they are
-  never mounted into app pods and never appear in a command line.
+- The Postgres root credentials and the S3 key pair live in two temporary Secrets deleted when the script ends, even on
+  failure; they never appear in a command line or in logs.
 - If `openprism-app-creds` exists it does nothing. To rotate on purpose: delete that Secret, run the bootstrap, redeploy.
-- Postgres: role `openprism` (no superuser, createdb or createrole) owns database `openprism`; everyone else's CONNECT is
-  revoked. It refuses a database of that name owned by someone else. The role can still connect to other databases that
-  grant CONNECT to PUBLIC (the Postgres default); it owns nothing in them.
-- MinIO: bucket `openprism`, policy `openprism-openprism` (`s3:*` on that bucket only), user `openprism` (the access key).
-- Redis has no per-app role on this server: the app uses the shared `REDIS_PASSWORD` and database index `redis.db` (3).
-- Images: `postgres:16-alpine` and `minio/mc:latest` (override with `PG_IMAGE` / `MC_IMAGE`); the cluster must be able to
-  pull them. Pin `mc` once a release has been verified.
-- Tested here: `pg-init.sh` against a real Postgres 16 (idempotent, rotates the password, refuses a foreign-owned
-  database) and the orchestration with a fake `kubectl`. **Not yet run:** `minio-init.sh` (no MinIO image could be
-  pulled in the dev container) and anything against the real cluster.
+- On failure the log shows the Job and pod status, their events and per-container logs before cleanup, and it gives up
+  early when no pod is created or an image cannot be pulled.
+- **Postgres:** role `openprism` (no superuser, createdb or createrole) owns database `openprism`, with a generated
+  password; everyone else's CONNECT is revoked, and a database of that name owned by someone else is refused.
+- **Object storage:** `s3-init.py` creates bucket `openprism` if it is missing and proves the key pair can write, read
+  and delete in it. **It cannot create users or keys** (that is the store's admin API, not S3; the MinIO client `mc` is
+  no longer distributed and its images cannot be pulled), so the app uses the key pair it is given: a dedicated one if
+  the repo has the secrets `OPENPRISM_S3_ACCESS_KEY` / `OPENPRISM_S3_SECRET_KEY`, **otherwise the store's root key
+  (`MINIO_ROOT_USER` / `MINIO_ROOT_PASSWORD`)**. Create a dedicated key limited to the `openprism` bucket in MinIO and add
+  those two secrets to stop the app running as the storage root.
+- **Redis** has no per-app role on this server: the app uses the shared `REDIS_PASSWORD` and database index `redis.db` (3).
+- Tested: `pg-init.sh` against Postgres 16 (idempotent, rotates the password, refuses a foreign-owned database),
+  `s3-init.py` against an S3-compatible test server (creates the bucket, idempotent, leaves nothing behind), and the
+  orchestration with a fake `kubectl` in five modes. **Not yet run on the real cluster.**
 
 ## Releasing (issue #66)
 
@@ -70,7 +77,7 @@ every build fails early with the free space if less than 12 GB is available unde
 
 Repository secrets used: `GHCR_USERNAME`, `GHCR_PASSWORD`, `KUBECONFIG_CENT_BASE64`, `POSTGRES_HOST/PORT`,
 `REDIS_HOST/PORT/PASSWORD`, `MINIO_HOST/PORT`, `DJANGO_SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY`; for the bootstrap only,
-on the first deploy: `POSTGRES_USER/PASSWORD`, `MINIO_ROOT_USER/PASSWORD`; optional: `EMAIL_HOST_USER`,
+on the first deploy: `POSTGRES_USER/PASSWORD` and the S3 key pair (`OPENPRISM_S3_ACCESS_KEY/SECRET_KEY`, falling back to `MINIO_ROOT_USER/PASSWORD`); optional: `EMAIL_HOST_USER`,
 `EMAIL_HOST_PASSWORD`, `OPENPRISM_LLM_API_KEY`, `OPENPRISM_LLM_ENDPOINT`, `OPENPRISM_LLM_MODEL`,
 `OPENPRISM_MINERU_TOKEN`. Secrets reach steps as environment variables and go to the chart as `--set-file` from a
 temporary directory, never into script text or command lines.
@@ -156,7 +163,7 @@ User-supplied API keys never reach Kubernetes Secrets or Postgres; they live in 
 
 In rough order of risk:
 
-- `bootstrap/minio-init.sh` (`mc` commands) and the bootstrap Job on the real cluster; `pg-init.sh` is tested.
+- The bootstrap Job on the real cluster (the scripts are tested; the Job itself has not run).
 - Read-only root filesystems for the TeX worker (`HOME` and caches are redirected to `/tmp`; `xelatex` / `lualatex`
   font caches under a read-only root have not been exercised in a pod).
 - Pod Security admission on the shared cluster and whether it admits these pods.

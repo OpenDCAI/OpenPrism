@@ -2,10 +2,15 @@ name: Bootstrap hosted services
 run-name: ${{ github.actor }} is bootstrapping Postgres and MinIO
 
 # The same first-deploy step as in deploy-cent-k8s.yaml, runnable on its own (#70): creates the openprism database,
-# role, bucket and bucket-limited MinIO user, and the cluster Secret openprism-app-creds. A no-op once that Secret
+# role and bucket and the cluster Secret openprism-app-creds. A no-op once that Secret
 # exists. Manual only: never add a push or pull_request trigger (the repo is public, the runner is inside the cluster).
 on:
   workflow_dispatch:
+    inputs:
+      release_tag:
+        description: "Release tag whose api image runs the S3 step (it must already be built), e.g. v0.1.0.3"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -32,17 +37,30 @@ jobs:
           is-executable: false
           working-directory: "."
 
-      - name: Bootstrap Postgres and MinIO
+      - name: Soft-create namespace and ghcr image-pull secret
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_PASSWORD }}
+        run: |
+          kubectl create namespace "$K8S_NAMESPACE" --dry-run=client -o yaml \
+            | kubectl --kubeconfig=./"$KUBE_CONFIG" apply -f -
+          kubectl create secret docker-registry ghcr-login-secret \
+            --docker-server=https://ghcr.io --docker-username="$GHCR_USERNAME" --docker-password="$GHCR_PASSWORD" \
+            --dry-run=client -o yaml \
+            | kubectl --kubeconfig=./"$KUBE_CONFIG" --namespace="$K8S_NAMESPACE" apply -f -
+
+      - name: Bootstrap Postgres and the bucket
         env:
           NAMESPACE: ${{ env.K8S_NAMESPACE }}
+          API_IMAGE: ghcr.io/cent-ischool/openprism/api:${{ inputs.release_tag }}
+          S3_ACCESS_KEY: ${{ secrets.OPENPRISM_S3_ACCESS_KEY || secrets.MINIO_ROOT_USER }}
+          S3_SECRET_KEY: ${{ secrets.OPENPRISM_S3_SECRET_KEY || secrets.MINIO_ROOT_PASSWORD }}
           POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
           POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
           POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
           POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
           MINIO_HOST: ${{ secrets.MINIO_HOST }}
           MINIO_PORT: ${{ secrets.MINIO_PORT }}
-          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
-          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
         run: |
           export KUBECONFIG="$PWD/$KUBE_CONFIG"
           bash deploy/bootstrap/bootstrap.sh
