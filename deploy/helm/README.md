@@ -44,7 +44,33 @@ deploy/bootstrap/bootstrap.sh            # needs kubectl access (KUBECONFIG); na
   database) and the orchestration with a fake `kubectl`. **Not yet run:** `minio-init.sh` (no MinIO image could be
   pulled in the dev container) and anything against the real cluster.
 
-## How a release is installed
+## Releasing (issue #66)
+
+`.github/workflows/deploy-cent-k8s.yaml` follows graderthan's pattern: **a release is a `vX.Y.Z` tag**, never a plain
+push, and it runs on the cluster's self-hosted runner (`[self-hosted, linux, cent]`). The repository is public, so the
+workflow must never gain a `pull_request` trigger.
+
+1. On the release branch bump `apps/api/VERSION`, merge to `main`, and tag `vX.Y.Z` (the tag must equal the file; the
+   first job fails otherwise).
+2. The workflow builds and pushes four images to `ghcr.io/cent-ischool/openprism/{api,web,worker-tex,worker-ai}:<tag>`,
+   then deploys: kubeconfig from `KUBECONFIG_CENT_BASE64`, namespace and `ghcr-login-secret`, the bootstrap **only if**
+   `openprism-app-creds` is missing, `helm upgrade --install --atomic --wait`, `rollout status` for every Deployment,
+   and a smoke test of the public URL that requires `/api/health` to report the new version.
+3. To redeploy an existing tag: Actions, run the workflow, and pick the tag under "Use workflow from".
+
+Repository secrets used: `GHCR_USERNAME`, `GHCR_PASSWORD`, `KUBECONFIG_CENT_BASE64`, `POSTGRES_HOST/PORT`,
+`REDIS_HOST/PORT/PASSWORD`, `MINIO_HOST/PORT`, `DJANGO_SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY`; for the bootstrap only,
+on the first deploy: `POSTGRES_USER/PASSWORD`, `MINIO_ROOT_USER/PASSWORD`; optional: `EMAIL_HOST_USER`,
+`EMAIL_HOST_PASSWORD`, `OPENPRISM_LLM_API_KEY`, `OPENPRISM_LLM_ENDPOINT`, `OPENPRISM_LLM_MODEL`,
+`OPENPRISM_MINERU_TOKEN`. Secrets reach steps as environment variables and go to the chart as `--set-file` from a
+temporary directory, never into script text or command lines.
+
+The last step probes the **public** URL, so Caddy must already serve the hostname (`deploy/caddy`, issue #67). A failed
+smoke test does not roll the release back (Helm has finished); fix the proxy and re-run the workflow.
+
+`deploy/smoke-release.sh BASE_URL VERSION` can be run by hand the same way.
+
+## How a release is installed (what the workflow runs)
 
 ```bash
 helm upgrade --install openprism deploy/helm/openprism -n openprism \

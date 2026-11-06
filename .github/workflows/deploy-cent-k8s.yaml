@@ -1,0 +1,206 @@
+name: Release - build images & deploy to cent k8s
+run-name: ${{ github.actor }} is releasing ${{ github.ref_name }}
+
+# Modelled on cent-ischool/graderthan: a release happens ONLY on a version tag (vX.Y.Z), never on a plain push.
+# Per CLAUDE.md the release branch merges to main and is tagged; the tag must equal apps/api/VERSION.
+# workflow_dispatch re-deploys an existing tag: pick the tag in "Use workflow from".
+#
+# Runs on the cluster's self-hosted runner (the repo is public, so this workflow must never run on pull_request).
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Two releases must not touch the cluster at once; a running deploy is never cancelled half-way.
+concurrency:
+  group: deploy-openprism
+  cancel-in-progress: false
+
+env:
+  K8S_NAMESPACE: openprism
+  HELM_RELEASE: openprism
+  KUBE_CONFIG: kube.config
+  # docker-build-push prepends the repo owner, so `openprism/api` becomes ghcr.io/cent-ischool/openprism/api
+  # (matching image.registry in deploy/helm/openprism/values.yaml).
+  PUBLIC_URL: https://openprism.cent-su.org
+
+jobs:
+  check:
+    name: Check the tag
+    runs-on: [self-hosted, linux, cent]
+    outputs:
+      version: ${{ steps.v.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: v
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$REF_TYPE" != "tag" ]; then
+            echo "::error::Releases run from a version tag. Choose a tag in 'Use workflow from', not the branch $REF_NAME."
+            exit 1
+          fi
+          version="$(tr -d '[:space:]' < apps/api/VERSION)"
+          if [ "$REF_NAME" != "v$version" ]; then
+            echo "::error::Tag $REF_NAME does not match apps/api/VERSION (v$version). Bump the version on the release branch, then tag."
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    name: Build & push ${{ matrix.image }}
+    needs: [check]
+    runs-on: [self-hosted, linux, cent]
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - {image: openprism/api,         directory: apps/api, dockerfile: apps/api/Dockerfile,          target: api}
+          - {image: openprism/worker-tex,  directory: apps/api, dockerfile: apps/api/Dockerfile,          target: tex}
+          - {image: openprism/worker-ai,   directory: apps/api, dockerfile: apps/api/Dockerfile,          target: ai}
+          # The web image copies /design and apps/api/VERSION, so its build context is the repository root.
+          - {image: openprism/web,         directory: .,        dockerfile: apps/frontend/Dockerfile,     target: ''}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build and push image
+        uses: mr-smithers-excellent/docker-build-push@v6
+        with:
+          image: ${{ matrix.image }}
+          registry: ghcr.io
+          tags: ${{ github.ref_name }}
+          dockerfile: ${{ matrix.dockerfile }}
+          directory: ${{ matrix.directory }}
+          target: ${{ matrix.target }}
+          addLatest: false
+          username: ${{ secrets.GHCR_USERNAME }}
+          password: ${{ secrets.GHCR_PASSWORD }}
+          pushImage: true
+
+  deploy:
+    name: Deploy to the cluster
+    needs: [check, build]
+    runs-on: [self-hosted, linux, cent]
+    env:
+      VERSION: ${{ needs.check.outputs.version }}
+      TAG: ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Materialize kubeconfig from secret
+        uses: mobiledevops/secret-to-file-action@v1
+        with:
+          base64-encoded-secret: ${{ secrets.KUBECONFIG_CENT_BASE64 }}
+          filename: ${{ env.KUBE_CONFIG }}
+          is-executable: false
+          working-directory: "."
+
+      - name: Smoke-test cluster access
+        run: kubectl --kubeconfig=./${{ env.KUBE_CONFIG }} cluster-info
+
+      - name: Soft-create namespace
+        run: |
+          kubectl create namespace "$K8S_NAMESPACE" --dry-run=client -o yaml \
+            | kubectl --kubeconfig=./"$KUBE_CONFIG" apply -f -
+
+      - name: Soft-create ghcr image-pull secret
+        env:
+          GHCR_USERNAME: ${{ secrets.GHCR_USERNAME }}
+          GHCR_PASSWORD: ${{ secrets.GHCR_PASSWORD }}
+        run: |
+          kubectl create secret docker-registry ghcr-login-secret \
+            --docker-server=https://ghcr.io \
+            --docker-username="$GHCR_USERNAME" \
+            --docker-password="$GHCR_PASSWORD" \
+            --dry-run=client -o yaml \
+            | kubectl --kubeconfig=./"$KUBE_CONFIG" --namespace="$K8S_NAMESPACE" apply -f -
+
+      # The root Postgres / MinIO credentials are used only if the app's own credentials do not exist yet (first
+      # deploy). This check needs the kubeconfig and nothing else, so routine releases never load the root secrets.
+      - name: Do the hosted services need bootstrapping?
+        id: creds
+        run: |
+          if kubectl --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" get secret openprism-app-creds >/dev/null 2>&1; then
+            echo "needed=false" >> "$GITHUB_OUTPUT"
+            echo "openprism-app-creds exists: skipping the bootstrap"
+          else
+            echo "needed=true" >> "$GITHUB_OUTPUT"
+            echo "openprism-app-creds is missing: bootstrapping Postgres and MinIO (see deploy/bootstrap)"
+          fi
+
+      - name: Bootstrap Postgres and MinIO (first deploy only)
+        if: steps.creds.outputs.needed == 'true'
+        env:
+          NAMESPACE: ${{ env.K8S_NAMESPACE }}
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+          POSTGRES_USER: ${{ secrets.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ secrets.POSTGRES_PASSWORD }}
+          MINIO_HOST: ${{ secrets.MINIO_HOST }}
+          MINIO_PORT: ${{ secrets.MINIO_PORT }}
+          MINIO_ROOT_USER: ${{ secrets.MINIO_ROOT_USER }}
+          MINIO_ROOT_PASSWORD: ${{ secrets.MINIO_ROOT_PASSWORD }}
+        run: |
+          export KUBECONFIG="$PWD/$KUBE_CONFIG"
+          bash deploy/bootstrap/bootstrap.sh
+
+      # Secrets go to files (never into the command line or the script text) and into the chart with --set-file, so
+      # values containing commas, quotes or backslashes survive.
+      - name: Helm upgrade --install
+        env:
+          POSTGRES_HOST: ${{ secrets.POSTGRES_HOST }}
+          POSTGRES_PORT: ${{ secrets.POSTGRES_PORT }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          REDIS_PORT: ${{ secrets.REDIS_PORT }}
+          MINIO_HOST: ${{ secrets.MINIO_HOST }}
+          MINIO_PORT: ${{ secrets.MINIO_PORT }}
+          DJANGO_SECRET_KEY: ${{ secrets.DJANGO_SECRET_KEY }}
+          CREDENTIAL_ENCRYPTION_KEY: ${{ secrets.CREDENTIAL_ENCRYPTION_KEY }}
+          REDIS_PASSWORD: ${{ secrets.REDIS_PASSWORD }}
+          # Optional: empty means the chart leaves them out.
+          EMAIL_HOST_USER: ${{ secrets.EMAIL_HOST_USER }}
+          EMAIL_HOST_PASSWORD: ${{ secrets.EMAIL_HOST_PASSWORD }}
+          OPENPRISM_LLM_API_KEY: ${{ secrets.OPENPRISM_LLM_API_KEY }}
+          OPENPRISM_LLM_ENDPOINT: ${{ secrets.OPENPRISM_LLM_ENDPOINT }}
+          OPENPRISM_LLM_MODEL: ${{ secrets.OPENPRISM_LLM_MODEL }}
+          OPENPRISM_MINERU_TOKEN: ${{ secrets.OPENPRISM_MINERU_TOKEN }}
+        run: |
+          set -euo pipefail
+          for v in POSTGRES_HOST POSTGRES_PORT REDIS_HOST REDIS_PORT MINIO_HOST MINIO_PORT \
+                   DJANGO_SECRET_KEY CREDENTIAL_ENCRYPTION_KEY REDIS_PASSWORD; do
+            [ -n "${!v:-}" ] || { echo "::error::secret $v is empty or missing"; exit 1; }
+          done
+          dir="$(mktemp -d)"; chmod 700 "$dir"; trap 'rm -rf "$dir"' EXIT
+          setfile=()
+          for k in DJANGO_SECRET_KEY CREDENTIAL_ENCRYPTION_KEY REDIS_PASSWORD EMAIL_HOST_USER EMAIL_HOST_PASSWORD \
+                   OPENPRISM_LLM_API_KEY OPENPRISM_LLM_ENDPOINT OPENPRISM_LLM_MODEL OPENPRISM_MINERU_TOKEN; do
+            printf '%s' "${!k:-}" > "$dir/$k"
+            setfile+=(--set-file "secrets.$k=$dir/$k")
+          done
+          helm --kubeconfig=./"$KUBE_CONFIG" upgrade --install "$HELM_RELEASE" ./deploy/helm/openprism \
+            -n "$K8S_NAMESPACE" -f ./deploy/helm/openprism/values.yaml \
+            --set-string image.tag="$TAG" \
+            --set-string postgres.host="$POSTGRES_HOST" --set-string postgres.port="$POSTGRES_PORT" \
+            --set-string redis.host="$REDIS_HOST"       --set-string redis.port="$REDIS_PORT" \
+            --set-string s3.host="$MINIO_HOST"          --set-string s3.port="$MINIO_PORT" \
+            "${setfile[@]}" \
+            --atomic --wait --wait-for-jobs --timeout 20m
+
+      # helm --wait already gated on readiness; naming each Deployment makes a worker that never came up fail here
+      # by name instead of passing silently.
+      - name: Rollout status
+        run: |
+          for d in api web beat worker-compile worker-transfer worker-ai; do
+            kubectl --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" rollout status "deploy/$d" --timeout=5m
+          done
+
+      # Probe the PUBLIC URL from the runner (Caddy -> NodePort -> nginx -> API), and require the version just tagged,
+      # so a healthy old pod cannot pass for a rollout that did not happen. Needs the Caddy config (deploy/caddy).
+      - name: Smoke-test the public URL serves this version
+        run: bash deploy/smoke-release.sh "$PUBLIC_URL" "$VERSION"

@@ -7,7 +7,7 @@ image:
   pullSecrets: [ghcr-login-secret]           # created by the workflow from GHCR_USERNAME / GHCR_PASSWORD
 
 # Public hostname served by the external Caddy2 (TLS ends there). Used for APP_BASE_URL, allowed hosts and mail links.
-host: openprism.example.com
+host: openprism.cent-su.org   # placeholder: confirm the hostname Caddy will serve
 
 # The web Service is the only entry point. Caddy proxies the hostname to <node-ip>:nodePort (cluster range 30000-32767;
 # 31080 belongs to iot-portal).
@@ -37,10 +37,10 @@ s3:
 credentialsSecret: openprism-app-creds
 
 mail:
-  host: smtp.example.com
+  host: smtp-relay.syr.edu    # the relay iot-portal and graderthan use
   port: 587
   tls: "1"
-  from: "OpenPrism <no-reply@openprism.example.com>"
+  from: "OpenPrism <openprism@cent-su.org>"   # placeholder: confirm the sender address
 
 # Rendered into the openprism-core / openprism-ai Secrets. The workflow passes these with --set-file so values with
 # commas or backslashes survive. Only the first three are required; the AI keys are optional server-side defaults.
