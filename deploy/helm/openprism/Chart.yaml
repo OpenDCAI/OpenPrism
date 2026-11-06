@@ -4,4 +4,4 @@ description: OpenPrism (LaTeX + AI workspace) app tier for the cent cluster. Pos
 type: application
 version: 0.1.0
 # The deployed version is apps/api/VERSION, baked into the images; the workflow overrides this with --set-string if wanted.
-appVersion: "0.0.10"
+appVersion: "0.1.0"
