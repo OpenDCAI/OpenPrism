@@ -158,6 +158,22 @@ The compile worker executes documents written by whoever can edit a project, inc
 Secrets are split by need: only `worker-transfer` and `worker-ai` receive `openprism-ai` (LLM and MinerU keys).
 User-supplied API keys never reach Kubernetes Secrets or Postgres; they live in Redis for the length of a job.
 
+## Invitation-only access (v0.1.2)
+
+By default anyone who finds the URL can register. To keep strangers out, in this order:
+
+1. Deploy, then make the first superadmin (see *Django admin*).
+2. Check mail works: `kubectl -n openprism exec deploy/api -- python manage.py send_test_email you@example.com`
+   (needs the `mail.*` values and the SMTP secrets; invitations are sent as mail).
+3. Set `registration.mode: invite` (and `registration.contactEmail`), then `helm upgrade` / release. Existing accounts keep
+   working; the landing page and `/register` stop offering sign-up.
+4. Invite people in `/admin/` -> *Platform invites* -> *Invite people* (an address per line or a pasted CSV column,
+   optionally with a workspace and role). Links work once and for `registration.inviteDays` (7); *Send again* replaces a
+   link, *Revoke* ends it, the list shows who is sent, failed, used or expired.
+
+A workspace invitation (an admin inviting an address with no account) also lets that address register, unless
+`registration.workspaceInvitesAllowSignup: false`. To go back, set the mode to `open`.
+
 ## Django admin (v0.1.1, #79)
 
 `https://<host>/admin/` is the Django admin for superadmins. It needs no chart change: Caddy sends everything to the `web`
@@ -196,5 +212,5 @@ checked on the cluster, in rough order of risk:
 - **No NetworkPolicies** are installed: `worker-compile` has no network isolation (see the security model above).
 - **The app uses the object store's root S3 key** unless `OPENPRISM_S3_ACCESS_KEY` / `_SECRET_KEY` exist (see the
   bootstrap section); to change it, delete `openprism-app-creds`, add the secrets, re-run the bootstrap workflow and redeploy.
-- **Registration is open** (`REGISTRATION_MODE`) and no SMTP credentials are set, so account mail may not be delivered.
+- **Registration is open** (`registration.mode`, default `open`) and no SMTP credentials are set, so account mail may not be delivered; invitation links are mail too, so fix mail before closing registration.
 - A rolling update while a compile or transfer is running (the grace periods are set, the behaviour is not tested).

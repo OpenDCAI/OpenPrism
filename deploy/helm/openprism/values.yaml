@@ -55,6 +55,15 @@ secrets:
   OPENPRISM_LLM_MODEL: ""
   OPENPRISM_MINERU_TOKEN: ""
 
+# Who may create an account (v0.1.2). `open`: anyone who finds the site. `invite`: only addresses a superadmin invited in
+# /admin/ (platform invitations) or, unless workspaceInvitesAllowSignup is false, that a workspace admin invited. Make the
+# first superadmin and check that mail works BEFORE switching to `invite` (see README, "Invitation-only access").
+registration:
+  mode: open
+  workspaceInvitesAllowSignup: true
+  contactEmail: ""        # shown on the closed sign-up pages ("write to ...")
+  inviteDays: 7           # how long a platform invitation link works
+
 # Extra ConfigMap entries (or overrides), e.g. SERVER_LLM_KEY_USERS. Defaults are the application's own.
 config:
   ASGI_THREADS: "16"                      # caps the API's thread pool, and so its database connections per pod

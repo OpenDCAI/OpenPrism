@@ -32,7 +32,7 @@ class GateTests(TestCase):
 
     def assertGeneric(self, res):
         self.assertEqual(res.status_code, 400, res.data)
-        self.assertIn('invitation is not valid or has expired', res.data['error'])
+        self.assertEqual(res.data['error'], 'This invitation is not valid or has expired. Ask for a new one.')
 
     def test_no_invitation_is_refused(self):
         self.assertGeneric(register('stranger@example.com'))

@@ -43,7 +43,7 @@ class RegisterSerializer(serializers.Serializer):
         try:
             data['platform_invite'] = signup.check_signup(data['email'], data.get('invite'))
         except signup.SignupRefused as e:
-            raise serializers.ValidationError({'email': str(e)})
+            raise serializers.ValidationError({'detail': str(e)})
         if User.objects.filter(email=data['email']).exists():
             raise serializers.ValidationError({'email': 'An account with this email already exists.'})
         return data
@@ -56,7 +56,7 @@ class RegisterSerializer(serializers.Serializer):
         if invite is not None:
             invite = invitations.lock(invite)  # a second request with the same link waits here, then finds it used
             if invite is None:
-                raise serializers.ValidationError({'email': signup_refused()})
+                raise serializers.ValidationError({'detail': signup_refused()})
         try:
             with transaction.atomic():
                 user = User.objects.create_user(data['email'], data['password'], name=data.get('name', ''))

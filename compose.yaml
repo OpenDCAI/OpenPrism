@@ -80,6 +80,10 @@ services:
       TRUSTED_PROXY_COUNT: "1" # the nginx web container: rate limits must key on the real client, not on it
       AI_RATE_PER_MINUTE: ${AI_RATE_PER_MINUTE:-30} # per user: llm, agent, vision, plot, transfer, arXiv import
       COMPILE_RATE_PER_MINUTE: ${COMPILE_RATE_PER_MINUTE:-30}
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-open} # invite: only invited addresses may register (the browser suite needs open)
+      WORKSPACE_INVITES_ALLOW_SIGNUP: ${WORKSPACE_INVITES_ALLOW_SIGNUP:-1} # in invite mode, workspace invitations also open the door
+      ACCESS_CONTACT_EMAIL: ${ACCESS_CONTACT_EMAIL:-} # shown on the closed sign-up pages
+      PLATFORM_INVITE_DAYS: ${PLATFORM_INVITE_DAYS:-7} # lifetime of a platform invitation link
       SERVER_LLM_KEY_USERS: ${SERVER_LLM_KEY_USERS:-all} # who may use OPENPRISM_LLM_*: all | verified | staff | none
       SERVER_LLM_DAILY_QUOTA: ${SERVER_LLM_DAILY_QUOTA:-200} # jobs per user per UTC day on that key; 0 = no limit
       DATABASE_URL: postgres://${POSTGRES_USER:-openprism}:${POSTGRES_PASSWORD:-openprism}@postgres:5432/${POSTGRES_DB:-openprism}

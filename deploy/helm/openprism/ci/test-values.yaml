@@ -10,3 +10,8 @@ secrets:
   CREDENTIAL_ENCRYPTION_KEY: not-a-real-key
   REDIS_PASSWORD: "p@ss:w/rd"
   OPENPRISM_LLM_API_KEY: not-a-real-key
+registration:
+  mode: invite
+  workspaceInvitesAllowSignup: false
+  contactEmail: help@test.example
+  inviteDays: 3
