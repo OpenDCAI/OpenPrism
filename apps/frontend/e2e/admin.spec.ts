@@ -54,3 +54,26 @@ test('only superusers get in: a staff account without superuser is refused, and 
   const framed = await request.get('/admin/login/');
   expect(framed.headers()['x-frame-options']).toBe('DENY');
 });
+
+test('a superadmin browses the registered models and finds accounts, but cannot add or delete them', async ({ page }) => {
+  const root = newSuperuser('lists');
+  await page.goto('/admin/login/');
+  await page.getByLabel('Email:').fill(root.email);
+  await page.getByLabel('Password:').fill(root.password);
+  await page.getByRole('button', { name: /log in/i }).click();
+  await expect(page.getByRole('heading', { name: 'Site administration' })).toBeVisible();
+
+  for (const name of ['Users', 'Workspaces', 'Projects', 'Jobs', 'Templates', 'Credential events', 'Log entries']) {
+    await expect(page.getByRole('link', { name, exact: true }).first(), name).toBeVisible();
+  }
+  for (const gone of ['Outstanding Tokens', 'Blacklisted Tokens', 'Groups', 'Zotero connections', 'User credentials']) {
+    await expect(page.getByRole('link', { name: gone })).toHaveCount(0);
+  }
+  await page.getByRole('link', { name: 'Users', exact: true }).first().click();
+  await expect(page.getByRole('link', { name: root.email })).toBeVisible();
+  await expect(page.getByRole('link', { name: /add user/i })).toHaveCount(0);
+  await page.screenshot({ path: 'test-results/admin-users.png', fullPage: true });
+  await page.getByRole('link', { name: root.email }).click();
+  await expect(page.getByRole('link', { name: /delete/i })).toHaveCount(0);
+  expect((await page.request.get('/admin/accounts/user/add/')).status()).toBe(403);
+});
