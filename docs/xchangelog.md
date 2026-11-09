@@ -239,3 +239,10 @@
       and `/static/`; the api serves its static files with WhiteNoise (collected into `/app-static` at image build time;
       `django.contrib.staticfiles` installed); `CSRF_TRUSTED_ORIGINS` follows `TRUSTED_ORIGINS`; Vite proxies both for
       development. Tests: `accounts/test_admin.py`, `e2e/admin.spec.ts` (with a `newSuperuser()` helper).
+- [x] #80 **Admin: superusers only, hardened session cookie and login rate limit.** `SuperuserAdminSite`: an active
+      `is_superuser` is required to log in and for every page (staff alone gets nothing; demotion ends access at once);
+      session cookie `openprism_admin` (httpOnly, Strict, Secure by the refresh cookie's rule, 8 h), CSRF cookie
+      likewise; login form limited to 10 submissions per address per 15 minutes (429 `Retry-After`;
+      `common.ratelimit.hit` takes a window); nginx adds `X-Frame-Options: DENY`; an admin session does not
+      authenticate the API; optional Caddy block to restrict `/admin/` by address. Tests: `accounts/test_admin.py`,
+      `e2e/admin.spec.ts`.

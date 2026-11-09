@@ -62,7 +62,7 @@ DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', 'OpenPrism <no-reply@localhost>')
 ALLOWED_HOSTS = [h for h in env('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h]
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    'accounts.adminconfig.SuperuserAdminConfig',  # django.contrib.admin with our site: superusers only (#80)
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
@@ -184,12 +184,23 @@ SIMPLE_JWT = {
 
 # The refresh token lives in this httpOnly cookie (accounts/cookies.py); the access token only in the page's memory.
 REFRESH_COOKIE_NAME = 'openprism_refresh'
+# The Django admin (#80) is the only user of sessions and CSRF cookies: the app itself authenticates with JWTs. Its own
+# cookie name and flags keep it apart from the app's cookies; the session is short.
+ADMIN_SESSION_HOURS = int(env('ADMIN_SESSION_HOURS', '8'))
+ADMIN_LOGIN_RATE_PER_15_MIN = int(env('ADMIN_LOGIN_RATE_PER_15_MIN', '10'))  # login form submissions per address
+SESSION_COOKIE_NAME = 'openprism_admin'
+SESSION_COOKIE_AGE = ADMIN_SESSION_HOURS * 3600
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Strict'
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'Strict'
 REFRESH_COOKIE_SECURE = env_bool('REFRESH_COOKIE_SECURE', not DEBUG)  # browsers accept Secure cookies on http://localhost too
 # Origins whose pages may use the refresh cookie (an Origin header must be one of these): APP_BASE_URL and any extra
 # origins people open the app at (comma-separated), e.g. the nginx image on :8080 next to Vite on :5173 in dev.
 TRUSTED_ORIGINS = sorted({APP_BASE_URL, *(o.strip().rstrip('/') for o in env('TRUSTED_ORIGINS', '').split(',') if o.strip())})
 # The admin's login form is the one place Django checks CSRF; behind the proxies it must accept the app's origins.
 CSRF_TRUSTED_ORIGINS = TRUSTED_ORIGINS
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = REFRESH_COOKIE_SECURE  # same rule as the refresh cookie
 
 REDIS_URL = env('REDIS_URL', 'redis://localhost:6379/0')
 if TESTING:  # tests share the dev Redis: keep their keys (and anything they enqueue) out of the dev database

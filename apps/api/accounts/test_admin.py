@@ -1,4 +1,6 @@
-"""The Django admin is reachable, styled and usable behind the proxies (v0.1.1, #79)."""
+"""The Django admin is reachable, styled and usable behind the proxies (#79), and for superusers only (#80)."""
+import uuid
+
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
 
@@ -34,3 +36,76 @@ class AdminReachabilityTests(TestCase):
     def test_the_app_and_its_routes_are_unchanged(self):
         self.assertEqual(Client().get('/healthz').status_code, 200)
         self.assertEqual(Client().get('/api/auth/me').status_code, 401)
+
+
+def login(client, email, password=PASSWORD, ip='203.0.113.7'):
+    page = client.get('/admin/login/', REMOTE_ADDR=ip)
+    return client.post('/admin/login/', {'username': email, 'password': password, 'next': '/admin/',
+                                         'csrfmiddlewaretoken': page.cookies['csrftoken'].value}, REMOTE_ADDR=ip)
+
+
+class AdminAccessTests(TestCase):
+    """Only active superusers use the admin (#80); the app's JWT API never accepts the admin's session."""
+
+    def setUp(self):
+        User = get_user_model()
+        self.root = User.objects.create_superuser('root@example.com', PASSWORD)
+        self.staff = User.objects.create_user('staff@example.com', PASSWORD, is_staff=True)
+        self.plain = User.objects.create_user('plain@example.com', PASSWORD)
+        # one address per test: the login limit is counted in the shared cache and outlives a test run
+        self.ip = '198.51.100.%d' % (uuid.uuid4().int % 250 + 1)
+
+    def test_a_superuser_logs_in_and_reaches_the_index(self):
+        client = Client()
+        res = login(client, 'root@example.com', ip=self.ip)
+        self.assertEqual((res.status_code, res['Location']), (302, '/admin/'))
+        self.assertEqual(client.get('/admin/').status_code, 200)
+
+    def test_staff_without_superuser_and_ordinary_accounts_cannot_log_in(self):
+        for email in ('staff@example.com', 'plain@example.com'):
+            client = Client()
+            res = login(client, email, ip=self.ip)
+            self.assertEqual(res.status_code, 200, email)  # the form again, with its error
+            self.assertContains(res, 'Please enter the correct')
+            self.assertEqual(client.get('/admin/').status_code, 302, email)
+
+    def test_demoting_a_logged_in_superuser_ends_their_access_at_once(self):
+        client = Client()
+        login(client, 'root@example.com', ip=self.ip)
+        self.root.is_superuser = False
+        self.root.save()
+        self.assertEqual(client.get('/admin/').status_code, 302)
+
+    def test_a_logged_in_staff_session_gets_no_admin_pages(self):
+        client = Client()
+        client.force_login(self.staff)
+        self.assertEqual(client.get('/admin/').status_code, 302)  # to the login form, not the index
+        client.force_login(self.plain)
+        self.assertEqual(client.get('/admin/auth/group/').status_code, 302)
+        self.assertEqual(Client().get('/admin/').status_code, 302)
+
+    def test_the_admin_session_cookie_is_its_own_and_hardened(self):
+        with override_settings(SESSION_COOKIE_SECURE=True, CSRF_COOKIE_SECURE=True):
+            client = Client()
+            res = login(client, 'root@example.com', ip=self.ip)
+        cookie = res.cookies['openprism_admin']
+        self.assertEqual((cookie['httponly'], cookie['samesite'], cookie['secure']), (True, 'Strict', True))
+        self.assertEqual(int(cookie['max-age']), 8 * 3600)
+        csrf = Client().get('/admin/login/').cookies['csrftoken']
+        self.assertEqual((csrf['httponly'], csrf['samesite']), (True, 'Strict'))
+
+    def test_the_admin_session_does_not_authenticate_the_api(self):
+        client = Client()
+        login(client, 'root@example.com', ip=self.ip)
+        self.assertEqual(client.get('/api/projects').status_code, 401)
+        self.assertEqual(client.get('/api/auth/me').status_code, 401)
+
+    @override_settings(ADMIN_LOGIN_RATE_PER_15_MIN=3)
+    def test_login_attempts_are_limited_per_address(self):
+        statuses = [login(Client(), 'root@example.com', 'wrong-password', ip=self.ip).status_code for _ in range(4)]
+        self.assertEqual(statuses, [200, 200, 200, 429])
+        res = login(Client(), 'root@example.com', 'wrong-password', ip=self.ip)
+        self.assertEqual(res.status_code, 429)
+        self.assertGreater(int(res['Retry-After']), 0)
+        other = '192.0.2.%d' % (uuid.uuid4().int % 250 + 1)
+        self.assertEqual(login(Client(), 'root@example.com', ip=other).status_code, 302)  # others are not affected
