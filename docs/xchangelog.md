@@ -246,3 +246,9 @@
       `common.ratelimit.hit` takes a window); nginx adds `X-Frame-Options: DENY`; an admin session does not
       authenticate the API; optional Caddy block to restrict `/admin/` by address. Tests: `accounts/test_admin.py`,
       `e2e/admin.spec.ts`.
+- [x] #81 **Admin: register the models read-mostly, with no credentials and no deletes that skip cleanup.** `admin.py` in
+      accounts, projects, jobs, templates, collab, integrations and versions, built on `common.admin.ReadOnlyAdmin`;
+      accounts editable only for name/active/staff/superuser plus a *mark email verified* action; no add/delete for
+      accounts, workspaces and projects; `LogEntry` visible. Credential models, file contents and the Yjs state are
+      not registered, and simplejwt's `OutstandingToken`/`BlacklistedToken` (refresh tokens) and `Group` are
+      unregistered. Tests: `accounts/test_admin_models.py` (planted secrets never appear), `e2e/admin.spec.ts`.
