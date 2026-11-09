@@ -3,6 +3,8 @@ import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Badge, Button, Icon, Logo, Select } from '@design';
 import type { IconName } from '@design';
+import { fetchPublicConfig, type PublicConfig } from '../api/client';
+import { useAuth } from '../auth/AuthProvider';
 import './pages.css';
 
 const TITLE_TEXT = 'OpenPrism is Here';
@@ -21,6 +23,11 @@ const FEATURE_ICONS: Record<(typeof FEATURE_KEYS)[number], IconName> = {
 export default function LandingPage() {
   const navigate = useNavigate();
   const { t, i18n } = useTranslation();
+  const { state } = useAuth();
+  const [config, setConfig] = useState<PublicConfig | null>(null);
+  useEffect(() => { void fetchPublicConfig().then(setConfig); }, []);
+  // Signed-out visitors of an invitation-only site are offered sign-in, not sign-up (v0.1.2).
+  const closed = state.status !== 'user' && config?.registration === 'invite';
   const [charCount, setCharCount] = useState(0);
   const [activeFeature, setActiveFeature] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval>>();
@@ -96,9 +103,10 @@ export default function LandingPage() {
         <p className="lp-subtitle" dangerouslySetInnerHTML={{ __html: t('landing.subtitle') }} />
 
         {/* CTA */}
-        <Button variant="primary" size="lg" iconEnd="chevron-right" onClick={() => navigate('/projects')}>
-          {t('landing.startWriting')}
+        <Button variant="primary" size="lg" iconEnd="chevron-right" onClick={() => navigate(closed ? '/login' : '/projects')}>
+          {closed ? t('Sign in') : t('landing.startWriting')}
         </Button>
+        {closed && <p className="lp-invite-note">{t('Access is by invitation.')}{config?.contactEmail && <> <a href={`mailto:${config.contactEmail}`}>{config.contactEmail}</a></>}</p>}
 
         {/* Feature badges */}
         <div className="lp-badges">

@@ -22,6 +22,10 @@ interface AuthScreenProps {
   onForgotPassword?: () => void;
   /** Pre-fills the email field (e.g. from an invitation link). */
   initialEmail?: string;
+  /** The address is fixed (an invitation is for one address only). */
+  lockEmail?: boolean;
+  /** False when accounts are by invitation only: the sign-in form then offers no "Create an account". Default true. */
+  canRegister?: boolean;
   /** Optional context shown above the form, e.g. "Sign in to continue to your project". */
   notice?: ReactNode;
 }
@@ -30,7 +34,34 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8;
 
 /** Sign-in and account creation. Full-screen, shown whenever there is no session. */
-export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassword, initialEmail = '' }: AuthScreenProps) {
+export function ClosedSignup({ contactEmail, onSignIn }: { contactEmail: string | null; onSignIn: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="op-signed-out">
+      <div className="op-signed-out-card">
+        <LogoMark size={40} />
+        <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>
+          <h1>{t('Access is by invitation')}</h1>
+          <p>{t('Open Prism accounts are created from an invitation sent to your email address.')}</p>
+        </div>
+        <div className="op-auth-banner" role="status">
+          <Icon name="info" />
+          <span>
+            {contactEmail
+              ? <>{t('To ask for access, write to')} <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</>
+              : t('To ask for access, contact the people who run this site.')}
+          </span>
+        </div>
+        <p className="op-auth-switch">
+          {t('Already have an account?')}{' '}
+          <button type="button" className="op-link-btn" onClick={onSignIn}>{t('Sign in')}</button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassword, initialEmail = '', lockEmail = false, canRegister = true }: AuthScreenProps) {
   const { t } = useTranslation();
   const uid = useId();
   const register = mode === 'register';
@@ -113,6 +144,7 @@ export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassw
               autoFocus
               placeholder="name@university.edu"
               value={values.email}
+              readOnly={lockEmail || undefined}
               aria-invalid={shown('email') ? true : undefined}
               aria-describedby={shown('email') ? `${uid}-email-error` : undefined}
               onChange={set('email')}
@@ -157,12 +189,14 @@ export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassw
           </Button>
         </form>
 
-        <p className="op-auth-switch">
-          {register ? t('Already have an account?') : t('New to Open Prism?')}{' '}
-          <button type="button" className="op-link-btn" onClick={switchMode}>
-            {register ? t('Sign in') : t('Create an account')}
-          </button>
-        </p>
+        {(register || canRegister) && (
+          <p className="op-auth-switch">
+            {register ? t('Already have an account?') : t('New to Open Prism?')}{' '}
+            <button type="button" className="op-link-btn" onClick={switchMode}>
+              {register ? t('Sign in') : t('Create an account')}
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

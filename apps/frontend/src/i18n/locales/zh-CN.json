@@ -965,5 +965,11 @@
   "Uploaded {{count}} files": "已上传 {{count}} 个文件",
   "Upload failed: {{error}}": "上传失败：{{error}}",
   "{{from}} was renamed to {{to}}": "{{from}} 已重命名为 {{to}}",
-  "{{path}} was deleted": "{{path}} 已被删除"
+  "{{path}} was deleted": "{{path}} 已被删除",
+  "Access is by invitation": "仅限受邀访问",
+  "Open Prism accounts are created from an invitation sent to your email address.": "Open Prism 账户需通过发送到您邮箱的邀请创建。",
+  "To ask for access, write to": "如需申请访问，请联系",
+  "To ask for access, contact the people who run this site.": "如需申请访问，请联系本站管理员。",
+  "You were invited to Open Prism. Create your account with this address.": "您已受邀使用 Open Prism。请用此邮箱地址创建账户。",
+  "Access is by invitation.": "仅限受邀访问。"
 }
