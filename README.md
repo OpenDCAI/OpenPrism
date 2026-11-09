@@ -79,6 +79,16 @@ Then open:
 
 There is no seeded user: click **Create account** in the UI to register. Registering creates your personal workspace.
 
+**The Django admin** (`/admin/` on either address) is for superadmins. Make the first one, and any later ones, with:
+
+```bash
+docker compose exec api python manage.py make_superadmin you@example.com   # prompts for a password if the address has no account
+docker compose exec api python manage.py revoke_superadmin you@example.com # the account stays; the last superadmin cannot be removed
+```
+
+`createsuperuser` also works. An existing account is promoted and keeps its password; a new one is created, verified and
+given a personal workspace.
+
 | Port | Service |
 |---|---|
 | 5173 | Vite dev server |
