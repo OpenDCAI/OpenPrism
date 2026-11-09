@@ -2,7 +2,7 @@
 
 ## v0.1.2 - Invitation-only access
 
-- [ ] #83 Invitations: PlatformInvite model, service and mail
+- [x] #83 Invitations: PlatformInvite model, service and mail
 - [ ] #84 Invitations: registration requires an invitation (single sign-up gate)
 - [ ] #85 Invitations: superadmins manage them in the Django admin
 - [ ] #86 Invitations: public site and invitation link say access is by invitation
