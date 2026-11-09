@@ -185,6 +185,12 @@ work and that a refresh cannot bypass a second factor.
       unverified provider email is an account-takeover route); never create a second account for an invited address.
 - [ ] **B5 Account page: sign-in methods.** List and add/remove email addresses, social accounts, passkeys and the
       second factor; refuse to remove the last way to sign in; recent sign-ins.
+- [ ] **B6 One sign-in for the app and the Django admin.** Today a superadmin signs in twice: the app (JWT in memory +
+      httpOnly refresh cookie) and `/admin/` (its own `openprism_admin` session, v0.1.1) share nothing. First step: an
+      "Admin" link in the account menu, shown to superusers only. Then decide how the admin session is created from the
+      app's sign-in (a short-lived single-use handoff, or the admin signing in through allauth) without putting the
+      admin's power behind the app's weaker session; the admin keeps its own lifetime, `SameSite=Strict` cookie and
+      rate limit, and asks for the second factor (B2) like everything else.
 - [ ] **Decisions:** allauth headless, or the hosted identity provider route; which providers; whether two-factor is
       optional for everyone or required (superadmins first); sign-in-method changes mail the user.
 - [ ] **Tests and QA:** unit tests per flow (including that every sign-up path passes the invitation gate and that
