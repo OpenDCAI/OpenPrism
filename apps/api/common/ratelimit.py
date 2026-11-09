@@ -5,19 +5,19 @@ from django.core.cache import cache
 from rest_framework.exceptions import Throttled
 
 
-def hit(scope, ident, per_minute):
-    """Count one request for `ident` in `scope`. Returns 0 while within `per_minute`, else the seconds until the
-    window resets (for Retry-After)."""
+def hit(scope, ident, limit, window_seconds=60):
+    """Count one request for `ident` in `scope`. Returns 0 while within `limit` for the current fixed window (a minute
+    unless `window_seconds` says otherwise), else the seconds until the window resets (for Retry-After)."""
     now = time.time()
-    window = int(now // 60)
+    window = int(now // window_seconds)
     key = f'rate:{scope}:{ident}:{window}'
-    cache.add(key, 0, 90)
+    cache.add(key, 0, window_seconds + 30)
     try:
         count = cache.incr(key)
     except ValueError:  # expired between add and incr
-        cache.add(key, 1, 90)
+        cache.add(key, 1, window_seconds + 30)
         count = 1
-    return 0 if count <= per_minute else max(1, int((window + 1) * 60 - now) + 1)
+    return 0 if count <= limit else max(1, int((window + 1) * window_seconds - now) + 1)
 
 
 def ident_for(user):

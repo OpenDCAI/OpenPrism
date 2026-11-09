@@ -38,6 +38,16 @@ openprism.cent-su.org {
 		# (TRUSTED_PROXY_COUNT = 2: this proxy, then the web nginx) and takes the real client from them.
 	}
 
+	# OPTIONAL: hide the Django admin (/admin/, superadmins only) from the internet. Uncomment and list the addresses that
+	# may reach it; everything else gets a 404. Without it the admin is public, behind its own login (superusers only,
+	# rate limited, no two-factor yet). Put the block before `reverse_proxy` so it is matched first.
+	#
+	# @admin_outsiders {
+	# 	path /admin /admin/*
+	# 	not remote_ip 192.0.2.0/24 2001:db8::/32     # CHANGE ME: your office / VPN addresses
+	# }
+	# respond @admin_outsiders 404
+
 	# Short-lived URL tokens travel in ?token= for images, PDFs, event streams and websockets: keep them out of the
 	# access log. (Authorization and cookies are redacted by Caddy unless log_credentials is turned on.)
 	log {
