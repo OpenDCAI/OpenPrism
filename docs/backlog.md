@@ -128,6 +128,111 @@ nothing says how a superadmin is made or how the site is reached in production.
 - [ ] **Tests.** Superadmin can load the changelists; a normal or staff-without-permission account cannot; secrets never
       appear in the admin pages.
 
+## v0.1.2 - A) Invitation-only access
+
+**Plan, to be fleshed out before issues are written.** Needs v0.1.1 (the Django admin is where a superadmin manages
+this). Keeps strangers who find the URL from signing up.
+
+Where we are today: `REGISTRATION_MODE=invite` accepts an address only if a *workspace* invitation (`WorkspaceInvite`,
+made by a workspace admin) exists for it. That is not the same thing: nobody can be let onto the platform without being
+attached to a workspace, workspace admins can open the door on their own, and the landing page and `/register` still
+invite strangers to sign up.
+
+- [ ] **Model.** A `PlatformInvite` (email, hashed single-use token like `CollabInvite`, `invited_by`, expiry, `used_at`,
+      the account it created, optional workspace and role to join on registration). Decide: one invite per address or
+      several, default expiry, whether an invite survives a registration that fails halfway.
+- [ ] **Registration requires one.** Registration is refused without a valid invitation for that address. Decide how it
+      relates to workspace invitations (suggested: a workspace admin may invite only people who already have an account
+      or hold a platform invitation, so the superadmin controls who is on the service).
+- [ ] **A single gate that every sign-up path goes through,** so B's social sign-in cannot bypass it (with allauth this
+      is `is_open_for_signup` on the account and social-account adapters).
+- [ ] **Superadmin manages them in the admin.** Create (one address or a pasted list/CSV), resend, revoke, see status
+      (sent, mail failed, used, expired) and who invited. Reuses `mail.send_template` and the `send_failed` pattern.
+      Only superusers, not plain staff.
+- [ ] **The invitation proves the address.** The mailed link (`/register?invite=…`) carries the token and pre-fills the
+      email; completing registration marks the address verified.
+- [ ] **No enumeration, no guessing.** Wrong, expired and used tokens give one generic error; rate-limit registration per
+      address and token (`common/ratelimit.py`); the register endpoint must not reveal which addresses are invited.
+- [ ] **The public site stops advertising sign-up.** Landing and `/register` say access is by invitation and show a
+      contact address (setting). Decide whether to add a "request access" form (probably not in this release).
+- [ ] **Existing accounts keep working;** `createsuperuser` remains the way to bootstrap the first superadmin on an
+      invitation-only deployment (document it for compose and Kubernetes).
+- [ ] **Tests and QA:** unit tests for the gate (no invite, expired, used, wrong address, rate limit) and the admin
+      actions and permissions (staff without superuser cannot); Playwright for the invited registration flow and the
+      closed landing and register pages.
+
+## B) Social sign-in, two-factor and passkeys
+
+**Use cases:** sign in with a social/SSO provider; one account that can be reached by several sign-in methods (separate
+the account from its email and sign-in method); two-factor authentication; passkeys.
+
+**Recommended tool: django-allauth** (MIT). It is the one package covering all four: `socialaccount` (OAuth/OIDC
+providers incl. Google, GitHub, ORCID, generic OIDC, SAML), an identity model that is separate from the user (several
+email addresses and several linked social accounts per `User`), `allauth.mfa` (TOTP, recovery codes, WebAuthn security
+keys and passkeys, passkey login), and `allauth.headless`, a JSON API for single-page apps with a configurable token
+strategy (sessions or JWT). Alternatives considered: `dj-rest-auth` (a thin layer over allauth, no passkeys of its own),
+`python-social-auth` (social only), `django-otp` / `django-two-factor-auth` (two-factor only, server-rendered), and a
+hosted identity provider (Keycloak, Authentik, Auth0: strongest, but a new service to run on the cluster). Setting names
+and defaults change between allauth releases: check the official docs for the pinned version.
+
+**The hard part is the token contract, so start with a spike.** The React app keeps an access token in memory and a
+rotating httpOnly refresh cookie (`api/auth.ts`, `accounts/cookies.py`, `e2e/session.spec.ts`), with URL tokens for
+websockets and images. The spike must show allauth headless can sit behind that: either its JWT token strategy or, better,
+allauth doing the authentication step (password, social, second factor, passkey) and then handing over to our existing
+SimpleJWT + cookie issuing, so the rest of the app is untouched. It must also prove multi-tab refresh and logout still
+work and that a refresh cannot bypass a second factor.
+
+- [ ] **Spike (time-boxed).** Install allauth + headless + mfa in a branch, keep email-login `User`, log in through it and
+      mint our tokens; report what has to change. Go/no-go before anything else is built.
+- [ ] **B1 Foundation.** Migrate existing accounts (an `EmailAddress` row per user with its verified state, no one
+      locked out); move password reset, verification and email change onto allauth while keeping the existing mail
+      templates and `REQUIRE_EMAIL_VERIFICATION`; keep "a password change revokes refresh tokens", the credential
+      event log and account deletion. Closes the follow-up "no way to change the account's email address".
+- [ ] **B2 Two-factor (TOTP + recovery codes).** Enrol and disable from the Account page; login asks for the code; a
+      superadmin can reset a locked-out user's second factor (audited). Required for superadmins.
+- [ ] **B3 Passkeys.** Register and sign in with passkeys (WebAuthn). The relying-party id is the public host
+      (`openprism.cent-su.org`; `localhost` in development); check it behind Caddy and nginx.
+- [ ] **B4 Social sign-in.** Providers to choose (Google, GitHub, ORCID, university OIDC/SAML). **Still requires an
+      invitation (A).** Link a provider to an existing account only by an email the provider reports as verified (an
+      unverified provider email is an account-takeover route); never create a second account for an invited address.
+- [ ] **B5 Account page: sign-in methods.** List and add/remove email addresses, social accounts, passkeys and the
+      second factor; refuse to remove the last way to sign in; recent sign-ins.
+- [ ] **Decisions:** allauth headless, or the hosted identity provider route; which providers; whether two-factor is
+      optional for everyone or required (superadmins first); sign-in-method changes mail the user.
+- [ ] **Tests and QA:** unit tests per flow (including that every sign-up path passes the invitation gate and that
+      refresh/impersonation cannot skip a second factor); Playwright with a virtual authenticator for passkeys and a
+      fake OIDC provider for social login.
+
+## C) Superadmin impersonation ("view as")
+
+**Use cases:** a superadmin checks role-based security (what does a viewer, commenter or editor actually see?) and
+troubleshoots a user's live problem by seeing what they see.
+
+**Existing packages do not fit.** `django-hijack` (3.x, superuser-only by default, start/end signals, admin button) and
+`django-impersonate` both swap the Django *session* user. The app's API authenticates with JWT bearer tokens and does not
+use sessions, so using either would only change who `/admin/` thinks you are, not what the React app shows. A search found
+no Django package that impersonates through bearer tokens (check each package's current docs before building). The
+standard pattern for tokens is to carry the impersonation inside the credential, an `act` ("actor") claim as in OAuth
+token exchange (RFC 8693), so that is what to build, small, on SimpleJWT, borrowing hijack's rules and signals.
+
+- [ ] **Start it from the admin.** A superuser-only *View as* action on a user opens the app as that user (a one-time
+      code exchanged for a short-lived access token with an `act` claim naming the superadmin, **no refresh cookie**, so
+      it ends by itself and cannot be renewed); `POST /api/admin/impersonate` underneath.
+- [ ] **Read-only by default.** Writes, AI/compile jobs, file uploads and joining live rooms are refused while viewing;
+      decide whether an explicit, logged "allow changes" mode is needed.
+- [ ] **Hard limits.** Never another superuser or staff account; never a user's stored keys (AI, Zotero, workspace
+      providers); no password or email change, no account deletion, no credential history; second-factor and sign-in
+      method settings hidden (see B).
+- [ ] **Always visible, always logged.** A banner in the app ("Viewing as …, Stop"), a log of who, whom, when, how long
+      and why (a required reason), the real actor on any audited action, and a notice to the user (decide: mail, in-app
+      or none).
+- [ ] **Works across the stack:** the user's permissions are evaluated exactly as for them (membership, invite roles);
+      guest-link projects too. URL tokens minted while impersonating carry the claim.
+- [ ] **Role preview (optional, cheaper):** "preview as role" on a workspace for admins (no user data involved) to check
+      Owner/Admin/Editor/Commenter/Viewer without anyone's account.
+- [ ] **Tests and QA:** unit tests for who may impersonate, the hard limits, expiry without refresh and the log;
+      Playwright for the banner and the read-only behaviour.
+
 ## Operations
 
 - [ ] **No observability.** No metrics, structured logs, tracing or alerts; no view of queue depth, failed jobs, or
