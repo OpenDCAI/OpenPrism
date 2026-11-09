@@ -123,6 +123,15 @@ class GateTests(TestCase):
         self.assertEqual(register('anyone@example.com').status_code, 201)
         self.assertIn('already exists', register('anyone@example.com').data['error'])
 
+    @override_settings(REGISTRATION_MODE='open')
+    def test_open_mode_still_honours_a_valid_invitation_link(self):
+        _, raw = invitations.create('ann@example.com', self.admin)
+        res = register('ann@example.com', raw)
+        self.assertEqual(res.status_code, 201)
+        self.assertTrue(res.data['user']['emailVerified'])
+        self.assertIsNotNone(PlatformInvite.objects.get(email='ann@example.com').used_at)
+        self.assertEqual(register('bob@example.com', 'pi1.garbage').status_code, 201)  # a bad link does not block open mode
+
 
 @override_settings(REGISTRATION_MODE='invite')
 class ConcurrentUseTests(TransactionTestCase):

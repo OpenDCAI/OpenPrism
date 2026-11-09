@@ -14,13 +14,14 @@ from integrations.models import CredentialEvent, LlmUsage, UserCredential, Works
 from jobs.models import Job
 from projects.models import Membership, Project, ProjectFile, Workspace, WorkspaceInvite
 from templates_app.models import Template
+from accounts.models import PlatformInvite
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 from rest_framework_simplejwt.tokens import RefreshToken
 from versions.models import ProjectVersion
 
 User = get_user_model()
 SECRETS = ['ZOTERO-CIPHER-SECRET', 'USERKEY-CIPHER-SECRET', 'WSKEY-CIPHER-SECRET', 'JOBPARAM-SECRET', 'JOBRESULT-SECRET',
-           'JOBLOG-SECRET', 'TOKENHASH-SECRET', 'L4ZZ', 'EVENTDETAIL-SECRET', 'FILE-CONTENT-SECRET', 'MANIFEST-SECRET']
+           'JOBLOG-SECRET', 'TOKENHASH-SECRET', 'L4ZZ', 'EVENTDETAIL-SECRET', 'FILE-CONTENT-SECRET', 'MANIFEST-SECRET', 'PLATFORMTOKEN-SECRET']
 
 
 class AdminModelTests(TestCase):
@@ -43,6 +44,8 @@ class AdminModelTests(TestCase):
         CredentialEvent.objects.create(actor=self.ann, actor_name='Ann', workspace=ws, kind='workspace_llm', action='set',
                                        last_four='L4ZZ', detail={'model': 'EVENTDETAIL-SECRET'})
         LlmUsage.objects.create(day=timezone.now().date(), user=self.ann, workspace=ws, source='server', count=3)
+        PlatformInvite.objects.create(email='invited@example.com', token_hash='PLATFORMTOKEN-SECRET', invited_by=self.root,
+                                      expires_at=timezone.now() + datetime.timedelta(days=7))
         Template.objects.create(id='tpl', label='Template')
         ProjectVersion.objects.create(project=project, number=1, main_file='main.tex', engine='pdflatex', manifest_hash='h',
                                       manifest=[{'path': 'MANIFEST-SECRET'}], created_by=self.ann)
