@@ -108,30 +108,16 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
 
 ## v0.1.1 - Superadmin support
 
-Accounts with access to the Django admin back end. `django.contrib.admin` is installed and routed at `/admin/`, and
-`createsuperuser` sets `is_staff` / `is_superuser`, but no app registers a `ModelAdmin`, so the admin is empty, and
-nothing says how a superadmin is made or how the site is reached in production.
-
-- [ ] **Reach `/admin/` in every environment.** Confirm `web` (nginx), the Helm chart's routes and the Caddy reference
-      config pass `/admin/` (and its static files) through to the api, in compose and on the cent cluster.
-- [ ] **Register the models with `ModelAdmin`s** so a superadmin can inspect and fix data: accounts, workspaces and
-      memberships, projects (read-mostly; file contents are not edited here), jobs, templates, invites, LLM usage and
-      credential events. Never show or edit stored credentials, tokens or key material (last four characters at most).
-- [ ] **Make and remove superadmins safely.** A documented way to grant and revoke `is_staff` / `is_superuser`
-      (`createsuperuser`, a management command, or the admin itself for existing superusers), including on Kubernetes.
-      Superadmins are accounts, not a separate login; decide whether an unverified account may be one.
-- [ ] **Protect the admin.** It uses Django sessions while the app uses JWTs: decide the login path, session cookie
-      settings (`Secure`, `SameSite`), CSRF trusted origins behind the proxies, rate limiting on the admin login, and
-      whether `/admin/` is restricted to certain addresses at Caddy.
-- [ ] **Audit superadmin actions.** Admin edits are written to Django's log entries; decide whether to also record them
-      in the credential event log or keep them admin-only, and show who acted.
-- [ ] **Tests.** Superadmin can load the changelists; a normal or staff-without-permission account cannot; secrets never
-      appear in the admin pages.
+Moved to `docs/todo.md` (issues #79-#82). Decided: superusers only (plain staff get no admin access), the admin has its
+own hardened session cookie and login rate limit, credentials are never registered or shown, users/workspaces/projects
+cannot be deleted from the admin (deletion keeps its cleanup services), and the last superadmin cannot be removed.
 
 ## v0.1.2 - A) Invitation-only access
 
-**Plan, to be fleshed out before issues are written.** Needs v0.1.1 (the Django admin is where a superadmin manages
-this). Keeps strangers who find the URL from signing up.
+**Plan; issues are written when v0.1.2 starts, after v0.1.1 is released** (the Django admin is where a superadmin
+manages this). Keeps strangers who find the URL from signing up. Decided: invitations expire after 7 days
+(configurable), may carry an optional workspace and role, there is no request-access form, and workspace invitations
+stay as they are today.
 
 Where we are today: `REGISTRATION_MODE=invite` accepts an address only if a *workspace* invitation (`WorkspaceInvite`,
 made by a workspace admin) exists for it. That is not the same thing: nobody can be let onto the platform without being
@@ -139,11 +125,13 @@ attached to a workspace, workspace admins can open the door on their own, and th
 invite strangers to sign up.
 
 - [ ] **Model.** A `PlatformInvite` (email, hashed single-use token like `CollabInvite`, `invited_by`, expiry, `used_at`,
-      the account it created, optional workspace and role to join on registration). Decide: one invite per address or
-      several, default expiry, whether an invite survives a registration that fails halfway.
-- [ ] **Registration requires one.** Registration is refused without a valid invitation for that address. Decide how it
-      relates to workspace invitations (suggested: a workspace admin may invite only people who already have an account
-      or hold a platform invitation, so the superadmin controls who is on the service).
+      the account it created, optional workspace and role to join on registration). Default expiry 7 days
+      (`PLATFORM_INVITE_DAYS`). Decide: one invite per address or several, whether an invite survives a registration
+      that fails halfway.
+- [ ] **Registration requires one.** Registration is refused without a valid invitation for that address: a platform
+      invitation **or** a workspace invitation (decided: workspace admins may still invite people without an account,
+      as today). Decide whether the superadmin can switch workspace invitations off (a setting) for a stricter
+      deployment.
 - [ ] **A single gate that every sign-up path goes through,** so B's social sign-in cannot bypass it (with allauth this
       is `is_open_for_signup` on the account and social-account adapters).
 - [ ] **Superadmin manages them in the admin.** Create (one address or a pasted list/CSV), resend, revoke, see status
@@ -154,7 +142,7 @@ invite strangers to sign up.
 - [ ] **No enumeration, no guessing.** Wrong, expired and used tokens give one generic error; rate-limit registration per
       address and token (`common/ratelimit.py`); the register endpoint must not reveal which addresses are invited.
 - [ ] **The public site stops advertising sign-up.** Landing and `/register` say access is by invitation and show a
-      contact address (setting). Decide whether to add a "request access" form (probably not in this release).
+      contact address (setting). No request-access form in this release (decided).
 - [ ] **Existing accounts keep working;** `createsuperuser` remains the way to bootstrap the first superadmin on an
       invitation-only deployment (document it for compose and Kubernetes).
 - [ ] **Tests and QA:** unit tests for the gate (no invite, expired, used, wrong address, rate limit) and the admin
