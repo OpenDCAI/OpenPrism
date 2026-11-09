@@ -1,0 +1,5 @@
+{% extends "email/base.html" %}
+{% block body %}<p>Hello,</p>
+<p>{{ inviter }} invited you to OpenPrism, a LaTeX workspace for academic writing.{% if workspace %} You will join the workspace <strong>{{ workspace }}</strong> as {{ role }}.{% endif %}</p>
+{% include "email/_button.html" with label="Create your account" %}
+<p>The invitation works once and expires in {{ days }} days. If you were not expecting this, ignore this message.</p>{% endblock %}
