@@ -80,16 +80,16 @@ AI-worker suites on every push, and adds the TeX-worker and browser suites on `m
 Moved to `docs/todo.md` (issue #63). Decided: accounts default to their account name; a typed name is kept per account.
 
 
-## v0.1.0 Deploy to the cent Kubernetes cluster
+## Deploy to the cent Kubernetes cluster
 
-Moved to `docs/todo.md` (issues #64-#68): a Helm chart and a GitHub Actions workflow replace `deploy/k8s`, exposing a
+Delivered (issues #64-#68): a Helm chart and a GitHub Actions workflow replace `deploy/k8s`, exposing a
 NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, Redis and MinIO.
 
 **Still to check once it runs on the cluster** (carried over from the old kind plan, now against the real cluster)
 - [ ] Read-only root filesystem for the TeX worker: compile with `pdflatex`, `xelatex`, `lualatex` and `latexmk` inside
       a pod, and confirm the caches under `/tmp` work and the compile hardening still holds.
 - [ ] **NetworkPolicies are missing from the chart** (the old kustomize ones are in git history, `deploy/k8s/base/networkpolicies.yaml`
-      before v0.1.0): first find out whether the cluster's CNI enforces them. Default-deny must not break kubelet probes;
+      before the Helm chart replaced it): first find out whether the cluster's CNI enforces them. Default-deny must not break kubelet probes;
       `worker-compile` must have no internet; the workers that call LLM providers must reach only public HTTPS.
 - [ ] Autoscaling (HPA or KEDA) is not in the chart; decide whether the shared cluster needs it.
 - [ ] Rolling update: change an image tag mid-job and confirm a running compile/transfer finishes rather than being killed.
@@ -98,7 +98,7 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
       testing happens in the dev environment): live editing over `/api/collab` in two browsers, a 150 MB upload, the
       arXiv-import event stream, and that `?token=` does not appear in Caddy's access log.
 
-- [ ] **The plot sandbox is defence in depth, not a real sandbox** (moved from v0.0.8): AST check, builtin whitelist,
+- [ ] **The plot sandbox is defence in depth, not a real sandbox** (moved from the security issues): AST check, builtin whitelist,
       scrubbed environment, non-dumpable worker, rlimits. LaTeX and plot code also share a user with the worker process,
       and LuaTeX can read any file that user can read. Run these workers under gVisor/Kata and cap pids.
 
@@ -106,8 +106,29 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
 - Whether `worker-compile` and `worker-ai` should run under a sandboxed runtime (`runtimeClassName: gvisor` or Kata).
 - Whether to add PgBouncer in front of Postgres (connection count grows with API replicas).
 
+## v0.1.1 - Superadmin support
 
-## v0.1.1 - Operations
+Accounts with access to the Django admin back end. `django.contrib.admin` is installed and routed at `/admin/`, and
+`createsuperuser` sets `is_staff` / `is_superuser`, but no app registers a `ModelAdmin`, so the admin is empty, and
+nothing says how a superadmin is made or how the site is reached in production.
+
+- [ ] **Reach `/admin/` in every environment.** Confirm `web` (nginx), the Helm chart's routes and the Caddy reference
+      config pass `/admin/` (and its static files) through to the api, in compose and on the cent cluster.
+- [ ] **Register the models with `ModelAdmin`s** so a superadmin can inspect and fix data: accounts, workspaces and
+      memberships, projects (read-mostly; file contents are not edited here), jobs, templates, invites, LLM usage and
+      credential events. Never show or edit stored credentials, tokens or key material (last four characters at most).
+- [ ] **Make and remove superadmins safely.** A documented way to grant and revoke `is_staff` / `is_superuser`
+      (`createsuperuser`, a management command, or the admin itself for existing superusers), including on Kubernetes.
+      Superadmins are accounts, not a separate login; decide whether an unverified account may be one.
+- [ ] **Protect the admin.** It uses Django sessions while the app uses JWTs: decide the login path, session cookie
+      settings (`Secure`, `SameSite`), CSRF trusted origins behind the proxies, rate limiting on the admin login, and
+      whether `/admin/` is restricted to certain addresses at Caddy.
+- [ ] **Audit superadmin actions.** Admin edits are written to Django's log entries; decide whether to also record them
+      in the credential event log or keep them admin-only, and show who acted.
+- [ ] **Tests.** Superadmin can load the changelists; a normal or staff-without-permission account cannot; secrets never
+      appear in the admin pages.
+
+## Operations
 
 - [ ] **No observability.** No metrics, structured logs, tracing or alerts; no view of queue depth, failed jobs, or
       websocket counts. (Queue depth is also the better autoscaling signal, KEDA scaled on it in the removed kustomize tree.)
@@ -117,7 +138,7 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
       keys, `DJANGO_SECRET_KEY`) is for development only; a real deployment needs generated secrets and a rotation plan.
 
 
-## v0.1.2 follow-ups (found while building in-place AI editing)
+## Follow-ups: in-place AI editing
 
 - [ ] **Accepting a proposal writes other files by REST, even when someone has them open live** (known collaboration
       limitation). A multi-file proposal only goes through the shared document for the active file.
@@ -130,7 +151,7 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
       before the job row exists is lost.
 
 
-## v0.1.3 follow-ups (found while building account management and comments)
+## Follow-ups: account management and comments
 
 - [ ] **No way to change the account's email address** (it would need re-verification and must not orphan invitations).
 - [ ] **Comment notifications.** Nobody is told about a new comment or reply (mail digest, @mentions, an unread count).
@@ -141,19 +162,19 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
       ~800 ms; the editor re-places them against its live text, but the API's `anchor` may briefly disagree.
 - [ ] **Two owners can no longer demote each other** (owners are fixed once made); decide whether an owner may step down.
 
-## v0.1.4 follow-ups (security follow ups)
+## Follow-ups: security
 
 - [ ] **The plot sandbox is defence in depth, not a real sandbox** (AST check, builtin whitelist, scrubbed environment,
       non-dumpable worker, rlimits). LaTeX and plot code also share a user with the worker process, and LuaTeX can read
       any file that user can read. Run these workers under gVisor/Kata and cap pids (see the Kubernetes item)
 
-## v0.1.5 follow-ups (found while building it)
+## Follow-ups: live-write and restore cleanup
 
 - [ ] **Zotero's `applied: false` hand-back and version restore's 409 for open files predate #54.** Now that REST text
       writes reach open rooms, the Zotero add could always write, and restore could write text files behind live rooms
       (binary/removed files still need thought). Simplify both and their editor code.
 
-## v0.1.6 follow-ups (found while building it)
+## Follow-ups: version history
 
 - [ ] **New model fields have no database default, so old code breaks during a rollout.** `ProjectVersion.status`,
       `log_key` and `log_size` (and any later field) use Django defaults, which the old code does not send: between the
@@ -165,7 +186,7 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
       Versions panel). Opening it at phone width works.
 
 
-## v0.1.7 follow-ups (found while building it)
+## Follow-ups: imports, auth and AI usage
 
 - [ ] **The arXiv import stream holds a web thread for up to 16 minutes** (`import_arxiv_sse` relays the job's progress
       over SSE). Move it to the same job polling as the AI endpoints.
