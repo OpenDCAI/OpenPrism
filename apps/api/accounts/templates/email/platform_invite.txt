@@ -1,0 +1,9 @@
+Hello,
+
+{{ inviter }} invited you to OpenPrism, a LaTeX workspace for academic writing.{% if workspace %} You will join the workspace "{{ workspace }}" as {{ role }}.{% endif %}
+
+Create your account with this email address:
+
+{{ link }}
+
+The invitation works once and expires in {{ days }} days. If you were not expecting this, ignore this message.

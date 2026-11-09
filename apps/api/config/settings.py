@@ -49,11 +49,21 @@ EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', False)
 EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
 EMAIL_TIMEOUT = int(env('EMAIL_TIMEOUT', '20'))
 # Accounts. REQUIRE_EMAIL_VERIFICATION: an unverified account may only reach the auth endpoints until it clicks the link.
-# REGISTRATION_MODE: `open` (anyone) or `invite` (only addresses with a pending workspace invitation).
+# REGISTRATION_MODE: `open` (anyone) or `invite` (only addresses with a platform or workspace invitation).
 REQUIRE_EMAIL_VERIFICATION = env_bool('REQUIRE_EMAIL_VERIFICATION', False)
 REGISTRATION_MODE = env('REGISTRATION_MODE', 'open')
 if REGISTRATION_MODE not in ('open', 'invite'):
     raise ImproperlyConfigured('REGISTRATION_MODE must be "open" or "invite"')
+# Platform invitations (v0.1.2): a superadmin's invitation to register lives this many days. WORKSPACE_INVITES_ALLOW_SIGNUP:
+# in invite mode a workspace invitation also opens the door (off: platform invitations only). ACCESS_CONTACT_EMAIL is shown
+# on the closed sign-up pages.
+PLATFORM_INVITE_DAYS = int(env('PLATFORM_INVITE_DAYS', '7'))
+if PLATFORM_INVITE_DAYS < 1:
+    raise ImproperlyConfigured('PLATFORM_INVITE_DAYS must be at least 1')
+WORKSPACE_INVITES_ALLOW_SIGNUP = env_bool('WORKSPACE_INVITES_ALLOW_SIGNUP', True)
+ACCESS_CONTACT_EMAIL = env('ACCESS_CONTACT_EMAIL', '').strip()
+if ACCESS_CONTACT_EMAIL and ('@' not in ACCESS_CONTACT_EMAIL or ' ' in ACCESS_CONTACT_EMAIL):
+    raise ImproperlyConfigured('ACCESS_CONTACT_EMAIL must be an email address')
 EMAIL_VERIFY_MAX_AGE = 3 * 24 * 3600  # seconds a verification link stays valid
 PASSWORD_RESET_TIMEOUT = 3600  # seconds a reset link stays valid (it also dies when the password changes)
 MAIL_SEND_INLINE = TESTING  # tests deliver to the locmem outbox at once instead of queueing a Celery task
