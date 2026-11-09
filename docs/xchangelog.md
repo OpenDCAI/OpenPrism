@@ -232,3 +232,10 @@
 - [x] #74 **The API pods failed their probes with 400.** Probes reach the pod by IP, which Django's `ALLOWED_HOSTS`
       refuses; they now send `Host: api`. CI asserts it.
 
+## v0.1.1 - Superadmin support
+
+- [x] #79 **Admin: reach /admin/ through nginx and serve its static files.** The `web` nginx proxies `/admin/` (no-store,
+      Referrer-Policy `same-origin`, since `no-referrer` makes browsers send `Origin: null` and CSRF refuses the login)
+      and `/static/`; the api serves its static files with WhiteNoise (collected into `/app-static` at image build time;
+      `django.contrib.staticfiles` installed); `CSRF_TRUSTED_ORIGINS` follows `TRUSTED_ORIGINS`; Vite proxies both for
+      development. Tests: `accounts/test_admin.py`, `e2e/admin.spec.ts` (with a `newSuperuser()` helper).

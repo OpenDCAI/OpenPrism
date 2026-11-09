@@ -6,6 +6,8 @@
 # Keep the NodePort in step with `nodePort` in deploy/helm/openprism/values.yaml (iot-portal uses 31080, graderthan
 # 31801) and the hostname with `host:` there, because the app builds its links and allowed hosts from it.
 openprism.cent-su.org {
+	# /admin/ (the Django admin, superadmins only) and /static/ (its CSS/JS) travel through the same proxy path as the app;
+	# nothing to add for them here.
 	# Uploads (project files, template and project ZIPs) go through the app, which allows 200 MB.
 	request_body {
 		max_size 200MB

@@ -67,6 +67,7 @@ INSTALLED_APPS = [
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'django.contrib.staticfiles',  # collectstatic for the admin (#79)
     'channels',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
@@ -85,6 +86,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # the admin's CSS/JS (#79); the API has no other static files
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
@@ -137,6 +139,10 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 STATIC_URL = '/static/'
+# `collectstatic` target, filled when the image is built (outside /app, which compose bind-mounts). WhiteNoise serves
+# it; in debug and under tests it reads the apps' own files instead, so nothing has to be collected first.
+STATIC_ROOT = env('STATIC_ROOT', '/app-static')
+WHITENOISE_USE_FINDERS = DEBUG or TESTING
 
 # Uploads up to 200 MB, as the Node backend allowed.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 200 * 1024 * 1024
@@ -182,6 +188,8 @@ REFRESH_COOKIE_SECURE = env_bool('REFRESH_COOKIE_SECURE', not DEBUG)  # browsers
 # Origins whose pages may use the refresh cookie (an Origin header must be one of these): APP_BASE_URL and any extra
 # origins people open the app at (comma-separated), e.g. the nginx image on :8080 next to Vite on :5173 in dev.
 TRUSTED_ORIGINS = sorted({APP_BASE_URL, *(o.strip().rstrip('/') for o in env('TRUSTED_ORIGINS', '').split(',') if o.strip())})
+# The admin's login form is the one place Django checks CSRF; behind the proxies it must accept the app's origins.
+CSRF_TRUSTED_ORIGINS = TRUSTED_ORIGINS
 
 REDIS_URL = env('REDIS_URL', 'redis://localhost:6379/0')
 if TESTING:  # tests share the dev Redis: keep their keys (and anything they enqueue) out of the dev database

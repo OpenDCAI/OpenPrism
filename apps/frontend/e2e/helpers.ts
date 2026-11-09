@@ -1,3 +1,5 @@
+import { execFileSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import type { Page } from '@playwright/test';
 
 export interface Session {
@@ -132,4 +134,18 @@ export async function latestMail(to: string, opts: { subject?: RegExp; timeoutMs
 export function mailLink(text: string): string {
   const url = new URL(text.match(/https?:\/\/\S+/)![0]);
   return url.pathname + url.search;
+}
+
+/**
+ * An account that may use the Django admin, made through the running api container (the only way to get one: nobody
+ * can register as a superuser). Needs `docker compose` and the stack from the repo root, as the rest of the suite does.
+ */
+export function newSuperuser(prefix = 'root', opts: { superuser?: boolean } = {}): { email: string; password: string } {
+  const email = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
+  const superuser = opts.superuser !== false;
+  const code = `from django.contrib.auth import get_user_model as g; u = g().objects.create_user(${JSON.stringify(email)}, ${JSON.stringify(PASSWORD)}, is_staff=True, is_superuser=${superuser ? 'True' : 'False'})`;
+  execFileSync('docker', ['compose', 'exec', '-T', 'api', 'python', 'manage.py', 'shell', '-c', code], {
+    cwd: fileURLToPath(new URL('../../../', import.meta.url)), stdio: 'pipe'
+  });
+  return { email, password: PASSWORD };
 }

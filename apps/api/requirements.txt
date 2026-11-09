@@ -10,3 +10,4 @@ httpx==0.28.1
 channels==4.3.2
 pycrdt==0.12.20
 cryptography==45.0.7
+whitenoise==6.9.0
