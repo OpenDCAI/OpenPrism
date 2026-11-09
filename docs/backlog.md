@@ -114,40 +114,11 @@ cannot be deleted from the admin (deletion keeps its cleanup services), and the 
 
 ## v0.1.2 - A) Invitation-only access
 
-**Plan; issues are written when v0.1.2 starts, after v0.1.1 is released** (the Django admin is where a superadmin
-manages this). Keeps strangers who find the URL from signing up. Decided: invitations expire after 7 days
-(configurable), may carry an optional workspace and role, there is no request-access form, and workspace invitations
-stay as they are today.
-
-Where we are today: `REGISTRATION_MODE=invite` accepts an address only if a *workspace* invitation (`WorkspaceInvite`,
-made by a workspace admin) exists for it. That is not the same thing: nobody can be let onto the platform without being
-attached to a workspace, workspace admins can open the door on their own, and the landing page and `/register` still
-invite strangers to sign up.
-
-- [ ] **Model.** A `PlatformInvite` (email, hashed single-use token like `CollabInvite`, `invited_by`, expiry, `used_at`,
-      the account it created, optional workspace and role to join on registration). Default expiry 7 days
-      (`PLATFORM_INVITE_DAYS`). Decide: one invite per address or several, whether an invite survives a registration
-      that fails halfway.
-- [ ] **Registration requires one.** Registration is refused without a valid invitation for that address: a platform
-      invitation **or** a workspace invitation (decided: workspace admins may still invite people without an account,
-      as today). Decide whether the superadmin can switch workspace invitations off (a setting) for a stricter
-      deployment.
-- [ ] **A single gate that every sign-up path goes through,** so B's social sign-in cannot bypass it (with allauth this
-      is `is_open_for_signup` on the account and social-account adapters).
-- [ ] **Superadmin manages them in the admin.** Create (one address or a pasted list/CSV), resend, revoke, see status
-      (sent, mail failed, used, expired) and who invited. Reuses `mail.send_template` and the `send_failed` pattern.
-      Only superusers, not plain staff.
-- [ ] **The invitation proves the address.** The mailed link (`/register?invite=…`) carries the token and pre-fills the
-      email; completing registration marks the address verified.
-- [ ] **No enumeration, no guessing.** Wrong, expired and used tokens give one generic error; rate-limit registration per
-      address and token (`common/ratelimit.py`); the register endpoint must not reveal which addresses are invited.
-- [ ] **The public site stops advertising sign-up.** Landing and `/register` say access is by invitation and show a
-      contact address (setting). No request-access form in this release (decided).
-- [ ] **Existing accounts keep working;** `createsuperuser` remains the way to bootstrap the first superadmin on an
-      invitation-only deployment (document it for compose and Kubernetes).
-- [ ] **Tests and QA:** unit tests for the gate (no invite, expired, used, wrong address, rate limit) and the admin
-      actions and permissions (staff without superuser cannot); Playwright for the invited registration flow and the
-      closed landing and register pages.
+Moved to `docs/todo.md` (issues #83-#87). Decided: invitations expire after 7 days (`PLATFORM_INVITE_DAYS`), carry an
+optional workspace and role, one live invitation per address (a resend replaces the link), workspace invitations still
+open the door (switchable off with `WORKSPACE_INVITES_ALLOW_SIGNUP`), the invitation proves the address, there is no
+request-access form, and every sign-up path goes through one gate (`accounts/signup.py`) so B's social sign-in cannot
+bypass it.
 
 ## B) Social sign-in, two-factor and passkeys
 
