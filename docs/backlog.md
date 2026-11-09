@@ -290,3 +290,23 @@ token exchange (RFC 8693), so that is what to build, small, on SimpleJWT, borrow
 - [ ] **The dev api's hot reload can hang** ("Waiting for connections to close") while a browser holds an SSE stream or
       websocket open; `docker compose up -d --force-recreate api` recovers. Consider `--timeout-graceful-shutdown`.
 - [ ] **AI usage counts requests, not tokens.** Record the providers' reported `usage` per job for spend accounting.
+
+## Follow-ups: superadmin support (found while building it)
+
+- [ ] **Changing a password in the admin does not revoke the account's refresh tokens or send the notice.** The admin's
+      own *Change password* page (`/admin/password_change/`) runs Django's form, not `accounts/passwords.py`, so a
+      superadmin changing their password leaves every refresh token and session of theirs alive and sends no mail
+      (the app's flow revokes all of them and mails a notice). Route it through `accounts.passwords` (or disable the page
+      and send superadmins to the app's Account page).
+- [ ] **Django sessions are never cleaned up.** The admin is the only user of sessions; add a daily beat task that runs
+      `clearsessions` (queue `import`).
+- [ ] **The API test suite fails locally when compose's `AUTH_RATE_LIMIT` (20/min) is in the environment.** `settings.py`
+      lets that variable override the 10000/min that tests would otherwise get, so `docker compose run --rm api python
+      manage.py test accounts` fails on any run that registers more than 20 accounts a minute (found on a clean
+      `release/v0.1.1`; passes with `-e AUTH_RATE_LIMIT=10000/min`). Make tests ignore the variable, or document it.
+- [ ] **A superadmin cannot yet reset another account's password, sign-in or lockout** from the admin; the only tools are
+      the flags and *Mark email verified*. Revisit with impersonation (C) and two-factor (B), which also need
+      "reset this account's second factor".
+- [ ] **`e2e/helpers.ts` `newSuperuser()` needs `docker compose exec` access to the api container,** so the admin specs
+      cannot run against a stack the test runner has no Docker access to (a remote preview, say). An API-only way to
+      make a throwaway superuser (test settings only) would remove that.
