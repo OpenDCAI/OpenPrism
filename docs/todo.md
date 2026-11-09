@@ -4,7 +4,7 @@
 
 - [x] #83 Invitations: PlatformInvite model, service and mail
 - [x] #84 Invitations: registration requires an invitation (single sign-up gate)
-- [ ] #85 Invitations: superadmins manage them in the Django admin
+- [x] #85 Invitations: superadmins manage them in the Django admin
 - [ ] #86 Invitations: public site and invitation link say access is by invitation
 - [ ] #87 Invitations: deployment settings, bootstrap and docs
 
