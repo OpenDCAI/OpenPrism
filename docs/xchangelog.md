@@ -257,3 +257,23 @@
       admin's *Log entries*; `accounts/superadmins.check_not_last()` keeps at least one active staff superuser, in the
       commands and in the admin user form; privilege flags editable only by superusers; documented for compose and
       Kubernetes (README, Helm README). Tests: `accounts/test_superadmins.py`.
+
+## v0.1.2 - Invitation-only access
+
+- [x] #83 **Invitations: PlatformInvite model, service and mail.** A superadmin's single-use invitation per address
+      (`accounts/invitations.py`): only the token's SHA-256 is stored, 7 days by default (`PLATFORM_INVITE_DAYS`), one
+      live invitation per address (a new one or a resend replaces the link), optional workspace and role, mail failures
+      recorded in `send_failed`. Tests: `accounts/test_invitations.py`.
+- [x] #84 **Invitations: registration requires an invitation (single sign-up gate).** `accounts/signup.py`: in
+      `REGISTRATION_MODE=invite` a platform invitation or (unless `WORKSPACE_INVITES_ALLOW_SIGNUP=0`) a workspace
+      invitation is needed; one generic refusal, checked before "account exists", 10 attempts per 15 minutes per address
+      and per token; the invitation is used atomically with the account, which is verified at once and joins the
+      invited workspace and role. Tests: `accounts/test_signup.py` (including a concurrent double use).
+- [x] #85 **Invitations: superadmins manage them in the Django admin.** *Platform invites*: status list, *Invite people*
+      (lines, commas or a pasted CSV column, optional workspace and role), *Send again*, *Revoke*, logged, tokens never
+      shown. Tests: `accounts/test_admin_invites.py`, `e2e/admin.spec.ts`.
+- [x] #86 **Invitations: public site and invitation link say access is by invitation.** `GET /api/config`; in invite
+      mode the landing page offers Sign in and the contact address, sign-in drops "Create an account", `/register`
+      explains; the mailed link opens the form with the address fixed. Tests: `e2e/invitation-only.spec.ts`.
+- [x] #87 **Invitations: deployment settings, bootstrap and docs.** `registration.*` Helm values, compose and
+      `.env.sample` variables, the invitation-only runbook in `deploy/helm/README.md`.

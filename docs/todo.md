@@ -6,7 +6,7 @@
 - [x] #84 Invitations: registration requires an invitation (single sign-up gate)
 - [x] #85 Invitations: superadmins manage them in the Django admin
 - [x] #86 Invitations: public site and invitation link say access is by invitation
-- [ ] #87 Invitations: deployment settings, bootstrap and docs
+- [x] #87 Invitations: deployment settings, bootstrap and docs
 
 ## v0.1.1 - Superadmin support
 
