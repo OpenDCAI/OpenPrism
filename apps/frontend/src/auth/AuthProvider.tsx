@@ -28,7 +28,7 @@ export type AuthState =
 interface AuthContextValue {
   state: AuthState;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, name?: string) => Promise<void>;
+  signUp: (email: string, password: string, name?: string, invite?: string) => Promise<void>;
   /** Sign out of the account. */
   signOut: () => Promise<void>;
   /** Stop acting as an invite-link guest in this tab. */
@@ -116,10 +116,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         quiet.current--;
       }
     },
-    signUp: async (email, password, name) => {
+    signUp: async (email, password, name, invite) => {
       quiet.current++;
       try {
-        setState({ status: 'user', account: await apiRegister(email, password, name) });
+        setState({ status: 'user', account: await apiRegister(email, password, name, invite) });
       } finally {
         quiet.current--;
       }

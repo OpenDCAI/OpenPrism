@@ -185,6 +185,7 @@
 @keyframes lp-blink { 50% { opacity: 0; } }
 .lp-subtitle { margin: 0; max-width: 56ch; font-size: var(--fs-lg); line-height: var(--lh-read); color: var(--text-2); }
 .lp-subtitle b { color: var(--text); font-weight: var(--fw-semibold); }
+.lp-invite-note { margin: 0; font-size: var(--fs-sm); color: var(--text-2); }
 .lp-badges { display: flex; justify-content: center; gap: var(--sp-2); flex-wrap: wrap; }
 .lp-badges .op-badge { height: 28px; padding: 0 var(--sp-3); font-size: var(--fs-xs); --icon-size: 14px; }
 .lp-features { display: grid; gap: var(--sp-5); max-width: 760px; margin: 0 auto; padding: 0 var(--sp-4) var(--sp-12); }
@@ -240,3 +241,6 @@
 .aikeys-profile { display: grid; gap: var(--sp-3); padding-top: var(--sp-4); border-top: 1px solid var(--border); }
 .aikeys-profile h3 { margin: 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); }
 .aikeys-profile p { margin: 0; }
+
+/* Links inside the signed-out notices (invitation-only access, v0.1.2) */
+.op-auth-banner a, .lp-invite-note a { color: var(--accent); }

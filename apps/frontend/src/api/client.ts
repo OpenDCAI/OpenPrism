@@ -785,8 +785,24 @@ export async function login(email: string, password: string): Promise<Account> {
   return fetchMe();
 }
 
-export async function register(email: string, password: string, name?: string): Promise<Account> {
-  const res = await authCall<{ access: string; user: Account }>('/api/auth/register', { email, password, name });
+export interface PublicConfig {
+  /** `invite`: registration needs an invitation (platform or workspace). */
+  registration: 'open' | 'invite';
+  contactEmail: string | null;
+}
+
+let publicConfig: Promise<PublicConfig> | null = null;
+
+/** What the signed-out pages need (registration mode, contact address); fetched once per page load. */
+export function fetchPublicConfig(): Promise<PublicConfig> {
+  publicConfig ??= fetch('/api/config')
+    .then((res) => { if (!res.ok) throw new Error('config'); return res.json() as Promise<PublicConfig>; })
+    .catch(() => { publicConfig = null; return { registration: 'open', contactEmail: null } as PublicConfig; }); // the server decides at submit anyway
+  return publicConfig;
+}
+
+export async function register(email: string, password: string, name?: string, invite?: string): Promise<Account> {
+  const res = await authCall<{ access: string; user: Account }>('/api/auth/register', { email, password, name, invite });
   setSession({ access: res.access });
   return res.user;
 }

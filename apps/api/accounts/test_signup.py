@@ -155,3 +155,15 @@ class ConcurrentUseTests(TransactionTestCase):
         self.assertEqual(sorted(results)[0], 201, results)
         self.assertEqual(User.objects.filter(email='ann@example.com').count(), 1)
         self.assertEqual(PlatformInvite.objects.filter(used_at__isnull=False).count(), 1)
+
+
+class PublicConfigTests(TestCase):
+    def test_reports_the_mode_and_contact_and_nothing_else(self):
+        res = APIClient().get('/api/config')
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(set(res.json()), {'ok', 'registration', 'contactEmail'})
+        self.assertEqual(res.json()['registration'], 'open')
+        with override_settings(REGISTRATION_MODE='invite', ACCESS_CONTACT_EMAIL='help@example.org'):
+            body = APIClient().get('/api/config').json()
+        self.assertEqual((body['registration'], body['contactEmail']), ('invite', 'help@example.org'))
+        self.assertIn('max-age', APIClient().get('/api/config')['Cache-Control'])
