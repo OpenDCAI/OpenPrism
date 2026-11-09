@@ -1,0 +1,21 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Home</a> &rsaquo; <a href="{% url 'admin:accounts_platforminvite_changelist' %}">Platform invites</a> &rsaquo; Invite people</div>{% endblock %}
+{% block content %}
+<div id="content-main">
+{% if results %}
+<h2>Result</h2>
+<table>
+<thead><tr><th>Address</th><th>Result</th></tr></thead>
+<tbody>{% for email, outcome, ok in results %}<tr><td>{{ email }}</td><td>{{ outcome }}</td></tr>{% endfor %}</tbody>
+</table>
+<p><a href="{% url 'admin:accounts_platforminvite_changelist' %}">Back to the invitations</a></p>
+{% else %}
+<p>Each address gets a mail with a single-use link that expires in {{ days }} days. Registration with the link creates a
+verified account{% if allow_workspace %}; a workspace is optional{% endif %}.</p>
+<form method="post">{% csrf_token %}
+{{ form.as_p }}
+<input type="submit" value="Send invitations" class="default">
+</form>
+{% endif %}
+</div>
+{% endblock %}

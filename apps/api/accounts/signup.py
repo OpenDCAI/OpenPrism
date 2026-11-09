@@ -31,7 +31,8 @@ def check_signup(email, invite_token=None):
     SignupRefused otherwise. Does not lock: registration re-checks inside its transaction (`invitations.claim`)."""
     email = str(email or '').strip().lower()
     if settings.REGISTRATION_MODE == 'open':
-        return None
+        # Anyone may register, but a valid invitation link still counts: it verifies the address and joins the workspace.
+        return invitations.find_valid(email, invite_token) if invite_token else None
     _limit(email, invite_token)
     invite = invitations.find_valid(email, invite_token)
     if invite is not None:

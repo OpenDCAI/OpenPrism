@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { newSuperuser } from './helpers';
+import { latestMail, mailLink, newSuperuser } from './helpers';
 
 // The Django admin (v0.1.1, #79): reachable through the same origin as the app, styled, and kept apart from the app.
 
@@ -76,4 +76,47 @@ test('a superadmin browses the registered models and finds accounts, but cannot 
   await page.getByRole('link', { name: root.email }).click();
   await expect(page.getByRole('link', { name: /delete/i })).toHaveCount(0);
   expect((await page.request.get('/admin/accounts/user/add/')).status()).toBe(403);
+});
+
+test('a superadmin invites people, resends and revokes, and the mailed link registers a verified account', async ({ page, request }) => {
+  const root = newSuperuser('inviter');
+  const stamp = Date.now().toString(36);
+  const one = `invited1-${stamp}@example.com`;
+  const two = `invited2-${stamp}@example.com`;
+  await page.goto('/admin/login/');
+  await page.getByLabel('Email:').fill(root.email);
+  await page.getByLabel('Password:').fill(root.password);
+  await page.getByRole('button', { name: /log in/i }).click();
+  await page.getByRole('link', { name: 'Platform invites' }).first().click();
+  await page.getByRole('link', { name: 'Invite people' }).click();
+  await page.getByLabel('Email addresses').fill(`${one}\n${two}, not-an-address`);
+  await page.getByRole('button', { name: 'Send invitations' }).click();
+  await expect(page.getByText('not an email address')).toBeVisible();
+  await page.screenshot({ path: 'test-results/admin-invite-result.png', fullPage: true });
+  await page.getByRole('link', { name: 'Back to the invitations' }).click();
+  const rowOf = (email: string) => page.getByRole('row').filter({ hasText: email });
+  await expect(rowOf(one)).toContainText('Sent');
+
+  // The mail carries a link with the address and a token; resending replaces it (Mailpit lists the newest first).
+  const tokenOf = (link: string) => new URLSearchParams(link.split('?')[1]).get('invite')!;
+  const first = mailLink((await latestMail(one)).text);
+  expect(new URLSearchParams(first.split('?')[1]).get('email')).toBe(one);
+  await rowOf(one).getByRole('checkbox').check();
+  await page.getByLabel('Action:').selectOption('resend');
+  await page.getByRole('button', { name: 'Go' }).click();
+  await expect(page.getByText('1 invitation(s) sent again.')).toBeVisible();
+  await expect.poll(async () => tokenOf(mailLink((await latestMail(one)).text)), { timeout: 15000 }).not.toBe(tokenOf(first));
+
+  // The current link registers a verified account (the compose stack is in open mode, which still honours the link).
+  const ok = await request.post('/api/auth/register', { data: { email: two, password: 'correct-horse-battery', invite: tokenOf(mailLink((await latestMail(two)).text)) } });
+  expect(ok.status()).toBe(201);
+  expect((await ok.json()).user.emailVerified).toBe(true);
+
+  // Revoking shows in the list.
+  await page.reload();
+  await rowOf(two).getByRole('checkbox').check();
+  await page.getByLabel('Action:').selectOption('revoke');
+  await page.getByRole('button', { name: 'Go' }).click();
+  await expect(page.getByText('already registered')).toBeVisible();   // used invitations cannot be revoked
+  await expect(rowOf(two)).toContainText('Used');
 });
