@@ -116,3 +116,16 @@ def find_valid(email, raw_token, *, lock=False):
     qs = PlatformInvite.objects.filter(token_hash=hash_token(raw_token), email=email, used_at__isnull=True,
                                        revoked_at__isnull=True, expires_at__gt=timezone.now())
     return (qs.select_for_update() if lock else qs).first()
+
+
+def lock(invite):
+    """Inside the registration transaction, before the account exists: lock `invite` and return it if it can still be
+    used, else None (someone else just used, revoked or outlived it). Serialises two requests with the same link."""
+    return PlatformInvite.objects.select_for_update().filter(
+        pk=invite.pk, used_at__isnull=True, revoked_at__isnull=True, expires_at__gt=timezone.now()).first()
+
+
+def use(invite, user):
+    """Mark a locked invitation as used by the account it created."""
+    invite.used_at, invite.user = timezone.now(), user
+    invite.save(update_fields=['used_at', 'user'])
