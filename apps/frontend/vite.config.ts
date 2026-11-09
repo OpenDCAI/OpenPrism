@@ -27,6 +27,9 @@ export default defineConfig({
         ws: true,
         xfwd: true
       },
+      // The Django admin and its static files (#79), so http://localhost:5173/admin/ works in development too.
+      '/admin': { target: process.env.OPENPRISM_API_URL || 'http://localhost:8000', changeOrigin: false, xfwd: true },
+      '/static': { target: process.env.OPENPRISM_API_URL || 'http://localhost:8000', changeOrigin: false, xfwd: true },
       '/texlive': {
         target: 'https://texlive.swiftlatex.com',
         changeOrigin: true,

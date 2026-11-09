@@ -158,6 +158,14 @@ The compile worker executes documents written by whoever can edit a project, inc
 Secrets are split by need: only `worker-transfer` and `worker-ai` receive `openprism-ai` (LLM and MinerU keys).
 User-supplied API keys never reach Kubernetes Secrets or Postgres; they live in Redis for the length of a job.
 
+## Django admin (v0.1.1, #79)
+
+`https://<host>/admin/` is the Django admin for superadmins. It needs no chart change: Caddy sends everything to the `web`
+Service, whose nginx proxies `/admin/` and `/static/` (the admin's CSS and JS, served by WhiteNoise from files collected
+into the `api` image at build time) to the `api`. **It is public like the rest of the site**, protected by its own
+login (superusers only, rate limited) until two-factor exists; to hide it from the internet restrict `/admin/` by
+address in Caddy (see the Caddyfile). The first superadmin is made with `manage.py make_superadmin` inside an `api` pod.
+
 ## Operating notes (carried over from the old kustomize README)
 
 - Each API pod can use up to `ASGI_THREADS` (16) database connections plus the collaboration pool; with several replicas

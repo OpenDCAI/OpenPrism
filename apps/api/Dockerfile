@@ -61,6 +61,14 @@ CMD ["celery", "-A", "config", "worker", "-Q", "ai,import", "-l", "info", "--con
 
 
 FROM base AS api
+# The admin's static files (#79), collected once at build time and served by WhiteNoise. Settings insist on a secret,
+# an encryption key, a database URL and storage keys, so the build passes throwaway ones (collectstatic never connects
+# to anything); they exist only for this one command and are not in the image's environment.
+USER root
+RUN DJANGO_DEBUG=1 DJANGO_SECRET_KEY=build-only CREDENTIAL_ENCRYPTION_KEY=b3BlbnByaXNtLXRlc3Qta2V5LW5vdC1zZWNyZXQtMDE= \
+    DATABASE_URL=postgres://build:build@localhost/build S3_ACCESS_KEY_ID=build S3_SECRET_ACCESS_KEY=build \
+    STATIC_ROOT=/app-static python manage.py collectstatic --noinput \
+    && chmod -R a+rX /app-static
 USER app
 EXPOSE 8000
 CMD ["uvicorn", "config.asgi:application", "--host", "0.0.0.0", "--port", "8000"]
