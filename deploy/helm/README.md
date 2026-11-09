@@ -164,7 +164,16 @@ User-supplied API keys never reach Kubernetes Secrets or Postgres; they live in 
 Service, whose nginx proxies `/admin/` and `/static/` (the admin's CSS and JS, served by WhiteNoise from files collected
 into the `api` image at build time) to the `api`. **It is public like the rest of the site**, protected by its own
 login (superusers only, rate limited) until two-factor exists; to hide it from the internet restrict `/admin/` by
-address in Caddy (see the Caddyfile). The first superadmin is made with `manage.py make_superadmin` inside an `api` pod.
+address in Caddy (see the Caddyfile). The first superadmin is made with `manage.py make_superadmin` inside an `api` pod (needs a terminal, `-it`, for the
+password prompt when the address has no account yet; an existing account is just promoted):
+
+```bash
+kubectl -n openprism exec -it deploy/api -- python manage.py make_superadmin you@example.com
+kubectl -n openprism exec -it deploy/api -- python manage.py revoke_superadmin you@example.com   # the last one cannot be removed
+```
+
+`createsuperuser` works the same way. The commands and the admin's user form refuse to leave the deployment without a
+superadmin, so a locked-out installation is recoverable only by running `make_superadmin` again.
 
 ## Operating notes (carried over from the old kustomize README)
 

@@ -252,3 +252,8 @@
       accounts, workspaces and projects; `LogEntry` visible. Credential models, file contents and the Yjs state are
       not registered, and simplejwt's `OutstandingToken`/`BlacklistedToken` (refresh tokens) and `Group` are
       unregistered. Tests: `accounts/test_admin_models.py` (planted secrets never appear), `e2e/admin.spec.ts`.
+- [x] #82 **Admin: make and revoke superadmins safely (command, last-superadmin guard, docs).** `make_superadmin` (promote,
+      or create after a password prompt: verified, personal workspace) and `revoke_superadmin`, both logged in the
+      admin's *Log entries*; `accounts/superadmins.check_not_last()` keeps at least one active staff superuser, in the
+      commands and in the admin user form; privilege flags editable only by superusers; documented for compose and
+      Kubernetes (README, Helm README). Tests: `accounts/test_superadmins.py`.
