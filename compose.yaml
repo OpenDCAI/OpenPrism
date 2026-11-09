@@ -80,7 +80,7 @@ services:
       TRUSTED_PROXY_COUNT: "1" # the nginx web container: rate limits must key on the real client, not on it
       AI_RATE_PER_MINUTE: ${AI_RATE_PER_MINUTE:-30} # per user: llm, agent, vision, plot, transfer, arXiv import
       COMPILE_RATE_PER_MINUTE: ${COMPILE_RATE_PER_MINUTE:-30}
-      REGISTRATION_MODE: ${REGISTRATION_MODE:-open} # invite: only invited addresses may register (the browser suite needs open)
+      REGISTRATION_MODE: ${REGISTRATION_MODE:-open} # invite: only invited addresses may register (the application's default; compose stays open for development and the browser suite)
       WORKSPACE_INVITES_ALLOW_SIGNUP: ${WORKSPACE_INVITES_ALLOW_SIGNUP:-1} # in invite mode, workspace invitations also open the door
       ACCESS_CONTACT_EMAIL: ${ACCESS_CONTACT_EMAIL:-} # shown on the closed sign-up pages
       PLATFORM_INVITE_DAYS: ${PLATFORM_INVITE_DAYS:-7} # lifetime of a platform invitation link

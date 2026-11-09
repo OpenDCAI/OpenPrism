@@ -160,19 +160,20 @@ User-supplied API keys never reach Kubernetes Secrets or Postgres; they live in 
 
 ## Invitation-only access (v0.1.2)
 
-By default anyone who finds the URL can register. To keep strangers out, in this order:
+**Registration is by invitation by default** (`registration.mode: invite`): nobody can sign up without an invitation, so
+on a new deployment, in this order:
 
-1. Deploy, then make the first superadmin (see *Django admin*).
+1. Deploy, then make the first superadmin (see *Django admin*). Without one nobody can be invited.
 2. Check mail works: `kubectl -n openprism exec deploy/api -- python manage.py send_test_email you@example.com`
    (needs the `mail.*` values and the SMTP secrets; invitations are sent as mail).
-3. Set `registration.mode: invite` (and `registration.contactEmail`), then `helm upgrade` / release. Existing accounts keep
-   working; the landing page and `/register` stop offering sign-up.
+3. Set `registration.contactEmail` (shown on the closed pages). Existing accounts keep working; the landing page and
+   `/register` do not offer sign-up.
 4. Invite people in `/admin/` -> *Platform invites* -> *Invite people* (an address per line or a pasted CSV column,
    optionally with a workspace and role). Links work once and for `registration.inviteDays` (7); *Send again* replaces a
    link, *Revoke* ends it, the list shows who is sent, failed, used or expired.
 
 A workspace invitation (an admin inviting an address with no account) also lets that address register, unless
-`registration.workspaceInvitesAllowSignup: false`. To go back, set the mode to `open`.
+`registration.workspaceInvitesAllowSignup: false`. To let anyone register, set the mode to `open`.
 
 ## Django admin (v0.1.1, #79)
 
@@ -212,5 +213,5 @@ checked on the cluster, in rough order of risk:
 - **No NetworkPolicies** are installed: `worker-compile` has no network isolation (see the security model above).
 - **The app uses the object store's root S3 key** unless `OPENPRISM_S3_ACCESS_KEY` / `_SECRET_KEY` exist (see the
   bootstrap section); to change it, delete `openprism-app-creds`, add the secrets, re-run the bootstrap workflow and redeploy.
-- **Registration is open** (`registration.mode`, default `open`) and no SMTP credentials are set, so account mail may not be delivered; invitation links are mail too, so fix mail before closing registration.
+- **Registration is by invitation** (`registration.mode`, default `invite`) and no SMTP credentials are set, so account mail, and so invitation links, may not be delivered: set up mail and make a superadmin before relying on it.
 - A rolling update while a compile or transfer is running (the grace periods are set, the behaviour is not tested).
