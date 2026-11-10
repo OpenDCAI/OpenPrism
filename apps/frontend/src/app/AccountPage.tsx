@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { AppTopBar, Button, CrumbSep, FieldError, Modal } from '@design';
-import { changePassword, clearLocalSession, deleteAccount, myCredentialEvents } from '../api/client';
+import { changePassword, clearLocalSession, deleteAccount, mfaDisable, mfaEnable, mfaNewRecoveryCodes, mfaSetup, mfaStatus, myCredentialEvents } from '../api/client';
+import type { MfaSetup, MfaStatus } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { MIN_PASSWORD } from './PasswordPages';
 import CredentialHistory from './CredentialHistory';
@@ -59,6 +60,130 @@ function ChangePasswordSection() {
         {saved && <p className="account-ok" role="status">{t('Password changed.')}</p>}
         <div><Button type="submit" variant="primary" loading={busy}>{t('Change password')}</Button></div>
       </form>
+    </section>
+  );
+}
+
+type TwoFactorView = 'idle' | 'password' | 'scan' | 'codes' | 'regenerate' | 'disable';
+
+function TwoFactorSection() {
+  const { t } = useTranslation();
+  const { refreshAccount } = useAuth();
+  const [status, setStatus] = useState<MfaStatus | null>(null);
+  const [view, setView] = useState<TwoFactorView>('idle');
+  const [password, setPassword] = useState('');
+  const [code, setCode] = useState('');
+  const [setup, setSetup] = useState<MfaSetup | null>(null);
+  const [codes, setCodes] = useState<string[]>([]);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = () => mfaStatus().then(setStatus).catch(() => setStatus(null));
+  useEffect(() => { void load(); }, []);
+
+  const go = (next: TwoFactorView) => { setView(next); setPassword(''); setCode(''); setError(''); };
+  const run = async (work: () => Promise<void>) => {
+    setBusy(true);
+    setError('');
+    try { await work(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); }
+  };
+
+  const start = (e: FormEvent) => { e.preventDefault(); void run(async () => { setSetup(await mfaSetup(password)); go('scan'); }); };
+  const enable = (e: FormEvent) => {
+    e.preventDefault();
+    void run(async () => {
+      setCodes(await mfaEnable(setup!.setup, code));
+      setSetup(null);
+      go('codes');
+      await Promise.all([load(), refreshAccount()]);
+    });
+  };
+  const regenerate = (e: FormEvent) => { e.preventDefault(); void run(async () => { setCodes(await mfaNewRecoveryCodes(password, code)); go('codes'); await load(); }); };
+  const disable = (e: FormEvent) => { e.preventDefault(); void run(async () => { await mfaDisable(password, code); go('idle'); await Promise.all([load(), refreshAccount()]); }); };
+
+  const download = () => {
+    const url = URL.createObjectURL(new Blob([codes.join('\n') + '\n'], { type: 'text/plain' }));
+    const a = Object.assign(document.createElement('a'), { href: url, download: 'openprism-recovery-codes.txt' });
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const passwordField = (
+    <div className="op-field">
+      <label className="op-field-label" htmlFor="mfa-password">{t('Password')}</label>
+      <input id="mfa-password" className="op-input" type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+    </div>
+  );
+  const codeField = (label: string) => (
+    <div className="op-field">
+      <label className="op-field-label" htmlFor="mfa-code">{label}</label>
+      <input id="mfa-code" className="op-input" inputMode="numeric" autoComplete="one-time-code" value={code} onChange={(e) => setCode(e.target.value)} />
+    </div>
+  );
+  const actions = (submit: string, variant: 'primary' | 'danger' = 'primary') => (
+    <div className="account-actions">
+      <Button type="submit" variant={variant} loading={busy}>{submit}</Button>
+      <Button type="button" variant="secondary" onClick={() => go('idle')}>{t('Cancel')}</Button>
+    </div>
+  );
+
+  return (
+    <section className="account-section" aria-labelledby="account-mfa">
+      <h2 id="account-mfa">{t('Two-factor authentication')}</h2>
+      {!status && <p>{t('Loading…')}</p>}
+      {status && view === 'idle' && (
+        <>
+          <p>{status.enabled
+            ? t('On. Signing in asks for a code from your authenticator app. Recovery codes left: {{count}}.', { count: status.recoveryCodesLeft })
+            : t('Off. Add a code from an authenticator app to sign-in, so a stolen password is not enough.')}</p>
+          <div className="account-actions">
+            {status.enabled ? (
+              <>
+                <Button variant="secondary" onClick={() => go('regenerate')}>{t('New recovery codes…')}</Button>
+                <Button variant="danger" onClick={() => go('disable')}>{t('Turn off…')}</Button>
+              </>
+            ) : <Button variant="primary" onClick={() => go('password')}>{t('Turn on…')}</Button>}
+          </div>
+        </>
+      )}
+      {view === 'password' && (
+        <form className="account-form" onSubmit={start} noValidate>
+          <p>{t('Enter your password to continue.')}</p>
+          {passwordField}
+          <FieldError message={error || null} />
+          {actions(t('Continue'))}
+        </form>
+      )}
+      {view === 'scan' && setup && (
+        <form className="account-form" onSubmit={enable} noValidate>
+          <p>{t('Scan this code with an authenticator app (1Password, Google Authenticator, Authy…), or type the key.')}</p>
+          <img className="account-qr" alt={t('QR code for your authenticator app')} src={`data:image/svg+xml;utf8,${encodeURIComponent(setup.qrSvg)}`} />
+          <p>{t('Key')}: <code data-testid="mfa-secret">{setup.secret}</code></p>
+          {codeField(t('Code from the app'))}
+          <FieldError message={error || null} />
+          {actions(t('Turn on'))}
+        </form>
+      )}
+      {view === 'codes' && (
+        <div className="account-form">
+          <p>{t('Two-factor authentication is on. Keep these recovery codes somewhere safe: each works once if you lose your phone. They are not shown again.')}</p>
+          <ul className="account-codes" aria-label={t('Recovery codes')}>{codes.map((c) => <li key={c}><code>{c}</code></li>)}</ul>
+          <div className="account-actions">
+            <Button variant="secondary" onClick={() => void navigator.clipboard?.writeText(codes.join('\n'))}>{t('Copy')}</Button>
+            <Button variant="secondary" onClick={download}>{t('Download')}</Button>
+            <Button variant="primary" onClick={() => go('idle')}>{t('I have saved them')}</Button>
+          </div>
+        </div>
+      )}
+      {(view === 'regenerate' || view === 'disable') && (
+        <form className="account-form" onSubmit={view === 'regenerate' ? regenerate : disable} noValidate>
+          <p>{view === 'regenerate' ? t('New recovery codes replace the old ones.') : t('Turning this off leaves your password as the only protection.')}</p>
+          {passwordField}
+          {codeField(t('Code from the app (or a recovery code)'))}
+          <FieldError message={error || null} />
+          {actions(view === 'regenerate' ? t('Make new codes') : t('Turn off'), view === 'regenerate' ? 'primary' : 'danger')}
+        </form>
+      )}
     </section>
   );
 }
@@ -149,6 +274,7 @@ export default function AccountPage() {
         <h1>{t('Account settings')}</h1>
         {account && <p className="account-who">{account.name ? `${account.name} · ` : ''}{account.email}</p>}
         <ChangePasswordSection />
+        <TwoFactorSection />
         <section className="account-section" aria-labelledby="account-keys">
           <h2 id="account-keys">{t('Your keys')}</h2>
           <p>{t('When your Zotero key and your own AI keys were set, replaced or removed.')}</p>

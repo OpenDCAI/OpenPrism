@@ -770,6 +770,8 @@ export interface Account {
   emailVerified?: boolean;
   /** The server requires a verified address before anything else works (REQUIRE_EMAIL_VERIFICATION). */
   verificationRequired?: boolean;
+  /** Signing in asks for a code from an authenticator app (or a recovery code). */
+  mfaEnabled?: boolean;
 }
 
 async function authCall<T>(url: string, body: unknown): Promise<T> {
@@ -779,10 +781,47 @@ async function authCall<T>(url: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function login(email: string, password: string): Promise<Account> {
-  const tokens = await authCall<{ access: string }>('/api/auth/login', { email, password }); // the refresh token: a cookie
-  setSession({ access: tokens.access });
+/** Password step. An account with two-factor authentication gets `{ mfaTicket }` and no session yet: finish with `loginMfa`. */
+export async function login(email: string, password: string): Promise<Account | { mfaTicket: string }> {
+  const res = await authCall<{ access?: string; mfaRequired?: boolean; ticket?: string }>('/api/auth/login', { email, password }); // the refresh token: a cookie
+  if (res.mfaRequired && res.ticket) return { mfaTicket: res.ticket };
+  setSession({ access: res.access! });
   return fetchMe();
+}
+
+/** Second step: the ticket from `login` and a code from the authenticator app or a recovery code. */
+export async function loginMfa(ticket: string, code: string): Promise<Account> {
+  const res = await authCall<{ access: string }>('/api/auth/login/mfa', { ticket, code });
+  setSession({ access: res.access });
+  return fetchMe();
+}
+
+export interface MfaStatus { enabled: boolean; recoveryCodesLeft: number }
+export interface MfaSetup { secret: string; uri: string; qrSvg: string; setup: string }
+
+export async function mfaStatus(): Promise<MfaStatus> {
+  return request<MfaStatus>('/api/auth/mfa');
+}
+
+/** Start enrolment: a secret to show once. Nothing is turned on until `mfaEnable`. */
+export async function mfaSetup(password: string): Promise<MfaSetup> {
+  return request<MfaSetup>('/api/auth/mfa/totp/setup', { method: 'POST', body: JSON.stringify({ password }) });
+}
+
+/** Turn it on with the first code. Returns the recovery codes (shown once); other browsers are signed out. */
+export async function mfaEnable(setup: string, code: string): Promise<string[]> {
+  const res = await request<{ access: string; recoveryCodes: string[] }>('/api/auth/mfa/totp/enable', { method: 'POST', body: JSON.stringify({ setup, code }) });
+  setSession({ access: res.access });
+  return res.recoveryCodes;
+}
+
+export async function mfaNewRecoveryCodes(password: string, code: string): Promise<string[]> {
+  return (await request<{ recoveryCodes: string[] }>('/api/auth/mfa/recovery-codes', { method: 'POST', body: JSON.stringify({ password, code }) })).recoveryCodes;
+}
+
+export async function mfaDisable(password: string, code: string): Promise<void> {
+  const res = await request<{ access: string }>('/api/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) });
+  setSession({ access: res.access });
 }
 
 export interface PublicConfig {

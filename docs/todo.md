@@ -6,7 +6,7 @@
 - [x] #89 Auth: foundation - allauth email addresses mirror our accounts
 - [ ] #90 Auth: change the account's email address
 - [x] #91 Auth: two-factor (TOTP and recovery codes) at the API
-- [ ] #92 Auth: second factor in the app (Account page and sign-in)
+- [x] #92 Auth: second factor in the app (Account page and sign-in)
 - [ ] #93 Admin: superadmins require two-factor; reset a locked-out user's second factor
 - [ ] #94 Admin: one sign-in for the app and the Django admin (B6)
 - [ ] #95 Release v0.1.3: deployment settings, docs and version
