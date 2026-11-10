@@ -75,7 +75,11 @@ class UserAdmin(admin.ModelAdmin):
 
     @admin.action(description='Mark the selected accounts\' email addresses as verified')
     def mark_email_verified(self, request, queryset):
-        count = queryset.filter(email_verified_at__isnull=True).update(email_verified_at=timezone.now())
+        count = 0
+        for user in queryset.filter(email_verified_at__isnull=True):
+            user.email_verified_at = timezone.now()
+            user.save(update_fields=['email_verified_at'])  # the save also updates the allauth address row
+            count += 1
         self.message_user(request, f'{count} account(s) marked verified.')
 
 
