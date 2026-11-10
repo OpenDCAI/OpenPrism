@@ -158,6 +158,56 @@ The compile worker executes documents written by whoever can edit a project, inc
 Secrets are split by need: only `worker-transfer` and `worker-ai` receive `openprism-ai` (LLM and MinerU keys).
 User-supplied API keys never reach Kubernetes Secrets or Postgres; they live in Redis for the length of a job.
 
+## Invitation-only access (v0.1.2)
+
+**Registration is by invitation by default** (`registration.mode: invite`): nobody can sign up without an invitation, so
+on a new deployment, in this order:
+
+1. Deploy, then make the first superadmin (see *Django admin*). Without one nobody can be invited.
+2. Check mail works: `kubectl -n openprism exec deploy/api -- python manage.py send_test_email you@example.com`
+   (needs the `mail.*` values and the SMTP secrets; invitations are sent as mail).
+3. Set `registration.contactEmail` (shown on the closed pages). Existing accounts keep working; the landing page and
+   `/register` do not offer sign-up.
+4. Invite people in `/admin/` -> *Platform invites* -> *Invite people* (an address per line or a pasted CSV column,
+   optionally with a workspace and role). Links work once and for `registration.inviteDays` (7); *Send again* replaces a
+   link, *Revoke* ends it, the list shows who is sent, failed, used or expired.
+
+A workspace invitation (an admin inviting an address with no account) also lets that address register, unless
+`registration.workspaceInvitesAllowSignup: false`. To let anyone register, set the mode to `open`.
+
+## Two-factor authentication (v0.1.3)
+
+Everyone can turn on an authenticator-app code (and 10 one-time recovery codes) under *Account settings*. With
+`auth.superadminRequireMfa: true` (the default) `/admin/` also refuses a superadmin who has none, and asks every
+superadmin who has one for the code at its login form. **Upgrading from v0.1.2 cannot lock you out if you do this first:**
+
+1. Before deploying (or right after, with `--set auth.superadminRequireMfa=false` for the first rollout), sign in to the
+   app as each superadmin, open *Account settings* -> *Two-factor authentication* and turn it on; keep the recovery codes.
+2. From then on, *Admin* in the account menu opens `/admin/` with no second sign-in (a one-time code, 60 seconds).
+3. A superadmin who lost the phone **and** the recovery codes: another superadmin uses *Reset two-factor authentication* on
+   the users list (logged, the person is mailed and signed out everywhere). If it was the only superadmin, from the shell:
+   `kubectl -n openprism exec -it deploy/api -- python manage.py shell -c "from allauth.mfa.models import Authenticator as A; A.objects.filter(user__email='you@example.com').delete()"`.
+
+Secrets are encrypted with `CREDENTIAL_ENCRYPTION_KEY`: losing that key makes every second factor unreadable (the
+recovery above applies to each person).
+
+## Django admin (v0.1.1, #79)
+
+`https://<host>/admin/` is the Django admin for superadmins. It needs no chart change: Caddy sends everything to the `web`
+Service, whose nginx proxies `/admin/` and `/static/` (the admin's CSS and JS, served by WhiteNoise from files collected
+into the `api` image at build time) to the `api`. **It is public like the rest of the site**, protected by its own
+login (superusers only, rate limited, and a second factor when `auth.superadminRequireMfa` is on, see *Two-factor*); to hide it from the internet restrict `/admin/` by
+address in Caddy (see the Caddyfile). The first superadmin is made with `manage.py make_superadmin` inside an `api` pod (needs a terminal, `-it`, for the
+password prompt when the address has no account yet; an existing account is just promoted):
+
+```bash
+kubectl -n openprism exec -it deploy/api -- python manage.py make_superadmin you@example.com
+kubectl -n openprism exec -it deploy/api -- python manage.py revoke_superadmin you@example.com   # the last one cannot be removed
+```
+
+`createsuperuser` works the same way. The commands and the admin's user form refuse to leave the deployment without a
+superadmin, so a locked-out installation is recoverable only by running `make_superadmin` again.
+
 ## Operating notes (carried over from the old kustomize README)
 
 - Each API pod can use up to `ASGI_THREADS` (16) database connections plus the collaboration pool; with several replicas
@@ -179,5 +229,5 @@ checked on the cluster, in rough order of risk:
 - **No NetworkPolicies** are installed: `worker-compile` has no network isolation (see the security model above).
 - **The app uses the object store's root S3 key** unless `OPENPRISM_S3_ACCESS_KEY` / `_SECRET_KEY` exist (see the
   bootstrap section); to change it, delete `openprism-app-creds`, add the secrets, re-run the bootstrap workflow and redeploy.
-- **Registration is open** (`REGISTRATION_MODE`) and no SMTP credentials are set, so account mail may not be delivered.
+- **Registration is by invitation** (`registration.mode`, default `invite`) and no SMTP credentials are set, so account mail, and so invitation links, may not be delivered: set up mail and make a superadmin before relying on it.
 - A rolling update while a compile or transfer is running (the grace periods are set, the behaviour is not tested).

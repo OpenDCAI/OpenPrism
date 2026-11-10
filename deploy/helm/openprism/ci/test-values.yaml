@@ -10,3 +10,10 @@ secrets:
   CREDENTIAL_ENCRYPTION_KEY: not-a-real-key
   REDIS_PASSWORD: "p@ss:w/rd"
   OPENPRISM_LLM_API_KEY: not-a-real-key
+auth:
+  superadminRequireMfa: false   # the default is true; this file proves a non-default renders too
+registration:
+  mode: open            # the chart default is invite; this file proves a non-default renders too
+  workspaceInvitesAllowSignup: false
+  contactEmail: help@test.example
+  inviteDays: 3

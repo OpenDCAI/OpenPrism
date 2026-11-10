@@ -79,6 +79,16 @@ Then open:
 
 There is no seeded user: click **Create account** in the UI to register. Registering creates your personal workspace.
 
+**The Django admin** (`/admin/` on either address) is for superadmins. Make the first one, and any later ones, with:
+
+```bash
+docker compose exec api python manage.py make_superadmin you@example.com   # prompts for a password if the address has no account
+docker compose exec api python manage.py revoke_superadmin you@example.com # the account stays; the last superadmin cannot be removed
+```
+
+`createsuperuser` also works. An existing account is promoted and keeps its password; a new one is created, verified and
+given a personal workspace.
+
 | Port | Service |
 |---|---|
 | 5173 | Vite dev server |
@@ -161,7 +171,7 @@ Select text in the editor and press **Comment** (or Ctrl/Cmd+Alt+M) to start a d
 
 ### Accounts and email
 
-New accounts get an email to confirm their address (in development every mail lands in Mailpit at http://localhost:8025). Workspace invitations sent to an address are accepted once that address is confirmed. **Forgot password?** on the sign-in screen mails a reset link; **Account settings** in the account menu changes your password or deletes your account. Operators can require confirmation before anything else works (`REQUIRE_EMAIL_VERIFICATION=1`) and limit sign-up to invited addresses (`REGISTRATION_MODE=invite`). Configure a real mail server with the `EMAIL_*` variables and `APP_BASE_URL` (see `.env.sample`); `docker compose exec api python manage.py send_test_email you@example.com` checks it.
+New accounts get an email to confirm their address (in development every mail lands in Mailpit at http://localhost:8025). Workspace invitations sent to an address are accepted once that address is confirmed. **Forgot password?** on the sign-in screen mails a reset link; **Account settings** in the account menu changes your password or deletes your account. Operators can require confirmation before anything else works (`REQUIRE_EMAIL_VERIFICATION=1`) and sign-up is by invitation unless opened (`REGISTRATION_MODE=invite` is the application's default, `open` in `compose.yaml` for development: a superadmin invites people in `/admin/` under *Platform invites*, the new account joins a workspace if the invitation names one; make the first superadmin with `docker compose exec api python manage.py make_superadmin you@example.com` before inviting anyone). Configure a real mail server with the `EMAIL_*` variables and `APP_BASE_URL` (see `.env.sample`); `docker compose exec api python manage.py send_test_email you@example.com` checks it.
 
 ### Zotero
 

@@ -232,3 +232,67 @@
 - [x] #74 **The API pods failed their probes with 400.** Probes reach the pod by IP, which Django's `ALLOWED_HOSTS`
       refuses; they now send `Host: api`. CI asserts it.
 
+## v0.1.1 - Superadmin support
+
+- [x] #79 **Admin: reach /admin/ through nginx and serve its static files.** The `web` nginx proxies `/admin/` (no-store,
+      Referrer-Policy `same-origin`, since `no-referrer` makes browsers send `Origin: null` and CSRF refuses the login)
+      and `/static/`; the api serves its static files with WhiteNoise (collected into `/app-static` at image build time;
+      `django.contrib.staticfiles` installed); `CSRF_TRUSTED_ORIGINS` follows `TRUSTED_ORIGINS`; Vite proxies both for
+      development. Tests: `accounts/test_admin.py`, `e2e/admin.spec.ts` (with a `newSuperuser()` helper).
+- [x] #80 **Admin: superusers only, hardened session cookie and login rate limit.** `SuperuserAdminSite`: an active
+      `is_superuser` is required to log in and for every page (staff alone gets nothing; demotion ends access at once);
+      session cookie `openprism_admin` (httpOnly, Strict, Secure by the refresh cookie's rule, 8 h), CSRF cookie
+      likewise; login form limited to 10 submissions per address per 15 minutes (429 `Retry-After`;
+      `common.ratelimit.hit` takes a window); nginx adds `X-Frame-Options: DENY`; an admin session does not
+      authenticate the API; optional Caddy block to restrict `/admin/` by address. Tests: `accounts/test_admin.py`,
+      `e2e/admin.spec.ts`.
+- [x] #81 **Admin: register the models read-mostly, with no credentials and no deletes that skip cleanup.** `admin.py` in
+      accounts, projects, jobs, templates, collab, integrations and versions, built on `common.admin.ReadOnlyAdmin`;
+      accounts editable only for name/active/staff/superuser plus a *mark email verified* action; no add/delete for
+      accounts, workspaces and projects; `LogEntry` visible. Credential models, file contents and the Yjs state are
+      not registered, and simplejwt's `OutstandingToken`/`BlacklistedToken` (refresh tokens) and `Group` are
+      unregistered. Tests: `accounts/test_admin_models.py` (planted secrets never appear), `e2e/admin.spec.ts`.
+- [x] #82 **Admin: make and revoke superadmins safely (command, last-superadmin guard, docs).** `make_superadmin` (promote,
+      or create after a password prompt: verified, personal workspace) and `revoke_superadmin`, both logged in the
+      admin's *Log entries*; `accounts/superadmins.check_not_last()` keeps at least one active staff superuser, in the
+      commands and in the admin user form; privilege flags editable only by superusers; documented for compose and
+      Kubernetes (README, Helm README). Tests: `accounts/test_superadmins.py`.
+
+## v0.1.3 - Two-factor sign-in and one sign-in for the admin
+
+- [x] #88 **Spike: django-allauth as a library behind our JWT login.** GO: `allauth`, `account` and `mfa` installed
+      with no URLs, views or sessions; secrets encrypted with our Fernet key; see `docs/spike-allauth.md`.
+- [x] #89 **Foundation: allauth email addresses mirror our accounts.** One primary `EmailAddress` per account, kept in
+      step by a signal; existing accounts migrated (`accounts/emails.py`).
+- [x] #90 **Change the account's email address.** Password to ask, a link to the new address, notices to the old one,
+      every session signed out when it takes effect. Tests: `test_emailchange.py`, `e2e/email-change.spec.ts`.
+- [x] #91 **Two-factor (TOTP and recovery codes) at the API.** A ticketed second step that withholds all tokens until the
+      code is right; replay-proof codes; tokens revoked when the factor changes. Tests: `test_mfa.py`.
+- [x] #92 **Second factor in the app.** Code step at sign-in and a Two-factor block on the Account page. Test:
+      `e2e/two-factor.spec.ts`.
+- [x] #93 **Superadmins require two-factor; reset a locked-out user's second factor.** `SUPERADMIN_REQUIRE_MFA`, code
+      field on the admin login, audited *Reset two-factor* action. Tests: `test_admin_mfa.py`.
+- [x] #94 **One sign-in for the app and the Django admin (B6).** *Admin* in the account menu, single-use 60-second
+      handoff code posted in a form. Tests: `test_admin_handoff.py`, `e2e/admin.spec.ts`.
+- [x] #95 **Release v0.1.3: deployment settings, docs and version.** Helm `auth.superadminRequireMfa`, runbook,
+      version 0.1.3.
+
+## v0.1.2 - Invitation-only access
+
+- [x] #83 **Invitations: PlatformInvite model, service and mail.** A superadmin's single-use invitation per address
+      (`accounts/invitations.py`): only the token's SHA-256 is stored, 7 days by default (`PLATFORM_INVITE_DAYS`), one
+      live invitation per address (a new one or a resend replaces the link), optional workspace and role, mail failures
+      recorded in `send_failed`. Tests: `accounts/test_invitations.py`.
+- [x] #84 **Invitations: registration requires an invitation (single sign-up gate).** `accounts/signup.py`: in
+      `REGISTRATION_MODE=invite` a platform invitation or (unless `WORKSPACE_INVITES_ALLOW_SIGNUP=0`) a workspace
+      invitation is needed; one generic refusal, checked before "account exists", 10 attempts per 15 minutes per address
+      and per token; the invitation is used atomically with the account, which is verified at once and joins the
+      invited workspace and role. Tests: `accounts/test_signup.py` (including a concurrent double use).
+- [x] #85 **Invitations: superadmins manage them in the Django admin.** *Platform invites*: status list, *Invite people*
+      (lines, commas or a pasted CSV column, optional workspace and role), *Send again*, *Revoke*, logged, tokens never
+      shown. Tests: `accounts/test_admin_invites.py`, `e2e/admin.spec.ts`.
+- [x] #86 **Invitations: public site and invitation link say access is by invitation.** `GET /api/config`; in invite
+      mode the landing page offers Sign in and the contact address, sign-in drops "Create an account", `/register`
+      explains; the mailed link opens the form with the address fixed. Tests: `e2e/invitation-only.spec.ts`.
+- [x] #87 **Invitations: deployment settings, bootstrap and docs.** `registration.*` Helm values, compose and
+      `.env.sample` variables, the invitation-only runbook in `deploy/helm/README.md`.

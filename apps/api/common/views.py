@@ -8,6 +8,15 @@ def health(request):
     return JsonResponse({'ok': True, 'version': settings.VERSION})
 
 
+def public_config(request):
+    """What the signed-out pages need to know (v0.1.2): whether registration is open or by invitation, and whom to
+    contact. Nothing else is revealed here."""
+    response = JsonResponse({'ok': True, 'registration': settings.REGISTRATION_MODE,
+                             'contactEmail': settings.ACCESS_CONTACT_EMAIL or None})
+    response['Cache-Control'] = 'public, max-age=60'
+    return response
+
+
 def ready(request):
     """Readiness probe: Postgres, Redis and the S3 bucket must all be reachable."""
     checks = {}

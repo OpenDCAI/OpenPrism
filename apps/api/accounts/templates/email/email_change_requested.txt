@@ -1,0 +1,5 @@
+Hello {{ name }},
+
+Someone signed in to your account asked to change its email address to {{ new_email }}. Nothing changes until the link sent to that address is opened.
+
+If this was not you, reset your password at {{ app_url }}/forgot-password.

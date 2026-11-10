@@ -18,6 +18,11 @@ data:
   EMAIL_PORT: {{ .Values.mail.port | quote }}
   EMAIL_USE_TLS: {{ .Values.mail.tls | quote }}
   DEFAULT_FROM_EMAIL: {{ .Values.mail.from | quote }}
+  SUPERADMIN_REQUIRE_MFA: {{ ternary "1" "0" .Values.auth.superadminRequireMfa | quote }}
+  REGISTRATION_MODE: {{ .Values.registration.mode | quote }}
+  WORKSPACE_INVITES_ALLOW_SIGNUP: {{ ternary "1" "0" .Values.registration.workspaceInvitesAllowSignup | quote }}
+  ACCESS_CONTACT_EMAIL: {{ .Values.registration.contactEmail | quote }}
+  PLATFORM_INVITE_DAYS: {{ .Values.registration.inviteDays | quote }}
   {{- range $k, $v := .Values.config }}
   {{ $k }}: {{ $v | quote }}
   {{- end }}

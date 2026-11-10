@@ -35,3 +35,27 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.email
+
+
+class PlatformInvite(models.Model):
+    """A superadmin's invitation for one email address to register on the platform (v0.1.2, #83). Only the SHA-256 of
+    the token is stored; the raw token exists in the mailed link. Use accounts/invitations.py, not this table."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    email = models.EmailField()  # lower-case
+    token_hash = models.CharField(max_length=64, unique=True)
+    invited_by = models.ForeignKey(User, null=True, on_delete=models.SET_NULL, related_name='+')
+    created_at = models.DateTimeField(auto_now_add=True)
+    expires_at = models.DateTimeField()
+    last_sent_at = models.DateTimeField(null=True, blank=True)
+    send_failed = models.BooleanField(default=False)  # the last mail could not be delivered after every retry
+    revoked_at = models.DateTimeField(null=True, blank=True)
+    used_at = models.DateTimeField(null=True, blank=True)
+    user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL, related_name='+')  # the account it created
+    workspace = models.ForeignKey('projects.Workspace', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
+    role = models.CharField(max_length=10, blank=True, default='')  # Membership role in `workspace`
+
+    class Meta:
+        indexes = [models.Index(fields=['email'])]
+
+    def __str__(self):
+        return self.email

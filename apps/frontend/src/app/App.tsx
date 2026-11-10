@@ -7,7 +7,7 @@ import ProjectPage from './ProjectPage';
 import CollabJoinPage from './CollabJoinPage';
 import AccountPage from './AccountPage';
 import { ForgotPasswordPage, ResetPasswordPage } from './PasswordPages';
-import { VerifyBanner, VerifyEmailPage, VerifyGate } from './VerifyEmail';
+import { ConfirmEmailChangePage, VerifyBanner, VerifyEmailPage, VerifyGate } from './VerifyEmail';
 import KeysMovedNotice from './KeysMovedNotice';
 import LoginPage, { safeNext } from './LoginPage';
 import { useAuth } from '../auth/AuthProvider';
@@ -42,6 +42,7 @@ function AnonymousRoutes() {
       <Route path="/forgot-password" element={<ForgotPasswordPage />} />
       <Route path="/reset-password" element={<ResetPasswordPage />} />
       <Route path="/verify-email" element={<VerifyEmailPage />} />
+      <Route path="/confirm-email" element={<ConfirmEmailChangePage />} />
       <Route path="*" element={<Navigate to={`/login?next=${encodeURIComponent(pathname + search)}`} replace />} />
     </Routes>
   );
@@ -61,6 +62,7 @@ function GuestRoutes({ guest }: { guest: GuestInfo }) {
         <Route path="/forgot-password" element={<ForgotPasswordPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/confirm-email" element={<ConfirmEmailChangePage />} />
         <Route path="*" element={<Navigate to={`/editor/${guest.projectId}`} replace />} />
       </Routes>
     </WorkspaceProvider>
@@ -79,6 +81,7 @@ function AccountRoutes({ account }: { account: Account }) {
     return (
       <Routes>
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/confirm-email" element={<ConfirmEmailChangePage />} />
         <Route path="*" element={<VerifyGate email={account.email} />} />
       </Routes>
     );
@@ -103,6 +106,7 @@ function VerifiedAccountRoutes({ account }: { account: Account }) {
         <Route path="/account" element={<AccountPage />} />
         <Route path="/reset-password" element={<ResetPasswordPage />} />
         <Route path="/verify-email" element={<VerifyEmailPage />} />
+        <Route path="/confirm-email" element={<ConfirmEmailChangePage />} />
         <Route path="/login" element={<Navigate to={afterLogin} replace />} />
         <Route path="/register" element={<Navigate to={afterLogin} replace />} />
         <Route path="*" element={<Navigate to="/projects" replace />} />

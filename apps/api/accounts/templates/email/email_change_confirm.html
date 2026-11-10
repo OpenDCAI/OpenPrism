@@ -1,0 +1,4 @@
+{% extends "email/base.html" %}
+{% block body %}<p>Hello {{ name }},</p>
+<p>Please confirm that this is your new email address for OpenPrism by opening this link:</p><p><a href="{{ link }}" style="color:#b8452e">{{ link }}</a></p><p>The link is valid for one hour. Until then you sign in with your old address.
+If you did not ask for this, ignore this message.</p>{% endblock %}

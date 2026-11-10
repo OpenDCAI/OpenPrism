@@ -81,7 +81,7 @@ class VerificationTests(TestCase):
     def test_invite_only_registration(self):
         _, res = self.register('stranger@example.com')
         self.assertEqual(res.status_code, 400)
-        self.assertIn('invitation only', res.data['error'])
+        self.assertIn('invitation is not valid', res.data['error'])
         lab = Workspace.objects.create(name='Lab')
         WorkspaceInvite.objects.create(workspace=lab, email='guest@example.com', role=Membership.VIEWER)
         self.assertEqual(self.register('guest@example.com')[1].status_code, 201)

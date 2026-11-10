@@ -3,7 +3,7 @@ export type { IconName } from './Icon';
 export { Logo, LogoMark } from './Logo';
 export * from './ui';
 export { AppTopBar, CrumbSep } from './AppTopBar';
-export { AuthScreen } from './AuthScreen';
+export { AuthScreen, ClosedSignup } from './AuthScreen';
 export type { AuthMode, AuthValues } from './AuthScreen';
 export { useTheme, setTheme, initTheme } from './theme';
 export type { ThemePref } from './theme';

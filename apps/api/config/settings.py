@@ -49,11 +49,22 @@ EMAIL_USE_TLS = env_bool('EMAIL_USE_TLS', False)
 EMAIL_USE_SSL = env_bool('EMAIL_USE_SSL', False)
 EMAIL_TIMEOUT = int(env('EMAIL_TIMEOUT', '20'))
 # Accounts. REQUIRE_EMAIL_VERIFICATION: an unverified account may only reach the auth endpoints until it clicks the link.
-# REGISTRATION_MODE: `open` (anyone) or `invite` (only addresses with a pending workspace invitation).
+# REGISTRATION_MODE: `invite` (the default: only addresses with a platform or workspace invitation) or `open` (anyone).
+# The test runner defaults to `open`, since most tests register accounts freely; tests of the gate set the mode themselves.
 REQUIRE_EMAIL_VERIFICATION = env_bool('REQUIRE_EMAIL_VERIFICATION', False)
-REGISTRATION_MODE = env('REGISTRATION_MODE', 'open')
+REGISTRATION_MODE = env('REGISTRATION_MODE', 'open' if TESTING else 'invite')
 if REGISTRATION_MODE not in ('open', 'invite'):
     raise ImproperlyConfigured('REGISTRATION_MODE must be "open" or "invite"')
+# Platform invitations (v0.1.2): a superadmin's invitation to register lives this many days. WORKSPACE_INVITES_ALLOW_SIGNUP:
+# in invite mode a workspace invitation also opens the door (off: platform invitations only). ACCESS_CONTACT_EMAIL is shown
+# on the closed sign-up pages.
+PLATFORM_INVITE_DAYS = int(env('PLATFORM_INVITE_DAYS', '7'))
+if PLATFORM_INVITE_DAYS < 1:
+    raise ImproperlyConfigured('PLATFORM_INVITE_DAYS must be at least 1')
+WORKSPACE_INVITES_ALLOW_SIGNUP = env_bool('WORKSPACE_INVITES_ALLOW_SIGNUP', True)
+ACCESS_CONTACT_EMAIL = env('ACCESS_CONTACT_EMAIL', '').strip()
+if ACCESS_CONTACT_EMAIL and ('@' not in ACCESS_CONTACT_EMAIL or ' ' in ACCESS_CONTACT_EMAIL):
+    raise ImproperlyConfigured('ACCESS_CONTACT_EMAIL must be an email address')
 EMAIL_VERIFY_MAX_AGE = 3 * 24 * 3600  # seconds a verification link stays valid
 PASSWORD_RESET_TIMEOUT = 3600  # seconds a reset link stays valid (it also dies when the password changes)
 MAIL_SEND_INLINE = TESTING  # tests deliver to the locmem outbox at once instead of queueing a Celery task
@@ -62,12 +73,16 @@ DEFAULT_FROM_EMAIL = env('DEFAULT_FROM_EMAIL', 'OpenPrism <no-reply@localhost>')
 ALLOWED_HOSTS = [h for h in env('DJANGO_ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',') if h]
 
 INSTALLED_APPS = [
-    'django.contrib.admin',
+    'accounts.adminconfig.SuperuserAdminConfig',  # django.contrib.admin with our site: superusers only (#80)
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'django.contrib.staticfiles',  # collectstatic for the admin (#79)
     'channels',
+    'allauth',  # a library, not a UI: no allauth URLs, views or sessions (docs/spike-allauth.md)
+    'allauth.account',
+    'allauth.mfa',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'accounts',
@@ -85,11 +100,13 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # the admin's CSS/JS (#79); the API has no other static files
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'allauth.account.middleware.AccountMiddleware',  # sets allauth's request context; required by the app, adds no routes
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -126,6 +143,15 @@ DATABASES = {'default': _database()}
 
 TEST_RUNNER = 'config.testrunner.Runner'
 AUTH_USER_MODEL = 'accounts.User'
+# django-allauth supplies the second factor (TOTP, recovery codes; passkeys and social sign-in later) as a library behind
+# our own JWT endpoints. Its secrets are encrypted with CREDENTIAL_ENCRYPTION_KEY instead of stored in the clear.
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_LOGIN_METHODS = {'email'}
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
+MFA_SUPPORTED_TYPES = ['totp', 'recovery_codes']
+MFA_ADAPTER = 'accounts.mfa_adapter.FernetMFAAdapter'
+MFA_TOTP_ISSUER = 'OpenPrism'
+MFA_TOTP_TOLERANCE = 1  # accept the code from one period before or after: phone clocks drift
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
@@ -137,6 +163,10 @@ TIME_ZONE = 'UTC'
 USE_I18N = True
 USE_TZ = True
 STATIC_URL = '/static/'
+# `collectstatic` target, filled when the image is built (outside /app, which compose bind-mounts). WhiteNoise serves
+# it; in debug and under tests it reads the apps' own files instead, so nothing has to be collected first.
+STATIC_ROOT = env('STATIC_ROOT', '/app-static')
+WHITENOISE_USE_FINDERS = DEBUG or TESTING
 
 # Uploads up to 200 MB, as the Node backend allowed.
 DATA_UPLOAD_MAX_MEMORY_SIZE = 200 * 1024 * 1024
@@ -178,10 +208,25 @@ SIMPLE_JWT = {
 
 # The refresh token lives in this httpOnly cookie (accounts/cookies.py); the access token only in the page's memory.
 REFRESH_COOKIE_NAME = 'openprism_refresh'
+# The Django admin (#80) is the only user of sessions and CSRF cookies: the app itself authenticates with JWTs. Its own
+# cookie name and flags keep it apart from the app's cookies; the session is short.
+ADMIN_SESSION_HOURS = int(env('ADMIN_SESSION_HOURS', '8'))
+# Superadmins must have two-factor authentication to use the admin (on by default; compose and the test runner turn it off).
+SUPERADMIN_REQUIRE_MFA = env_bool('SUPERADMIN_REQUIRE_MFA', not TESTING)
+ADMIN_LOGIN_RATE_PER_15_MIN = int(env('ADMIN_LOGIN_RATE_PER_15_MIN', '10'))  # login form submissions per address
+SESSION_COOKIE_NAME = 'openprism_admin'
+SESSION_COOKIE_AGE = ADMIN_SESSION_HOURS * 3600
+SESSION_COOKIE_HTTPONLY = True
+SESSION_COOKIE_SAMESITE = 'Strict'
+CSRF_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SAMESITE = 'Strict'
 REFRESH_COOKIE_SECURE = env_bool('REFRESH_COOKIE_SECURE', not DEBUG)  # browsers accept Secure cookies on http://localhost too
 # Origins whose pages may use the refresh cookie (an Origin header must be one of these): APP_BASE_URL and any extra
 # origins people open the app at (comma-separated), e.g. the nginx image on :8080 next to Vite on :5173 in dev.
 TRUSTED_ORIGINS = sorted({APP_BASE_URL, *(o.strip().rstrip('/') for o in env('TRUSTED_ORIGINS', '').split(',') if o.strip())})
+# The admin's login form is the one place Django checks CSRF; behind the proxies it must accept the app's origins.
+CSRF_TRUSTED_ORIGINS = TRUSTED_ORIGINS
+SESSION_COOKIE_SECURE = CSRF_COOKIE_SECURE = REFRESH_COOKIE_SECURE  # same rule as the refresh cookie
 
 REDIS_URL = env('REDIS_URL', 'redis://localhost:6379/0')
 if TESTING:  # tests share the dev Redis: keep their keys (and anything they enqueue) out of the dev database

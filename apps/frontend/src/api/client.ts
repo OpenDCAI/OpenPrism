@@ -770,6 +770,10 @@ export interface Account {
   emailVerified?: boolean;
   /** The server requires a verified address before anything else works (REQUIRE_EMAIL_VERIFICATION). */
   verificationRequired?: boolean;
+  /** Signing in asks for a code from an authenticator app (or a recovery code). */
+  mfaEnabled?: boolean;
+  /** An active superadmin: the account menu offers the Django admin. */
+  isSuperuser?: boolean;
 }
 
 async function authCall<T>(url: string, body: unknown): Promise<T> {
@@ -779,14 +783,89 @@ async function authCall<T>(url: string, body: unknown): Promise<T> {
   return res.json() as Promise<T>;
 }
 
-export async function login(email: string, password: string): Promise<Account> {
-  const tokens = await authCall<{ access: string }>('/api/auth/login', { email, password }); // the refresh token: a cookie
-  setSession({ access: tokens.access });
+/** Password step. An account with two-factor authentication gets `{ mfaTicket }` and no session yet: finish with `loginMfa`. */
+export async function login(email: string, password: string): Promise<Account | { mfaTicket: string }> {
+  const res = await authCall<{ access?: string; mfaRequired?: boolean; ticket?: string }>('/api/auth/login', { email, password }); // the refresh token: a cookie
+  if (res.mfaRequired && res.ticket) return { mfaTicket: res.ticket };
+  setSession({ access: res.access! });
   return fetchMe();
 }
 
-export async function register(email: string, password: string, name?: string): Promise<Account> {
-  const res = await authCall<{ access: string; user: Account }>('/api/auth/register', { email, password, name });
+/** Second step: the ticket from `login` and a code from the authenticator app or a recovery code. */
+export async function loginMfa(ticket: string, code: string): Promise<Account> {
+  const res = await authCall<{ access: string }>('/api/auth/login/mfa', { ticket, code });
+  setSession({ access: res.access });
+  return fetchMe();
+}
+
+export interface EmailInfo { email: string; pending: string | null }
+export async function emailInfo(): Promise<EmailInfo> { return request<EmailInfo>('/api/auth/email'); }
+/** Ask to change the address: a link goes to the new one (valid an hour); nothing changes until it is opened. */
+export async function requestEmailChange(email: string, password: string): Promise<string> {
+  return (await request<{ pending: string }>('/api/auth/email/change', { method: 'POST', body: JSON.stringify({ email, password }) })).pending;
+}
+export async function cancelEmailChange(): Promise<void> { await request('/api/auth/email', { method: 'DELETE' }); }
+/** From the mailed link (works signed in or not). Every browser is signed out by the change. */
+export async function confirmEmailChange(token: string) {
+  return authCall<{ ok: boolean; email: string }>('/api/auth/email/confirm', { token });
+}
+
+/** Open the Django admin signed in as this superadmin, in a new tab. The one-time code goes in a form POST, never a URL. */
+export async function openAdmin(): Promise<void> {
+  const { code } = await request<{ code: string }>('/api/auth/admin-handoff', { method: 'POST' });
+  const form = Object.assign(document.createElement('form'), { method: 'POST', action: '/admin/handoff/', target: '_blank' });
+  form.append(Object.assign(document.createElement('input'), { type: 'hidden', name: 'code', value: code }));
+  document.body.append(form);
+  form.submit();
+  form.remove();
+}
+
+export interface MfaStatus { enabled: boolean; recoveryCodesLeft: number }
+export interface MfaSetup { secret: string; uri: string; qrSvg: string; setup: string }
+
+export async function mfaStatus(): Promise<MfaStatus> {
+  return request<MfaStatus>('/api/auth/mfa');
+}
+
+/** Start enrolment: a secret to show once. Nothing is turned on until `mfaEnable`. */
+export async function mfaSetup(password: string): Promise<MfaSetup> {
+  return request<MfaSetup>('/api/auth/mfa/totp/setup', { method: 'POST', body: JSON.stringify({ password }) });
+}
+
+/** Turn it on with the first code. Returns the recovery codes (shown once); other browsers are signed out. */
+export async function mfaEnable(setup: string, code: string): Promise<string[]> {
+  const res = await request<{ access: string; recoveryCodes: string[] }>('/api/auth/mfa/totp/enable', { method: 'POST', body: JSON.stringify({ setup, code }) });
+  setSession({ access: res.access });
+  return res.recoveryCodes;
+}
+
+export async function mfaNewRecoveryCodes(password: string, code: string): Promise<string[]> {
+  return (await request<{ recoveryCodes: string[] }>('/api/auth/mfa/recovery-codes', { method: 'POST', body: JSON.stringify({ password, code }) })).recoveryCodes;
+}
+
+export async function mfaDisable(password: string, code: string): Promise<void> {
+  const res = await request<{ access: string }>('/api/auth/mfa/disable', { method: 'POST', body: JSON.stringify({ password, code }) });
+  setSession({ access: res.access });
+}
+
+export interface PublicConfig {
+  /** `invite`: registration needs an invitation (platform or workspace). */
+  registration: 'open' | 'invite';
+  contactEmail: string | null;
+}
+
+let publicConfig: Promise<PublicConfig> | null = null;
+
+/** What the signed-out pages need (registration mode, contact address); fetched once per page load. */
+export function fetchPublicConfig(): Promise<PublicConfig> {
+  publicConfig ??= fetch('/api/config')
+    .then((res) => { if (!res.ok) throw new Error('config'); return res.json() as Promise<PublicConfig>; })
+    .catch(() => { publicConfig = null; return { registration: 'open', contactEmail: null } as PublicConfig; }); // the server decides at submit anyway
+  return publicConfig;
+}
+
+export async function register(email: string, password: string, name?: string, invite?: string): Promise<Account> {
+  const res = await authCall<{ access: string; user: Account }>('/api/auth/register', { email, password, name, invite });
   setSession({ access: res.access });
   return res.user;
 }

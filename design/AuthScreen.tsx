@@ -16,12 +16,19 @@ export interface AuthValues {
 interface AuthScreenProps {
   mode: AuthMode;
   onModeChange: (mode: AuthMode) => void;
-  /** Resolve on success; reject with an Error whose message is shown above the form. */
-  onSubmit: (values: AuthValues) => Promise<void>;
+  /** Resolve on success; reject with an Error whose message is shown above the form. Resolve `'code'` when the account
+   *  has two-factor authentication: the screen then asks for the code and calls `onSubmitCode`. */
+  onSubmit: (values: AuthValues) => Promise<void | 'code'>;
+  /** The second step: reject with an Error to show it, resolve on success. */
+  onSubmitCode?: (code: string) => Promise<void>;
   /** Shows a "Forgot password?" link on the sign-in form. */
   onForgotPassword?: () => void;
   /** Pre-fills the email field (e.g. from an invitation link). */
   initialEmail?: string;
+  /** The address is fixed (an invitation is for one address only). */
+  lockEmail?: boolean;
+  /** False when accounts are by invitation only: the sign-in form then offers no "Create an account". Default true. */
+  canRegister?: boolean;
   /** Optional context shown above the form, e.g. "Sign in to continue to your project". */
   notice?: ReactNode;
 }
@@ -30,7 +37,34 @@ const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const MIN_PASSWORD = 8;
 
 /** Sign-in and account creation. Full-screen, shown whenever there is no session. */
-export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassword, initialEmail = '' }: AuthScreenProps) {
+export function ClosedSignup({ contactEmail, onSignIn }: { contactEmail: string | null; onSignIn: () => void }) {
+  const { t } = useTranslation();
+  return (
+    <div className="op-signed-out">
+      <div className="op-signed-out-card">
+        <LogoMark size={40} />
+        <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>
+          <h1>{t('Access is by invitation')}</h1>
+          <p>{t('Open Prism accounts are created from an invitation sent to your email address.')}</p>
+        </div>
+        <div className="op-auth-banner" role="status">
+          <Icon name="info" />
+          <span>
+            {contactEmail
+              ? <>{t('To ask for access, write to')} <a href={`mailto:${contactEmail}`}>{contactEmail}</a>.</>
+              : t('To ask for access, contact the people who run this site.')}
+          </span>
+        </div>
+        <p className="op-auth-switch">
+          {t('Already have an account?')}{' '}
+          <button type="button" className="op-link-btn" onClick={onSignIn}>{t('Sign in')}</button>
+        </p>
+      </div>
+    </div>
+  );
+}
+
+export function AuthScreen({ mode, onModeChange, onSubmit, onSubmitCode, notice, onForgotPassword, initialEmail = '', lockEmail = false, canRegister = true }: AuthScreenProps) {
   const { t } = useTranslation();
   const uid = useId();
   const register = mode === 'register';
@@ -39,6 +73,9 @@ export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassw
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
+  const [step, setStep] = useState<'password' | 'code'>('password');
+  const [code, setCode] = useState('');
+  const [recovery, setRecovery] = useState(false);
 
   const errors = {
     email: !values.email.trim() ? t('Enter your email address.') : !EMAIL_RE.test(values.email.trim()) ? t('Enter a full email address, like name@university.edu.') : null,
@@ -58,7 +95,8 @@ export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassw
     setBusy(true);
     setFormError(null);
     try {
-      await onSubmit({ ...values, email: values.email.trim(), name: values.name.trim() });
+      const next = await onSubmit({ ...values, email: values.email.trim(), name: values.name.trim() });
+      if (next === 'code') { setStep('code'); setCode(''); setBusy(false); }
     } catch (err) {
       setFormError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -66,11 +104,73 @@ export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassw
     // On success the parent replaces this screen, so there is nothing to reset.
   };
 
+  const submitCode = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!code.trim() || busy || !onSubmitCode) return;
+    setBusy(true);
+    setFormError(null);
+    try {
+      await onSubmitCode(code.trim());
+    } catch (err) {
+      setFormError(err instanceof Error ? err.message : String(err));
+      setBusy(false);
+    }
+  };
+
+  const backToPassword = () => {
+    setStep('password');
+    setFormError(null);
+    setCode('');
+    setValues((v) => ({ ...v, password: '' }));
+  };
+
   const switchMode = () => {
     setFormError(null);
     setTouched({});
     onModeChange(register ? 'signin' : 'register');
   };
+
+  if (step === 'code') {
+    return (
+      <div className="op-signed-out">
+        <div className="op-signed-out-card">
+          <LogoMark size={40} />
+          <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>
+            <h1>{t('Enter your code')}</h1>
+            <p>{recovery ? t('Enter one of your recovery codes. Each works once.') : t('Open your authenticator app and enter the 6-digit code for Open Prism.')}</p>
+          </div>
+          <form className="op-auth-form" onSubmit={submitCode} noValidate>
+            {formError && (
+              <div className="op-auth-banner is-error" role="alert">
+                <Icon name="alert-circle" />
+                <span>{formError}</span>
+              </div>
+            )}
+            <div className="op-field">
+              <label className="op-field-label" htmlFor={`${uid}-code`}>{recovery ? t('Recovery code') : t('Authentication code')}</label>
+              <input
+                id={`${uid}-code`}
+                className="op-input"
+                inputMode={recovery ? 'text' : 'numeric'}
+                autoComplete="one-time-code"
+                autoFocus
+                value={code}
+                onChange={(e) => { setCode(e.target.value); if (formError) setFormError(null); }}
+              />
+            </div>
+            <Button type="submit" variant="primary" size="lg" block loading={busy}>{t('Verify')}</Button>
+          </form>
+          <p className="op-auth-switch">
+            <button type="button" className="op-link-btn" onClick={() => { setRecovery((v) => !v); setCode(''); setFormError(null); }}>
+              {recovery ? t('Use my authenticator app') : t('Use a recovery code')}
+            </button>
+            {' · '}
+            <button type="button" className="op-link-btn" onClick={backToPassword}>{t('Back')}</button>
+          </p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="op-signed-out">
@@ -113,6 +213,7 @@ export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassw
               autoFocus
               placeholder="name@university.edu"
               value={values.email}
+              readOnly={lockEmail || undefined}
               aria-invalid={shown('email') ? true : undefined}
               aria-describedby={shown('email') ? `${uid}-email-error` : undefined}
               onChange={set('email')}
@@ -157,12 +258,14 @@ export function AuthScreen({ mode, onModeChange, onSubmit, notice, onForgotPassw
           </Button>
         </form>
 
-        <p className="op-auth-switch">
-          {register ? t('Already have an account?') : t('New to Open Prism?')}{' '}
-          <button type="button" className="op-link-btn" onClick={switchMode}>
-            {register ? t('Sign in') : t('Create an account')}
-          </button>
-        </p>
+        {(register || canRegister) && (
+          <p className="op-auth-switch">
+            {register ? t('Already have an account?') : t('New to Open Prism?')}{' '}
+            <button type="button" className="op-link-btn" onClick={switchMode}>
+              {register ? t('Sign in') : t('Create an account')}
+            </button>
+          </p>
+        )}
       </div>
     </div>
   );

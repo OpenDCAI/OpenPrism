@@ -108,60 +108,23 @@ NodePort for the external Caddy2 proxy and using the cluster's hosted Postgres, 
 
 ## v0.1.1 - Superadmin support
 
-Accounts with access to the Django admin back end. `django.contrib.admin` is installed and routed at `/admin/`, and
-`createsuperuser` sets `is_staff` / `is_superuser`, but no app registers a `ModelAdmin`, so the admin is empty, and
-nothing says how a superadmin is made or how the site is reached in production.
-
-- [ ] **Reach `/admin/` in every environment.** Confirm `web` (nginx), the Helm chart's routes and the Caddy reference
-      config pass `/admin/` (and its static files) through to the api, in compose and on the cent cluster.
-- [ ] **Register the models with `ModelAdmin`s** so a superadmin can inspect and fix data: accounts, workspaces and
-      memberships, projects (read-mostly; file contents are not edited here), jobs, templates, invites, LLM usage and
-      credential events. Never show or edit stored credentials, tokens or key material (last four characters at most).
-- [ ] **Make and remove superadmins safely.** A documented way to grant and revoke `is_staff` / `is_superuser`
-      (`createsuperuser`, a management command, or the admin itself for existing superusers), including on Kubernetes.
-      Superadmins are accounts, not a separate login; decide whether an unverified account may be one.
-- [ ] **Protect the admin.** It uses Django sessions while the app uses JWTs: decide the login path, session cookie
-      settings (`Secure`, `SameSite`), CSRF trusted origins behind the proxies, rate limiting on the admin login, and
-      whether `/admin/` is restricted to certain addresses at Caddy.
-- [ ] **Audit superadmin actions.** Admin edits are written to Django's log entries; decide whether to also record them
-      in the credential event log or keep them admin-only, and show who acted.
-- [ ] **Tests.** Superadmin can load the changelists; a normal or staff-without-permission account cannot; secrets never
-      appear in the admin pages.
+Moved to `docs/todo.md` (issues #79-#82). Decided: superusers only (plain staff get no admin access), the admin has its
+own hardened session cookie and login rate limit, credentials are never registered or shown, users/workspaces/projects
+cannot be deleted from the admin (deletion keeps its cleanup services), and the last superadmin cannot be removed.
 
 ## v0.1.2 - A) Invitation-only access
 
-**Plan, to be fleshed out before issues are written.** Needs v0.1.1 (the Django admin is where a superadmin manages
-this). Keeps strangers who find the URL from signing up.
-
-Where we are today: `REGISTRATION_MODE=invite` accepts an address only if a *workspace* invitation (`WorkspaceInvite`,
-made by a workspace admin) exists for it. That is not the same thing: nobody can be let onto the platform without being
-attached to a workspace, workspace admins can open the door on their own, and the landing page and `/register` still
-invite strangers to sign up.
-
-- [ ] **Model.** A `PlatformInvite` (email, hashed single-use token like `CollabInvite`, `invited_by`, expiry, `used_at`,
-      the account it created, optional workspace and role to join on registration). Decide: one invite per address or
-      several, default expiry, whether an invite survives a registration that fails halfway.
-- [ ] **Registration requires one.** Registration is refused without a valid invitation for that address. Decide how it
-      relates to workspace invitations (suggested: a workspace admin may invite only people who already have an account
-      or hold a platform invitation, so the superadmin controls who is on the service).
-- [ ] **A single gate that every sign-up path goes through,** so B's social sign-in cannot bypass it (with allauth this
-      is `is_open_for_signup` on the account and social-account adapters).
-- [ ] **Superadmin manages them in the admin.** Create (one address or a pasted list/CSV), resend, revoke, see status
-      (sent, mail failed, used, expired) and who invited. Reuses `mail.send_template` and the `send_failed` pattern.
-      Only superusers, not plain staff.
-- [ ] **The invitation proves the address.** The mailed link (`/register?invite=…`) carries the token and pre-fills the
-      email; completing registration marks the address verified.
-- [ ] **No enumeration, no guessing.** Wrong, expired and used tokens give one generic error; rate-limit registration per
-      address and token (`common/ratelimit.py`); the register endpoint must not reveal which addresses are invited.
-- [ ] **The public site stops advertising sign-up.** Landing and `/register` say access is by invitation and show a
-      contact address (setting). Decide whether to add a "request access" form (probably not in this release).
-- [ ] **Existing accounts keep working;** `createsuperuser` remains the way to bootstrap the first superadmin on an
-      invitation-only deployment (document it for compose and Kubernetes).
-- [ ] **Tests and QA:** unit tests for the gate (no invite, expired, used, wrong address, rate limit) and the admin
-      actions and permissions (staff without superuser cannot); Playwright for the invited registration flow and the
-      closed landing and register pages.
+Moved to `docs/todo.md` (issues #83-#87). Decided: invitations expire after 7 days (`PLATFORM_INVITE_DAYS`), carry an
+optional workspace and role, one live invitation per address (a resend replaces the link), workspace invitations still
+open the door (switchable off with `WORKSPACE_INVITES_ALLOW_SIGNUP`), the invitation proves the address, there is no
+request-access form, and every sign-up path goes through one gate (`accounts/signup.py`) so B's social sign-in cannot
+bypass it.
 
 ## B) Social sign-in, two-factor and passkeys
+
+**Split:** v0.1.3 takes the spike, B1 (foundation, email change), B2 (TOTP, required for superadmins) and B6 (one
+sign-in); issues #88-#95, done in `docs/xchangelog.md` (v0.1.3). Still here for v0.1.4: B3 passkeys, B4 social sign-in (ORCID and Google
+chosen), B5 sign-in methods page.
 
 **Use cases:** sign in with a social/SSO provider; one account that can be reached by several sign-in methods (separate
 the account from its email and sign-in method); two-factor authentication; passkeys.
@@ -182,13 +145,13 @@ allauth doing the authentication step (password, social, second factor, passkey)
 SimpleJWT + cookie issuing, so the rest of the app is untouched. It must also prove multi-tab refresh and logout still
 work and that a refresh cannot bypass a second factor.
 
-- [ ] **Spike (time-boxed).** Install allauth + headless + mfa in a branch, keep email-login `User`, log in through it and
+- [x] **Spike (time-boxed).** Install allauth + headless + mfa in a branch, keep email-login `User`, log in through it and
       mint our tokens; report what has to change. Go/no-go before anything else is built.
-- [ ] **B1 Foundation.** Migrate existing accounts (an `EmailAddress` row per user with its verified state, no one
+- [x] **B1 Foundation.** Migrate existing accounts (an `EmailAddress` row per user with its verified state, no one
       locked out); move password reset, verification and email change onto allauth while keeping the existing mail
       templates and `REQUIRE_EMAIL_VERIFICATION`; keep "a password change revokes refresh tokens", the credential
       event log and account deletion. Closes the follow-up "no way to change the account's email address".
-- [ ] **B2 Two-factor (TOTP + recovery codes).** Enrol and disable from the Account page; login asks for the code; a
+- [x] **B2 Two-factor (TOTP + recovery codes).** Enrol and disable from the Account page; login asks for the code; a
       superadmin can reset a locked-out user's second factor (audited). Required for superadmins.
 - [ ] **B3 Passkeys.** Register and sign in with passkeys (WebAuthn). The relying-party id is the public host
       (`openprism.cent-su.org`; `localhost` in development); check it behind Caddy and nginx.
@@ -197,6 +160,12 @@ work and that a refresh cannot bypass a second factor.
       unverified provider email is an account-takeover route); never create a second account for an invited address.
 - [ ] **B5 Account page: sign-in methods.** List and add/remove email addresses, social accounts, passkeys and the
       second factor; refuse to remove the last way to sign in; recent sign-ins.
+- [x] **B6 One sign-in for the app and the Django admin.** Today a superadmin signs in twice: the app (JWT in memory +
+      httpOnly refresh cookie) and `/admin/` (its own `openprism_admin` session, v0.1.1) share nothing. First step: an
+      "Admin" link in the account menu, shown to superusers only. Then decide how the admin session is created from the
+      app's sign-in (a short-lived single-use handoff, or the admin signing in through allauth) without putting the
+      admin's power behind the app's weaker session; the admin keeps its own lifetime, `SameSite=Strict` cookie and
+      rate limit, and asks for the second factor (B2) like everything else.
 - [ ] **Decisions:** allauth headless, or the hosted identity provider route; which providers; whether two-factor is
       optional for everyone or required (superadmins first); sign-in-method changes mail the user.
 - [ ] **Tests and QA:** unit tests per flow (including that every sign-up path passes the invitation gate and that
@@ -302,3 +271,23 @@ token exchange (RFC 8693), so that is what to build, small, on SimpleJWT, borrow
 - [ ] **The dev api's hot reload can hang** ("Waiting for connections to close") while a browser holds an SSE stream or
       websocket open; `docker compose up -d --force-recreate api` recovers. Consider `--timeout-graceful-shutdown`.
 - [ ] **AI usage counts requests, not tokens.** Record the providers' reported `usage` per job for spend accounting.
+
+## Follow-ups: superadmin support (found while building it)
+
+- [ ] **Changing a password in the admin does not revoke the account's refresh tokens or send the notice.** The admin's
+      own *Change password* page (`/admin/password_change/`) runs Django's form, not `accounts/passwords.py`, so a
+      superadmin changing their password leaves every refresh token and session of theirs alive and sends no mail
+      (the app's flow revokes all of them and mails a notice). Route it through `accounts.passwords` (or disable the page
+      and send superadmins to the app's Account page).
+- [ ] **Django sessions are never cleaned up.** The admin is the only user of sessions; add a daily beat task that runs
+      `clearsessions` (queue `import`).
+- [ ] **The API test suite fails locally when compose's `AUTH_RATE_LIMIT` (20/min) is in the environment.** `settings.py`
+      lets that variable override the 10000/min that tests would otherwise get, so `docker compose run --rm api python
+      manage.py test accounts` fails on any run that registers more than 20 accounts a minute (found on a clean
+      `release/v0.1.1`; passes with `-e AUTH_RATE_LIMIT=10000/min`). Make tests ignore the variable, or document it.
+- [ ] **A superadmin cannot yet reset another account's password, sign-in or lockout** from the admin; the only tools are
+      the flags and *Mark email verified*. Revisit with impersonation (C) and two-factor (B), which also need
+      "reset this account's second factor".
+- [ ] **`e2e/helpers.ts` `newSuperuser()` needs `docker compose exec` access to the api container,** so the admin specs
+      cannot run against a stack the test runner has no Docker access to (a remote preview, say). An API-only way to
+      make a throwaway superuser (test settings only) would remove that.
