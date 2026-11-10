@@ -123,7 +123,7 @@ bypass it.
 ## B) Social sign-in, two-factor and passkeys
 
 **Split:** v0.1.3 takes the spike, B1 (foundation, email change), B2 (TOTP, required for superadmins) and B6 (one
-sign-in); issues #88-#95 in `docs/todo.md`. Still here for v0.1.4: B3 passkeys, B4 social sign-in (ORCID and Google
+sign-in); issues #88-#95, done in `docs/xchangelog.md` (v0.1.3). Still here for v0.1.4: B3 passkeys, B4 social sign-in (ORCID and Google
 chosen), B5 sign-in methods page.
 
 **Use cases:** sign in with a social/SSO provider; one account that can be reached by several sign-in methods (separate
@@ -145,13 +145,13 @@ allauth doing the authentication step (password, social, second factor, passkey)
 SimpleJWT + cookie issuing, so the rest of the app is untouched. It must also prove multi-tab refresh and logout still
 work and that a refresh cannot bypass a second factor.
 
-- [ ] **Spike (time-boxed).** Install allauth + headless + mfa in a branch, keep email-login `User`, log in through it and
+- [x] **Spike (time-boxed).** Install allauth + headless + mfa in a branch, keep email-login `User`, log in through it and
       mint our tokens; report what has to change. Go/no-go before anything else is built.
-- [ ] **B1 Foundation.** Migrate existing accounts (an `EmailAddress` row per user with its verified state, no one
+- [x] **B1 Foundation.** Migrate existing accounts (an `EmailAddress` row per user with its verified state, no one
       locked out); move password reset, verification and email change onto allauth while keeping the existing mail
       templates and `REQUIRE_EMAIL_VERIFICATION`; keep "a password change revokes refresh tokens", the credential
       event log and account deletion. Closes the follow-up "no way to change the account's email address".
-- [ ] **B2 Two-factor (TOTP + recovery codes).** Enrol and disable from the Account page; login asks for the code; a
+- [x] **B2 Two-factor (TOTP + recovery codes).** Enrol and disable from the Account page; login asks for the code; a
       superadmin can reset a locked-out user's second factor (audited). Required for superadmins.
 - [ ] **B3 Passkeys.** Register and sign in with passkeys (WebAuthn). The relying-party id is the public host
       (`openprism.cent-su.org`; `localhost` in development); check it behind Caddy and nginx.
@@ -160,7 +160,7 @@ work and that a refresh cannot bypass a second factor.
       unverified provider email is an account-takeover route); never create a second account for an invited address.
 - [ ] **B5 Account page: sign-in methods.** List and add/remove email addresses, social accounts, passkeys and the
       second factor; refuse to remove the last way to sign in; recent sign-ins.
-- [ ] **B6 One sign-in for the app and the Django admin.** Today a superadmin signs in twice: the app (JWT in memory +
+- [x] **B6 One sign-in for the app and the Django admin.** Today a superadmin signs in twice: the app (JWT in memory +
       httpOnly refresh cookie) and `/admin/` (its own `openprism_admin` session, v0.1.1) share nothing. First step: an
       "Admin" link in the account menu, shown to superusers only. Then decide how the admin session is created from the
       app's sign-in (a short-lived single-use handoff, or the admin signing in through allauth) without putting the
