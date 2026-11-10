@@ -1,7 +1,9 @@
+from accounts import adminhandoff
 from django.contrib import admin
 from django.urls import include, path
 
 urlpatterns = [
+    path('admin/handoff/', adminhandoff.handoff),  # before the admin's own routes
     path('admin/', admin.site.urls),
     path('', include('common.urls')),
     path('api/auth/', include('accounts.urls')),

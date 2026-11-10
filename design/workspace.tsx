@@ -62,6 +62,8 @@ export interface WorkspaceContextValue {
   moveProject: (projectId: string, workspaceId: string) => Promise<void>;
   /** Sign out of the account, or leave the shared session when `guest`. */
   signOut: () => void;
+  /** Superadmins only: open the Django admin in a new tab without a second sign-in. Absent for everyone else. */
+  openAdmin?: () => Promise<void>;
 }
 
 const WorkspaceContext = createContext<WorkspaceContextValue | null>(null);

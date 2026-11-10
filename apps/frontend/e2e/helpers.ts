@@ -143,7 +143,7 @@ export function mailLink(text: string): string {
 export function newSuperuser(prefix = 'root', opts: { superuser?: boolean } = {}): { email: string; password: string } {
   const email = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
   const superuser = opts.superuser !== false;
-  const code = `from django.contrib.auth import get_user_model as g; u = g().objects.create_user(${JSON.stringify(email)}, ${JSON.stringify(PASSWORD)}, is_staff=True, is_superuser=${superuser ? 'True' : 'False'})`;
+  const code = `from django.contrib.auth import get_user_model as g; u = g().objects.create_user(${JSON.stringify(email)}, ${JSON.stringify(PASSWORD)}, is_staff=True, is_superuser=${superuser ? 'True' : 'False'}); from projects.models import Membership as M, Workspace as W; M.objects.create(workspace=W.objects.create(name='Personal', kind=W.PERSONAL, color='#5b6573'), user=u, role=M.OWNER)`; // a personal workspace, so the account can use the app
   execFileSync('docker', ['compose', 'exec', '-T', 'api', 'python', 'manage.py', 'shell', '-c', code], {
     cwd: fileURLToPath(new URL('../../../', import.meta.url)), stdio: 'pipe'
   });

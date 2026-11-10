@@ -8,7 +8,7 @@
 - [x] #91 Auth: two-factor (TOTP and recovery codes) at the API
 - [x] #92 Auth: second factor in the app (Account page and sign-in)
 - [x] #93 Admin: superadmins require two-factor; reset a locked-out user's second factor
-- [ ] #94 Admin: one sign-in for the app and the Django admin (B6)
+- [x] #94 Admin: one sign-in for the app and the Django admin (B6)
 - [ ] #95 Release v0.1.3: deployment settings, docs and version
 
 ## v0.1.2 - Invitation-only access

@@ -651,7 +651,7 @@
   "Personal": "个人",
   "Team": "团队",
   "Owner": "所有者",
-  "Admin": "管理员",
+  "Admin": "管理后台",
   "Commenter": "评论者",
   "Viewer": "查看者",
   "Enter your email address.": "请输入邮箱地址。",
@@ -1003,5 +1003,6 @@
   "Turning this off leaves your password as the only protection.": "关闭后只剩密码保护。",
   "Code from the app (or a recovery code)": "应用中的验证码(或恢复码)",
   "Make new codes": "生成新恢复码",
-  "Turn off": "关闭"
+  "Turn off": "关闭",
+  "Could not open the admin. Try again.": "无法打开管理后台,请重试。"
 }
