@@ -118,6 +118,16 @@ def find_valid(email, raw_token, *, lock=False):
     return (qs.select_for_update() if lock else qs).first()
 
 
+def find_for_address(email):
+    """The live invitation for `email` without its token: only for callers that have *proved* the address (a social
+    provider reporting it verified). The link is the secret otherwise."""
+    email = str(email or '').strip().lower()
+    if not email:
+        return None
+    return PlatformInvite.objects.filter(email=email, used_at__isnull=True, revoked_at__isnull=True,
+                                         expires_at__gt=timezone.now()).order_by('-created_at').first()
+
+
 def lock(invite):
     """Inside the registration transaction, before the account exists: lock `invite` and return it if it can still be
     used, else None (someone else just used, revoked or outlived it). Serialises two requests with the same link."""

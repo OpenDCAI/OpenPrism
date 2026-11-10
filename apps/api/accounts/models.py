@@ -59,3 +59,22 @@ class PlatformInvite(models.Model):
 
     def __str__(self):
         return self.email
+
+
+class LinkedIdentity(models.Model):
+    """An account at an outside identity provider (Google, ORCID) that signs in as `user` (v0.1.4, #98). `subject` is
+    the provider's stable id for the person (never the email, which can change hands). Use accounts/social.py."""
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='identities')
+    provider = models.CharField(max_length=20)
+    subject = models.CharField(max_length=255)
+    email = models.EmailField(blank=True)          # what the provider reported when it was linked (informational)
+    email_verified = models.BooleanField(default=False)
+    created_at = models.DateTimeField(auto_now_add=True)
+    last_login_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=['provider', 'subject'], name='unique_identity_per_provider')]
+
+    def __str__(self):
+        return f'{self.provider}:{self.subject}'
