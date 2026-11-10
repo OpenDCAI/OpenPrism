@@ -11,7 +11,7 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'email', 'name', 'emailVerified', 'verificationRequired')
+        fields = ('id', 'email', 'name', 'emailVerified', 'verificationRequired', 'mfaEnabled')
 
     emailVerified = serializers.SerializerMethodField()
     verificationRequired = serializers.SerializerMethodField()  # the app shows only the "check your email" screen
@@ -19,6 +19,12 @@ class UserSerializer(serializers.ModelSerializer):
     def get_verificationRequired(self, user):
         from django.conf import settings
         return settings.REQUIRE_EMAIL_VERIFICATION and user.email_verified_at is None
+
+    mfaEnabled = serializers.SerializerMethodField()
+
+    def get_mfaEnabled(self, user):
+        from .mfa import enabled
+        return enabled(user)
 
     def get_emailVerified(self, user):
         return user.email_verified_at is not None

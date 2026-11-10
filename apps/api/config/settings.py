@@ -151,6 +151,7 @@ ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 MFA_SUPPORTED_TYPES = ['totp', 'recovery_codes']
 MFA_ADAPTER = 'accounts.mfa_adapter.FernetMFAAdapter'
 MFA_TOTP_ISSUER = 'OpenPrism'
+MFA_TOTP_TOLERANCE = 1  # accept the code from one period before or after: phone clocks drift
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},

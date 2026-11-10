@@ -1,0 +1,5 @@
+Hello {{ name }},
+
+Two-factor authentication was turned on for your OpenPrism account, and other signed-in browsers have been signed out. Your sign-in now asks for a code from your authenticator app.
+
+If this was not you, reset your password at {{ app_url }}/forgot-password and tell your workspace administrator.

@@ -7,7 +7,7 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from . import cookies
+from . import cookies, mfa
 from .serializers import RegisterSerializer, UserSerializer
 
 
@@ -87,7 +87,10 @@ class LogoutView(APIView):
 class LoginSerializer(TokenObtainPairSerializer):
     def validate(self, attrs):
         attrs[self.username_field] = str(attrs.get(self.username_field, '')).strip().lower()  # emails are stored lower-case
-        return super().validate(attrs)
+        data = super().validate(attrs)
+        if mfa.enabled(self.user):  # the password is right, the second factor is still owed: no tokens yet (accounts/mfa.py)
+            return {'mfaRequired': True, 'ticket': mfa.make_ticket(self.user)}
+        return data
 
 
 class LoginView(TokenObtainPairView):

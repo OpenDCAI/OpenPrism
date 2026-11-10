@@ -1,0 +1,5 @@
+Hello {{ name }},
+
+Two-factor authentication was turned off for your OpenPrism account, and other signed-in browsers have been signed out. Your account is now protected by your password alone.
+
+If this was not you, reset your password at {{ app_url }}/forgot-password and tell your workspace administrator.
