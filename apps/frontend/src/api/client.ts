@@ -798,6 +798,18 @@ export async function loginMfa(ticket: string, code: string): Promise<Account> {
   return fetchMe();
 }
 
+export interface EmailInfo { email: string; pending: string | null }
+export async function emailInfo(): Promise<EmailInfo> { return request<EmailInfo>('/api/auth/email'); }
+/** Ask to change the address: a link goes to the new one (valid an hour); nothing changes until it is opened. */
+export async function requestEmailChange(email: string, password: string): Promise<string> {
+  return (await request<{ pending: string }>('/api/auth/email/change', { method: 'POST', body: JSON.stringify({ email, password }) })).pending;
+}
+export async function cancelEmailChange(): Promise<void> { await request('/api/auth/email', { method: 'DELETE' }); }
+/** From the mailed link (works signed in or not). Every browser is signed out by the change. */
+export async function confirmEmailChange(token: string) {
+  return authCall<{ ok: boolean; email: string }>('/api/auth/email/confirm', { token });
+}
+
 /** Open the Django admin signed in as this superadmin, in a new tab. The one-time code goes in a form POST, never a URL. */
 export async function openAdmin(): Promise<void> {
   const { code } = await request<{ code: string }>('/api/auth/admin-handoff', { method: 'POST' });

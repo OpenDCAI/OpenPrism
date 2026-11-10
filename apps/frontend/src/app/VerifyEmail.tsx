@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { Button, Icon, IconButton, LogoMark } from '@design';
-import { resendVerification, verifyEmail } from '../api/client';
+import { clearLocalSession, confirmEmailChange, resendVerification, verifyEmail } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
 function useResend() {
@@ -53,6 +53,38 @@ export function VerifyEmailPage() {
           {result && <p role={result.ok ? 'status' : 'alert'}>{result.message}</p>}
         </div>
         {result && <Link className="op-btn op-btn-primary" to={signedIn ? '/projects' : '/login'}>{signedIn ? t('Go to your projects') : t('Sign in')}</Link>}
+      </div>
+    </div>
+  );
+}
+
+/** /confirm-email?token=: the link mailed to a new address. The change signs every browser out, this one included. */
+export function ConfirmEmailChangePage() {
+  const { t } = useTranslation();
+  const [params] = useSearchParams();
+  const [result, setResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const started = useRef(false);
+
+  useEffect(() => {
+    if (started.current) return;
+    started.current = true;
+    confirmEmailChange(params.get('token') || '')
+      .then((res) => {
+        clearLocalSession();   // its refresh token was revoked: do not keep a dead session
+        setResult({ ok: true, message: t('Your address is now {{email}}. Sign in with it.', { email: res.email }) });
+      })
+      .catch((err) => setResult({ ok: false, message: err instanceof Error ? err.message : String(err) }));
+  }, [params, t]);
+
+  return (
+    <div className="op-signed-out">
+      <div className="op-signed-out-card">
+        <LogoMark size={40} />
+        <div style={{ display: 'grid', gap: 'var(--sp-1)' }}>
+          <h1>{!result ? t('Changing your email…') : result.ok ? t('Email address changed') : t('Could not change your email')}</h1>
+          {result && <p role={result.ok ? 'status' : 'alert'}>{result.message}</p>}
+        </div>
+        {result && <a className="op-btn op-btn-primary" href="/login">{t('Sign in')}</a>}
       </div>
     </div>
   );

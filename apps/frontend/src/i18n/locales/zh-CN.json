@@ -1004,5 +1004,16 @@
   "Code from the app (or a recovery code)": "应用中的验证码(或恢复码)",
   "Make new codes": "生成新恢复码",
   "Turn off": "关闭",
-  "Could not open the admin. Try again.": "无法打开管理后台,请重试。"
+  "Could not open the admin. Try again.": "无法打开管理后台,请重试。",
+  "Your address is now {{email}}. Sign in with it.": "您的邮箱现在是 {{email}},请用它登录。",
+  "Changing your email…": "正在更改邮箱…",
+  "Email address changed": "邮箱已更改",
+  "Could not change your email": "无法更改邮箱",
+  "Enter a new email address.": "请输入新的邮箱地址。",
+  "Waiting for you to open the link we sent to {{email}}. Until then you sign in with {{old}}.": "请打开我们发到 {{email}} 的链接。在此之前仍使用 {{old}} 登录。",
+  "Cancel the change": "取消更改",
+  "Change email address…": "更改邮箱…",
+  "New email address": "新邮箱地址",
+  "We send a link to the new address and a notice to this one. Everyone is signed out when you open the link.": "我们会向新地址发送链接,并向当前地址发送通知。打开链接后所有设备都会退出登录。",
+  "Send the link": "发送链接"
 }

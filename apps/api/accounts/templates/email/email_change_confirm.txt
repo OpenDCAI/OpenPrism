@@ -1,0 +1,8 @@
+Hello {{ name }},
+
+Please confirm that this is your new email address for OpenPrism by opening this link:
+
+{{ link }}
+
+The link is valid for one hour. Until then you sign in with your old address.
+If you did not ask for this, ignore this message.
