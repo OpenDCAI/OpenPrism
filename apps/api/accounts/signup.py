@@ -26,15 +26,18 @@ def _limit(email, raw_token):
                 raise Throttled(wait=wait, detail='Too many attempts: try again later.')
 
 
-def check_signup(email, invite_token=None):
+def check_signup(email, invite_token=None, address_verified=False):
     """Return the PlatformInvite that admits `email` (or None when the mode or a workspace invitation admits it); raise
-    SignupRefused otherwise. Does not lock: registration re-checks inside its transaction (`invitations.claim`)."""
+    SignupRefused otherwise. `address_verified`: the caller has proof the person owns `email` (a social provider's verified
+    email), so a live platform invitation for it counts without its token. Does not lock: registration re-checks inside its transaction (`invitations.claim`)."""
     email = str(email or '').strip().lower()
     if settings.REGISTRATION_MODE == 'open':
         # Anyone may register, but a valid invitation link still counts: it verifies the address and joins the workspace.
-        return invitations.find_valid(email, invite_token) if invite_token else None
+        if invite_token:
+            return invitations.find_valid(email, invite_token)
+        return invitations.find_for_address(email) if address_verified else None
     _limit(email, invite_token)
-    invite = invitations.find_valid(email, invite_token)
+    invite = invitations.find_valid(email, invite_token) or (invitations.find_for_address(email) if address_verified else None)
     if invite is not None:
         return invite
     if settings.WORKSPACE_INVITES_ALLOW_SIGNUP:

@@ -179,6 +179,9 @@ class PasskeyView(APIView):
         a = self.get_object(request, pk)
         if a is None:
             return Response({'ok': False, 'error': 'Passkey not found.'}, status=404)
+        from . import methods
+        if not methods.others_remain(user, passkey=a):
+            return Response({'ok': False, 'error': methods.LAST_METHOD}, status=400)
         a.delete()
         mfa.notice(user, 'passkey_removed')
         return mfa.fresh_session(user, {})

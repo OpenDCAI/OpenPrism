@@ -151,6 +151,27 @@ ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 MFA_SUPPORTED_TYPES = ['totp', 'recovery_codes', 'webauthn']
 MFA_ADAPTER = 'accounts.mfa_adapter.FernetMFAAdapter'
 PASSKEY_RP_ID = env('PASSKEY_RP_ID', '')  # default: the host of APP_BASE_URL; changing it (or the host) invalidates every passkey
+# Social sign-in (v0.1.4, accounts/social.py): a provider is on when its client id and secret are set. Endpoints can be
+# overridden (SOCIAL_<P>_AUTH_URL / _TOKEN_URL / _JWKS_URL / _ISSUER) to point the browser suite at a fake provider.
+def _social():
+    orcid_host = 'sandbox.orcid.org' if env_bool('ORCID_SANDBOX', False) else 'orcid.org'
+    defaults = {
+        'google': dict(label='Google', issuer='https://accounts.google.com', auth_url='https://accounts.google.com/o/oauth2/v2/auth',
+                       token_url='https://oauth2.googleapis.com/token', jwks_url='https://www.googleapis.com/oauth2/v3/certs', scope='openid email profile'),
+        'orcid': dict(label='ORCID', issuer=f'https://{orcid_host}', auth_url=f'https://{orcid_host}/oauth/authorize',
+                      token_url=f'https://{orcid_host}/oauth/token', jwks_url=f'https://{orcid_host}/oauth/jwks', scope='openid email'),
+    }
+    out = {}
+    for name, d in defaults.items():
+        key = name.upper()
+        client_id, secret = env(f'SOCIAL_{key}_CLIENT_ID', ''), env(f'SOCIAL_{key}_CLIENT_SECRET', '')
+        if client_id and secret:
+            out[name] = {**d, 'client_id': client_id, 'client_secret': secret,
+                         **{k: env(f'SOCIAL_{key}_{k.upper()}', d[k]) for k in ('issuer', 'auth_url', 'token_url', 'jwks_url')}}
+    return out
+
+
+SOCIAL_PROVIDERS = _social()
 MFA_TOTP_ISSUER = 'OpenPrism'
 MFA_TOTP_TOLERANCE = 1  # accept the code from one period before or after: phone clocks drift
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
