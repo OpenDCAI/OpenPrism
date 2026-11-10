@@ -14,7 +14,8 @@ export function safeNext(value: string | null): string | null {
 
 export default function LoginPage() {
   const { t } = useTranslation();
-  const { signIn, signUp } = useAuth();
+  const { signIn, signInMfa, signUp } = useAuth();
+  const [ticket, setTicket] = useState<string | null>(null);   // memory only: the password step's ticket
   const navigate = useNavigate();
   const { pathname } = useLocation();
   const [params] = useSearchParams();
@@ -28,7 +29,10 @@ export default function LoginPage() {
 
   const submit = async ({ email, password, name }: AuthValues) => {
     if (mode === 'register') await signUp(email, password, name || undefined, invite);
-    else await signIn(email, password);
+    else {
+      const res = await signIn(email, password);
+      if (res.mfaTicket) { setTicket(res.mfaTicket); return 'code' as const; }
+    }
     // The app swaps to the signed-in routes, which send /login on to `next`.
   };
 
@@ -44,6 +48,7 @@ export default function LoginPage() {
       lockEmail={!!invite}
       onModeChange={(m) => navigate(`${m === 'register' ? '/register' : '/login'}${qs}`, { replace: true })}
       onSubmit={submit}
+      onSubmitCode={async (code) => { if (ticket) await signInMfa(ticket, code); }}
       onForgotPassword={() => navigate('/forgot-password')}
       initialEmail={params.get('email') || undefined}
       notice={invite && mode === 'register'

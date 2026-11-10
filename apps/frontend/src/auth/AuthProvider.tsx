@@ -4,6 +4,7 @@ import {
   clearCollabToken,
   fetchMe,
   login as apiLogin,
+  loginMfa as apiLoginMfa,
   logout as apiLogout,
   register as apiRegister,
   resolveCollabToken,
@@ -27,7 +28,9 @@ export type AuthState =
 
 interface AuthContextValue {
   state: AuthState;
-  signIn: (email: string, password: string) => Promise<void>;
+  /** Resolves `{ mfaTicket }` when a code is still needed: finish with `signInMfa`. */
+  signIn: (email: string, password: string) => Promise<{ mfaTicket?: string }>;
+  signInMfa: (ticket: string, code: string) => Promise<void>;
   signUp: (email: string, password: string, name?: string, invite?: string) => Promise<void>;
   /** Sign out of the account. */
   signOut: () => Promise<void>;
@@ -111,7 +114,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     signIn: async (email, password) => {
       quiet.current++;
       try {
-        setState({ status: 'user', account: await apiLogin(email, password) });
+        const res = await apiLogin(email, password);
+        if ('mfaTicket' in res) return { mfaTicket: res.mfaTicket };
+        setState({ status: 'user', account: res });
+        return {};
+      } finally {
+        quiet.current--;
+      }
+    },
+    signInMfa: async (ticket, code) => {
+      quiet.current++;
+      try {
+        setState({ status: 'user', account: await apiLoginMfa(ticket, code) });
       } finally {
         quiet.current--;
       }
