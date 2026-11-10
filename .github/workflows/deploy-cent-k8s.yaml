@@ -230,6 +230,10 @@ jobs:
           OPENPRISM_LLM_ENDPOINT: ${{ secrets.OPENPRISM_LLM_ENDPOINT }}
           OPENPRISM_LLM_MODEL: ${{ secrets.OPENPRISM_LLM_MODEL }}
           OPENPRISM_MINERU_TOKEN: ${{ secrets.OPENPRISM_MINERU_TOKEN }}
+          SOCIAL_GOOGLE_CLIENT_ID: ${{ secrets.SOCIAL_GOOGLE_CLIENT_ID }}
+          SOCIAL_GOOGLE_CLIENT_SECRET: ${{ secrets.SOCIAL_GOOGLE_CLIENT_SECRET }}
+          SOCIAL_ORCID_CLIENT_ID: ${{ secrets.SOCIAL_ORCID_CLIENT_ID }}
+          SOCIAL_ORCID_CLIENT_SECRET: ${{ secrets.SOCIAL_ORCID_CLIENT_SECRET }}
         run: |
           set -euo pipefail
           for v in POSTGRES_HOST POSTGRES_PORT REDIS_HOST REDIS_PORT MINIO_HOST MINIO_PORT \
@@ -239,7 +243,8 @@ jobs:
           dir="$(mktemp -d)"; chmod 700 "$dir"; trap 'rm -rf "$dir"' EXIT
           setfile=()
           for k in DJANGO_SECRET_KEY CREDENTIAL_ENCRYPTION_KEY REDIS_PASSWORD EMAIL_HOST_USER EMAIL_HOST_PASSWORD \
-                   OPENPRISM_LLM_API_KEY OPENPRISM_LLM_ENDPOINT OPENPRISM_LLM_MODEL OPENPRISM_MINERU_TOKEN; do
+                   OPENPRISM_LLM_API_KEY OPENPRISM_LLM_ENDPOINT OPENPRISM_LLM_MODEL OPENPRISM_MINERU_TOKEN \
+                   SOCIAL_GOOGLE_CLIENT_ID SOCIAL_GOOGLE_CLIENT_SECRET SOCIAL_ORCID_CLIENT_ID SOCIAL_ORCID_CLIENT_SECRET; do
             printf '%s' "${!k:-}" > "$dir/$k"
             setfile+=(--set-file "secrets.$k=$dir/$k")
           done

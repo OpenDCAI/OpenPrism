@@ -18,6 +18,7 @@ data:
   EMAIL_PORT: {{ .Values.mail.port | quote }}
   EMAIL_USE_TLS: {{ .Values.mail.tls | quote }}
   DEFAULT_FROM_EMAIL: {{ .Values.mail.from | quote }}
+  ORCID_SANDBOX: {{ ternary "1" "0" .Values.social.orcidSandbox | quote }}
   SUPERADMIN_REQUIRE_MFA: {{ ternary "1" "0" .Values.auth.superadminRequireMfa | quote }}
   REGISTRATION_MODE: {{ .Values.registration.mode | quote }}
   WORKSPACE_INVITES_ALLOW_SIGNUP: {{ ternary "1" "0" .Values.registration.workspaceInvitesAllowSignup | quote }}
