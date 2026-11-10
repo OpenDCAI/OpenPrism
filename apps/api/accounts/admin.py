@@ -2,7 +2,7 @@
 passwords and tokens are not shown, accounts are created by registration (or `make_superadmin`) and deleted through
 `accounts/deletion.py`, which also removes the account's storage."""
 from django.conf import settings
-from django.contrib import admin
+from django.contrib import admin, messages
 from django.contrib.admin.models import LogEntry
 from django.template.response import TemplateResponse
 from django.urls import path
@@ -55,7 +55,7 @@ class UserAdmin(admin.ModelAdmin):
     ordering = ('-created_at',)
     fields = ('email', 'name', 'is_active', 'is_staff', 'is_superuser', 'email_verified_at', 'created_at', 'id')
     readonly_fields = ('email', 'email_verified_at', 'created_at', 'id')  # the address is the login: it is not edited here
-    actions = ['mark_email_verified']
+    actions = ['mark_email_verified', 'reset_two_factor']
     list_per_page = 50
 
     def get_readonly_fields(self, request, obj=None):
@@ -72,6 +72,17 @@ class UserAdmin(admin.ModelAdmin):
 
     def has_delete_permission(self, request, obj=None):
         return False  # deleting an account has storage to clean up: accounts/deletion.py
+
+    @admin.action(description='Reset two-factor authentication (lost phone and recovery codes)')
+    def reset_two_factor(self, request, queryset):
+        from . import mfa
+        done = 0
+        for user in queryset:
+            if user.pk == request.user.pk:
+                self.message_user(request, 'Not your own: turn it off in the app, which asks for a code.', level=messages.ERROR)
+            elif mfa.admin_reset(user, request.user):
+                done += 1
+        self.message_user(request, f'{done} account(s) reset: signed out everywhere and told by mail.')
 
     @admin.action(description='Mark the selected accounts\' email addresses as verified')
     def mark_email_verified(self, request, queryset):

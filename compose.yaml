@@ -80,6 +80,7 @@ services:
       TRUSTED_PROXY_COUNT: "1" # the nginx web container: rate limits must key on the real client, not on it
       AI_RATE_PER_MINUTE: ${AI_RATE_PER_MINUTE:-30} # per user: llm, agent, vision, plot, transfer, arXiv import
       COMPILE_RATE_PER_MINUTE: ${COMPILE_RATE_PER_MINUTE:-30}
+      SUPERADMIN_REQUIRE_MFA: ${SUPERADMIN_REQUIRE_MFA:-0} # 1: superadmins need two-factor authentication to use /admin/ (the application's default; compose stays off for the browser suite)
       REGISTRATION_MODE: ${REGISTRATION_MODE:-open} # invite: only invited addresses may register (the application's default; compose stays open for development and the browser suite)
       WORKSPACE_INVITES_ALLOW_SIGNUP: ${WORKSPACE_INVITES_ALLOW_SIGNUP:-1} # in invite mode, workspace invitations also open the door
       ACCESS_CONTACT_EMAIL: ${ACCESS_CONTACT_EMAIL:-} # shown on the closed sign-up pages

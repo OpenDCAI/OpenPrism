@@ -1,0 +1,4 @@
+{% extends "email/base.html" %}
+{% block body %}<p>Hello {{ name }},</p>
+<p>A site administrator reset two-factor authentication on your OpenPrism account, and you have been signed out everywhere. Sign in with your password and turn two-factor authentication on again from Account settings.</p>
+<p>If you did not ask for this, <a href="{{ app_url }}/forgot-password" style="color:#b8452e">reset your password</a> and tell your workspace administrator.</p>{% endblock %}
