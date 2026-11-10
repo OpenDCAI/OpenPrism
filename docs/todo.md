@@ -3,7 +3,7 @@
 ## v0.1.3 - Two-factor sign-in and one sign-in for the admin
 
 - [x] #88 Auth: spike - django-allauth as a library behind our JWT login (go/no-go)
-- [ ] #89 Auth: foundation - allauth email addresses mirror our accounts
+- [x] #89 Auth: foundation - allauth email addresses mirror our accounts
 - [ ] #90 Auth: change the account's email address
 - [ ] #91 Auth: two-factor (TOTP and recovery codes) at the API
 - [ ] #92 Auth: second factor in the app (Account page and sign-in)
