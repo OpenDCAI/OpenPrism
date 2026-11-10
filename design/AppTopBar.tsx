@@ -72,6 +72,7 @@ export function AppTopBar({ crumbs, actions }: AppTopBarProps) {
         ]
       : [
           { label: t('Account settings'), icon: 'user', onSelect: () => navigate('/account') } as MenuEntry,
+          ...(ws.openAdmin ? [{ label: t('Admin'), icon: 'settings', onSelect: () => void ws.openAdmin!().catch(() => window.alert(t('Could not open the admin. Try again.'))) } as MenuEntry] : []),
           { label: t('Sign out'), icon: 'log-out', onSelect: () => ws.signOut() } as MenuEntry
         ]),
     { type: 'sep' },

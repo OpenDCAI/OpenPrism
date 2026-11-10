@@ -9,7 +9,8 @@ import {
   removeMemberApi,
   resendInviteApi,
   renameWorkspaceApi,
-  setMemberRoleApi
+  setMemberRoleApi,
+  openAdmin,
 } from '../api/client';
 import type { AccountUser, Workspace, WorkspaceContextValue, WorkspaceRole } from '@design';
 import i18n from '../i18n';
@@ -118,7 +119,8 @@ export function useAccountWorkspaces(account: Account, signOut: () => void): Wor
       moveProject: async (projectId, workspaceId) => {
         await moveProjectApi(projectId, workspaceId);
       },
-      signOut
+      signOut,
+      ...(account.isSuperuser ? { openAdmin } : {})
     };
   }, [dtos, activeId, account, replace, signOut]);
 

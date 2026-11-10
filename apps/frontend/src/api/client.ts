@@ -772,6 +772,8 @@ export interface Account {
   verificationRequired?: boolean;
   /** Signing in asks for a code from an authenticator app (or a recovery code). */
   mfaEnabled?: boolean;
+  /** An active superadmin: the account menu offers the Django admin. */
+  isSuperuser?: boolean;
 }
 
 async function authCall<T>(url: string, body: unknown): Promise<T> {
@@ -794,6 +796,16 @@ export async function loginMfa(ticket: string, code: string): Promise<Account> {
   const res = await authCall<{ access: string }>('/api/auth/login/mfa', { ticket, code });
   setSession({ access: res.access });
   return fetchMe();
+}
+
+/** Open the Django admin signed in as this superadmin, in a new tab. The one-time code goes in a form POST, never a URL. */
+export async function openAdmin(): Promise<void> {
+  const { code } = await request<{ code: string }>('/api/auth/admin-handoff', { method: 'POST' });
+  const form = Object.assign(document.createElement('form'), { method: 'POST', action: '/admin/handoff/', target: '_blank' });
+  form.append(Object.assign(document.createElement('input'), { type: 'hidden', name: 'code', value: code }));
+  document.body.append(form);
+  form.submit();
+  form.remove();
 }
 
 export interface MfaStatus { enabled: boolean; recoveryCodesLeft: number }

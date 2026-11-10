@@ -120,3 +120,28 @@ test('a superadmin invites people, resends and revokes, and the mailed link regi
   await expect(page.getByText('already registered')).toBeVisible();   // used invitations cannot be revoked
   await expect(rowOf(two)).toContainText('Used');
 });
+
+test('a superadmin signed in to the app opens the admin from the account menu without a second login', async ({ page, context }) => {
+  const root = newSuperuser('handoff');
+  await page.goto('/login');
+  await page.getByLabel('Email address').fill(root.email);
+  await page.getByLabel('Password', { exact: true }).fill(root.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Account menu' }).click();
+  const [admin] = await Promise.all([context.waitForEvent('page'), page.getByRole('menuitem', { name: 'Admin' }).click()]);
+  await admin.waitForLoadState();
+  await expect(admin).toHaveURL(/\/admin\/$/);
+  await expect(admin.getByRole('heading', { name: 'Site administration' })).toBeVisible();
+  expect(admin.url()).not.toContain('code=');   // the one-time code never appears in a URL
+});
+
+test('an ordinary account has no Admin item in the account menu', async ({ page }) => {
+  const user = newSuperuser('plain', { superuser: false });
+  await page.goto('/login');
+  await page.getByLabel('Email address').fill(user.email);
+  await page.getByLabel('Password', { exact: true }).fill(user.password);
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Account menu' }).click();
+  await expect(page.getByRole('menuitem', { name: 'Account settings' })).toBeVisible();
+  await expect(page.getByRole('menuitem', { name: 'Admin' })).toHaveCount(0);
+});
