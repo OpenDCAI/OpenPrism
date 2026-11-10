@@ -258,6 +258,18 @@
       commands and in the admin user form; privilege flags editable only by superusers; documented for compose and
       Kubernetes (README, Helm README). Tests: `accounts/test_superadmins.py`.
 
+## v0.1.4 - Passkeys, social sign-in and sign-in methods
+
+- [x] #96 **Passkeys (API).** Register with user verification, list, rename, remove, sign in with no password or code; ceremony
+      state in the cache (no Django session). `accounts/passkeys.py`, tests `test_passkeys.py`.
+- [x] #97 **Passkeys (UI).** *Passkeys* block and *Sign in with a passkey*; `e2e/passkeys.spec.ts` on a virtual authenticator.
+- [x] #98 **Social sign-in (API).** Google and ORCID through our own OIDC client (PKCE, nonce, JWKS verification);
+      linking by ticket; sign-up through the invitation gate; TOTP still asked for. Tests `test_social.py` (fake provider).
+- [x] #99 **Social sign-in (UI).** *Continue with …*, error messages, linked accounts; `e2e/social.spec.ts`.
+- [x] #100 **Sign-in methods.** Overview, recent sign-ins (90 days), the last way in cannot be removed, password-less
+      accounts (set a password, confirm by email). Tests `test_methods.py`.
+- [x] #101 **Release v0.1.4.** Helm/secrets/workflow for the provider credentials, runbook, version 0.1.4.
+
 ## v0.1.3 - Two-factor sign-in and one sign-in for the admin
 
 - [x] #88 **Spike: django-allauth as a library behind our JWT login.** GO: `allauth`, `account` and `mfa` installed

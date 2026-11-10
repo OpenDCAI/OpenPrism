@@ -155,12 +155,12 @@ work and that a refresh cannot bypass a second factor.
       event log and account deletion. Closes the follow-up "no way to change the account's email address".
 - [x] **B2 Two-factor (TOTP + recovery codes).** Enrol and disable from the Account page; login asks for the code; a
       superadmin can reset a locked-out user's second factor (audited). Required for superadmins.
-- [ ] **B3 Passkeys.** Register and sign in with passkeys (WebAuthn). The relying-party id is the public host
+- [x] **B3 Passkeys.** Register and sign in with passkeys (WebAuthn). The relying-party id is the public host
       (`openprism.cent-su.org`; `localhost` in development); check it behind Caddy and nginx.
-- [ ] **B4 Social sign-in.** Providers to choose (Google, GitHub, ORCID, university OIDC/SAML). **Still requires an
+- [x] **B4 Social sign-in.** Providers to choose (Google, GitHub, ORCID, university OIDC/SAML). **Still requires an
       invitation (A).** Link a provider to an existing account only by an email the provider reports as verified (an
       unverified provider email is an account-takeover route); never create a second account for an invited address.
-- [ ] **B5 Account page: sign-in methods.** List and add/remove email addresses, social accounts, passkeys and the
+- [x] **B5 Account page: sign-in methods.** List and add/remove email addresses, social accounts, passkeys and the
       second factor; refuse to remove the last way to sign in; recent sign-ins.
 - [x] **B6 One sign-in for the app and the Django admin.** Today a superadmin signs in twice: the app (JWT in memory +
       httpOnly refresh cookie) and `/admin/` (its own `openprism_admin` session, v0.1.1) share nothing. First step: an

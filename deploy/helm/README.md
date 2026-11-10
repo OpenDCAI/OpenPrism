@@ -175,6 +175,31 @@ on a new deployment, in this order:
 A workspace invitation (an admin inviting an address with no account) also lets that address register, unless
 `registration.workspaceInvitesAllowSignup: false`. To let anyone register, set the mode to `open`.
 
+## Passkeys and social sign-in (v0.1.4)
+
+**Passkeys** need no setup, but they are bound to the site's host: the WebAuthn relying-party id is the host of
+`APP_BASE_URL` (`openprism.cent-su.org`; override with `PASSKEY_RP_ID`). Moving the site to another host invalidates every
+passkey (people still have their password, linked accounts or recovery).
+
+**Google and ORCID** are off until configured. Add the credentials as GitHub repository secrets
+(`SOCIAL_GOOGLE_CLIENT_ID`, `SOCIAL_GOOGLE_CLIENT_SECRET`, `SOCIAL_ORCID_CLIENT_ID`, `SOCIAL_ORCID_CLIENT_SECRET`); the
+deploy workflow passes the ones that exist, and a provider turns on when both its values are set (the sign-in page then
+shows *Continue with …* and Account settings offers to link it). Create the apps with this **redirect URI**, exactly:
+
+- Google: Cloud console -> APIs & Services -> Credentials -> OAuth client ID (Web application); authorized redirect URI
+  `https://openprism.cent-su.org/api/auth/social/google/callback`.
+- ORCID: Developer Tools (orcid.org -> your account -> Developer tools; use sandbox.orcid.org with
+  `social.orcidSandbox: true` to test) -> register an app; redirect URI
+  `https://openprism.cent-su.org/api/auth/social/orcid/callback`. ORCID shares the email only when the person made it
+  visible to trusted parties, so an ORCID sign-in works for accounts that **linked** it from Account settings, not for
+  signing up.
+
+Rules worth knowing: sign-up through a provider still needs an invitation in `invite` mode (a platform or workspace
+invitation for the provider's *verified* email); a provider email is used only when the provider says it is verified; an
+account that has two-factor still gets the code step; accounts created by a provider have no password (they can set one
+in Account settings, and confirm sensitive changes by typing their email). Check after deploying: `curl
+https://<host>/api/config` lists the providers and a sign-in round-trips.
+
 ## Two-factor authentication (v0.1.3)
 
 Everyone can turn on an authenticator-app code (and 10 one-time recovery codes) under *Account settings*. With

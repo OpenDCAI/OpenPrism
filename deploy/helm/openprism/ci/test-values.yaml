@@ -10,6 +10,8 @@ secrets:
   CREDENTIAL_ENCRYPTION_KEY: not-a-real-key
   REDIS_PASSWORD: "p@ss:w/rd"
   OPENPRISM_LLM_API_KEY: not-a-real-key
+social:
+  orcidSandbox: true     # the default is false; proves a non-default renders
 auth:
   superadminRequireMfa: false   # the default is true; this file proves a non-default renders too
 registration:
