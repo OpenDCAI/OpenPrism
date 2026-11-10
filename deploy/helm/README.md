@@ -175,12 +175,28 @@ on a new deployment, in this order:
 A workspace invitation (an admin inviting an address with no account) also lets that address register, unless
 `registration.workspaceInvitesAllowSignup: false`. To let anyone register, set the mode to `open`.
 
+## Two-factor authentication (v0.1.3)
+
+Everyone can turn on an authenticator-app code (and 10 one-time recovery codes) under *Account settings*. With
+`auth.superadminRequireMfa: true` (the default) `/admin/` also refuses a superadmin who has none, and asks every
+superadmin who has one for the code at its login form. **Upgrading from v0.1.2 cannot lock you out if you do this first:**
+
+1. Before deploying (or right after, with `--set auth.superadminRequireMfa=false` for the first rollout), sign in to the
+   app as each superadmin, open *Account settings* -> *Two-factor authentication* and turn it on; keep the recovery codes.
+2. From then on, *Admin* in the account menu opens `/admin/` with no second sign-in (a one-time code, 60 seconds).
+3. A superadmin who lost the phone **and** the recovery codes: another superadmin uses *Reset two-factor authentication* on
+   the users list (logged, the person is mailed and signed out everywhere). If it was the only superadmin, from the shell:
+   `kubectl -n openprism exec -it deploy/api -- python manage.py shell -c "from allauth.mfa.models import Authenticator as A; A.objects.filter(user__email='you@example.com').delete()"`.
+
+Secrets are encrypted with `CREDENTIAL_ENCRYPTION_KEY`: losing that key makes every second factor unreadable (the
+recovery above applies to each person).
+
 ## Django admin (v0.1.1, #79)
 
 `https://<host>/admin/` is the Django admin for superadmins. It needs no chart change: Caddy sends everything to the `web`
 Service, whose nginx proxies `/admin/` and `/static/` (the admin's CSS and JS, served by WhiteNoise from files collected
 into the `api` image at build time) to the `api`. **It is public like the rest of the site**, protected by its own
-login (superusers only, rate limited) until two-factor exists; to hide it from the internet restrict `/admin/` by
+login (superusers only, rate limited, and a second factor when `auth.superadminRequireMfa` is on, see *Two-factor*); to hide it from the internet restrict `/admin/` by
 address in Caddy (see the Caddyfile). The first superadmin is made with `manage.py make_superadmin` inside an `api` pod (needs a terminal, `-it`, for the
 password prompt when the address has no account yet; an existing account is just promoted):
 

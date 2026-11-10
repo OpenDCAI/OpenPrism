@@ -258,6 +258,25 @@
       commands and in the admin user form; privilege flags editable only by superusers; documented for compose and
       Kubernetes (README, Helm README). Tests: `accounts/test_superadmins.py`.
 
+## v0.1.3 - Two-factor sign-in and one sign-in for the admin
+
+- [x] #88 **Spike: django-allauth as a library behind our JWT login.** GO: `allauth`, `account` and `mfa` installed
+      with no URLs, views or sessions; secrets encrypted with our Fernet key; see `docs/spike-allauth.md`.
+- [x] #89 **Foundation: allauth email addresses mirror our accounts.** One primary `EmailAddress` per account, kept in
+      step by a signal; existing accounts migrated (`accounts/emails.py`).
+- [x] #90 **Change the account's email address.** Password to ask, a link to the new address, notices to the old one,
+      every session signed out when it takes effect. Tests: `test_emailchange.py`, `e2e/email-change.spec.ts`.
+- [x] #91 **Two-factor (TOTP and recovery codes) at the API.** A ticketed second step that withholds all tokens until the
+      code is right; replay-proof codes; tokens revoked when the factor changes. Tests: `test_mfa.py`.
+- [x] #92 **Second factor in the app.** Code step at sign-in and a Two-factor block on the Account page. Test:
+      `e2e/two-factor.spec.ts`.
+- [x] #93 **Superadmins require two-factor; reset a locked-out user's second factor.** `SUPERADMIN_REQUIRE_MFA`, code
+      field on the admin login, audited *Reset two-factor* action. Tests: `test_admin_mfa.py`.
+- [x] #94 **One sign-in for the app and the Django admin (B6).** *Admin* in the account menu, single-use 60-second
+      handoff code posted in a form. Tests: `test_admin_handoff.py`, `e2e/admin.spec.ts`.
+- [x] #95 **Release v0.1.3: deployment settings, docs and version.** Helm `auth.superadminRequireMfa`, runbook,
+      version 0.1.3.
+
 ## v0.1.2 - Invitation-only access
 
 - [x] #83 **Invitations: PlatformInvite model, service and mail.** A superadmin's single-use invitation per address
