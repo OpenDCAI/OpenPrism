@@ -23,7 +23,7 @@ from rest_framework.views import APIView
 
 from common import ratelimit
 
-from . import cookies, mail
+from . import cookies, mail, signins
 from .passwords import revoke_refresh_tokens
 
 User = get_user_model()
@@ -111,8 +111,9 @@ def redeem_ticket(ticket, code):
 
 
 def require_password(user, password):
-    if not user.check_password(str(password or '')):
-        raise MfaError('Your password is not correct.')
+    from . import methods
+    if not methods.confirm(user, password):
+        raise MfaError(methods.confirm_error(user))
 
 
 def otpauth_uri(user, secret):
@@ -275,4 +276,5 @@ class LoginMfaView(APIView):
             return fail(e)
         from .views import _tokens
         tokens = _tokens(user)
+        signins.record(user, 'password+code', request)
         return cookies.with_session(Response({'ok': True, 'access': tokens['access'], 'refresh': tokens['refresh']}), tokens)

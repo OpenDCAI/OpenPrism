@@ -7,7 +7,11 @@ from rest_framework_simplejwt.serializers import TokenObtainPairSerializer
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenObtainPairView, TokenRefreshView
 
-from . import cookies, mfa
+from django.contrib.auth import get_user_model
+
+from . import cookies, mfa, signins
+
+User = get_user_model()
 from .serializers import RegisterSerializer, UserSerializer
 
 
@@ -46,8 +50,9 @@ class MeView(APIView):
         """Delete the signed-in account (password required). See accounts/deletion.py for what goes and what blocks."""
         from .deletion import blocking_workspaces, delete_account
         user = request.user
-        if not user.check_password(str((request.data or {}).get('password') or '')):
-            return Response({'ok': False, 'error': 'Your password is not correct.'}, status=400)
+        from . import methods
+        if not methods.confirm(user, (request.data or {}).get('password')):
+            return Response({'ok': False, 'error': methods.confirm_error(user)}, status=400)
         blocked = blocking_workspaces(user)
         if blocked:
             return Response({'ok': False, 'workspaces': [{'id': str(w.id), 'name': w.name} for w in blocked],
@@ -99,7 +104,11 @@ class LoginView(TokenObtainPairView):
 
     def post(self, request, *args, **kwargs):
         response = super().post(request, *args, **kwargs)
-        return cookies.with_session(response, dict(response.data)) if response.status_code == 200 else response
+        if response.status_code != 200:
+            return response
+        if 'access' in response.data:   # complete: no second factor owed (otherwise the code step records it)
+            signins.record(User.objects.filter(email=str(request.data.get('email', '')).strip().lower()).first(), 'password', request)
+        return cookies.with_session(response, dict(response.data))
 
 
 class RefreshView(TokenRefreshView):

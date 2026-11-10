@@ -175,7 +175,7 @@ class LinkingTests(SocialBase):
         self.user.set_unusable_password()
         self.user.save()
         identity = LinkedIdentity.objects.create(user=self.user, provider='google', subject='only')
-        res = self.client.delete(f'/api/auth/social/{identity.pk}', format='json')
+        res = self.client.delete(f'/api/auth/social/{identity.pk}', {'password': self.user.email}, format='json')
         self.assertEqual(res.status_code, 400)
         self.assertIn('only way to sign in', res.data['error'])
         self.assertTrue(self.user.identities.exists())

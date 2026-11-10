@@ -78,3 +78,16 @@ class LinkedIdentity(models.Model):
 
     def __str__(self):
         return f'{self.provider}:{self.subject}'
+
+
+class SignInEvent(models.Model):
+    """One successful sign-in, for the person's own *Recent sign-ins* list (v0.1.4, #100). Kept SIGNIN_KEEP_DAYS."""
+    id = models.BigAutoField(primary_key=True)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sign_ins')
+    method = models.CharField(max_length=20)   # password | password+code | passkey | google | orcid
+    created_at = models.DateTimeField(auto_now_add=True, db_index=True)
+    network = models.CharField(max_length=45, blank=True)       # the address with its last part cut off
+    user_agent = models.CharField(max_length=200, blank=True)
+
+    class Meta:
+        indexes = [models.Index(fields=['user', '-created_at'])]

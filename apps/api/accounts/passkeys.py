@@ -23,7 +23,7 @@ from rest_framework.views import APIView
 
 from common import ratelimit
 
-from . import cookies, mfa
+from . import cookies, mfa, signins
 from .passwords import revoke_refresh_tokens
 
 STATE_SECONDS = 300
@@ -213,4 +213,5 @@ class LoginView(APIView):
             return Response({'ok': False, 'error': 'Too many attempts. Try again in a few minutes.'}, status=429)
         from .views import _tokens
         tokens = _tokens(user)
+        signins.record(user, 'passkey', request)
         return cookies.with_session(Response({'ok': True, 'access': tokens['access']}), tokens)

@@ -11,7 +11,7 @@ User = get_user_model()
 class UserSerializer(serializers.ModelSerializer):
     class Meta:
         model = User
-        fields = ('id', 'email', 'name', 'emailVerified', 'verificationRequired', 'mfaEnabled', 'isSuperuser')
+        fields = ('id', 'email', 'name', 'emailVerified', 'verificationRequired', 'mfaEnabled', 'isSuperuser', 'hasPassword')
 
     emailVerified = serializers.SerializerMethodField()
     verificationRequired = serializers.SerializerMethodField()  # the app shows only the "check your email" screen
@@ -21,7 +21,11 @@ class UserSerializer(serializers.ModelSerializer):
         return settings.REQUIRE_EMAIL_VERIFICATION and user.email_verified_at is None
 
     mfaEnabled = serializers.SerializerMethodField()
+    hasPassword = serializers.SerializerMethodField()  # false: signs in through a provider or a passkey
     isSuperuser = serializers.SerializerMethodField()  # the app shows an Admin link; the admin decides for itself
+
+    def get_hasPassword(self, user):
+        return user.has_usable_password()
 
     def get_isSuperuser(self, user):
         return bool(user.is_active and user.is_superuser)
