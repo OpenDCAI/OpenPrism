@@ -6,7 +6,7 @@
 - [x] #97 Passkeys: Account page and sign-in with a passkey (UI)
 - [x] #98 Social sign-in: Google and ORCID (OIDC) - link, sign in, gated sign-up (API)
 - [x] #99 Social sign-in: buttons on sign-in and linking on the Account page (UI)
-- [ ] #100 Sign-in methods page: one list, never remove the last, recent sign-ins
+- [x] #100 Sign-in methods page: one list, never remove the last, recent sign-ins
 - [ ] #101 Release v0.1.4: deployment settings, provider setup docs and version
 
 ## v0.1.3 - Two-factor sign-in and one sign-in for the admin

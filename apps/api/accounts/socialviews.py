@@ -9,7 +9,7 @@ from rest_framework.views import APIView
 
 from common import ratelimit
 
-from . import cookies, methods, mfa, social
+from . import cookies, methods, mfa, signins, social
 from .models import LinkedIdentity
 
 ERRORS = ('denied', 'expired', 'failed', 'not_invited', 'verify_first', 'no_email', 'linked_elsewhere', 'unavailable')
@@ -48,6 +48,8 @@ class CallbackView(APIView):
         if state['intent'] == 'link':
             return HttpResponseRedirect(f'/account?linked={name}')
         ticket = social.second_step(user)
+        if not ticket:
+            signins.record(user, name, request)
         if ticket:   # the same second step as a password: nothing is issued before the code
             return HttpResponseRedirect(f"/login?mfa={ticket}&next={state['next']}")
         from .views import _tokens
@@ -64,11 +66,10 @@ class LinkTicketView(APIView):
         user = request.user
         if name not in settings.SOCIAL_PROVIDERS:
             return Response({'ok': False, 'error': 'That sign-in is not available.'}, status=404)
-        if user.has_usable_password():
-            try:
-                mfa.require_password(user, (request.data or {}).get('password'))
-            except mfa.MfaError as e:
-                return mfa.fail(e)
+        try:
+            mfa.require_password(user, (request.data or {}).get('password'))
+        except mfa.MfaError as e:
+            return mfa.fail(e)
         return Response({'ok': True, 'ticket': social.make_link_ticket(user)})
 
 
@@ -92,11 +93,10 @@ class IdentityView(APIView):
     def delete(self, request, pk):
         """Unlink (password needed unless the account has none). Refused when it is the last way to sign in."""
         user = request.user
-        if user.has_usable_password():
-            try:
-                mfa.require_password(user, (request.data or {}).get('password'))
-            except mfa.MfaError as e:
-                return mfa.fail(e)
+        try:
+            mfa.require_password(user, (request.data or {}).get('password'))
+        except mfa.MfaError as e:
+            return mfa.fail(e)
         try:
             identity = LinkedIdentity.objects.filter(user=user, pk=pk).first()
         except (ValueError, TypeError):

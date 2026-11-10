@@ -32,3 +32,9 @@ def send_email(self, to, template, context, invite_id=None, platform_invite_id=N
             raise
         raise self.retry(exc=exc, countdown=30 * (2 ** self.request.retries))
     _record(invite_id, False, platform_invite_id)
+
+
+@shared_task(name='accounts.tasks.prune_sign_ins')
+def prune_sign_ins():
+    from .signins import prune
+    return prune()

@@ -251,3 +251,9 @@
 .op-auth-banner a, .lp-invite-note a { color: var(--accent); }
 
 .op-auth-social { display: grid; gap: var(--sp-2); }
+
+.account-methods { margin: 0; display: grid; gap: var(--sp-2); }
+.account-methods > div { display: flex; justify-content: space-between; gap: var(--sp-4); }
+.account-methods dt { color: var(--text-2); }
+.account-methods dd { margin: 0; }
+.account-sub { margin: var(--sp-2) 0 0; font-size: var(--fs-md); font-weight: var(--fw-semibold); }

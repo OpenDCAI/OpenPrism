@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import adminhandoff, emailchange, mfa, passkeys, socialviews
+from . import adminhandoff, emailchange, mfa, passkeys, signins, socialviews
 from .passwords import ChangePasswordView, ForgotPasswordView, ResetPasswordView
 from .verification import ResendVerificationView, VerifyEmailView
 from .views import LoginView, LogoutView, MeView, RefreshView, RegisterView
@@ -27,6 +27,7 @@ urlpatterns = [
     path('social/<str:name>/start', socialviews.StartView.as_view()),
     path('social/<str:name>/callback', socialviews.CallbackView.as_view()),
     path('social/<str:name>/link-ticket', socialviews.LinkTicketView.as_view()),
+    path('sign-ins', signins.SignInsView.as_view()),
     path('admin-handoff', adminhandoff.AdminHandoffView.as_view()),
     path('mfa', mfa.StatusView.as_view()),
     path('mfa/totp/setup', mfa.SetupView.as_view()),

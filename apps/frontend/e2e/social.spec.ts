@@ -46,3 +46,23 @@ test('a provider email that is not verified gets a clear message and no account'
   await expect(page.getByRole('alert')).toContainText('did not share a verified email');
   await expect(page).not.toHaveURL(/error=/);   // the code is removed from the address
 });
+
+test('a provider-created account has no password: it sees Set a password, recent sign-ins, and can delete itself by typing its email', async ({ page }) => {
+  const email = `prov-${Date.now()}@example.com`;
+  await setIdentity({ sub: `sub-new-${Date.now()}`, email, email_verified: true, name: 'Prov' });
+  await page.goto('/login');
+  await page.getByRole('button', { name: 'Continue with Google' }).click();
+  await expect(page.getByRole('button', { name: 'Account menu' })).toBeVisible();
+  await page.goto('/account');
+
+  const methods = page.getByRole('region', { name: 'Sign-in methods' });
+  await expect(methods).toContainText('Not set');
+  await expect(methods.getByRole('list', { name: 'Recent sign-ins' })).toContainText('Google');
+  const pw = page.getByRole('region', { name: 'Set a password' });
+  await expect(pw).toBeVisible();
+  await pw.getByLabel('New password', { exact: true }).fill('a-brand-new-horse-9');
+  await pw.getByLabel('Repeat the new password').fill('a-brand-new-horse-9');
+  await pw.getByRole('button', { name: 'Set password' }).click();
+  await expect(page.getByRole('region', { name: 'Change password' })).toBeVisible();
+  await expect(methods).toContainText('Set');
+});

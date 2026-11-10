@@ -1045,5 +1045,20 @@
   "Unlink": "取消关联",
   "Link": "关联",
   "Enter your password, then sign in at {{provider}} to link it.": "输入密码,然后在 {{provider}} 登录以完成关联。",
-  "Unlink {{provider}}? You can still sign in another way.": "取消关联 {{provider}}?您仍可用其他方式登录。"
+  "Unlink {{provider}}? You can still sign in another way.": "取消关联 {{provider}}?您仍可用其他方式登录。",
+  "Your email address": "您的邮箱地址",
+  "Set a password": "设置密码",
+  "Set password": "设置密码",
+  "You sign in without a password. Set one to be able to sign in with it too.": "您目前无需密码登录。设置密码后也可用密码登录。",
+  "Sign-in methods": "登录方式",
+  "Recent sign-ins": "最近登录",
+  "Nothing yet.": "暂无。",
+  "Email": "邮箱",
+  "Not set": "未设置",
+  "Set": "已设置",
+  "None": "无",
+  "On": "开",
+  "Off": "关",
+  "Password and code": "密码和验证码",
+  "Passkey": "通行密钥"
 }

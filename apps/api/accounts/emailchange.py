@@ -55,8 +55,9 @@ class RequestChangeView(APIView):
     def post(self, request):
         user = request.user
         b = request.data if isinstance(request.data, dict) else {}
-        if not user.check_password(str(b.get('password') or '')):
-            return Response({'ok': False, 'error': 'Your password is not correct.'}, status=400)
+        from . import methods
+        if not methods.confirm(user, b.get('password')):
+            return Response({'ok': False, 'error': methods.confirm_error(user)}, status=400)
         new = str(b.get('email') or '').strip().lower()
         try:
             validate_email(new)

@@ -150,6 +150,7 @@ ACCOUNT_LOGIN_METHODS = {'email'}
 ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
 MFA_SUPPORTED_TYPES = ['totp', 'recovery_codes', 'webauthn']
 MFA_ADAPTER = 'accounts.mfa_adapter.FernetMFAAdapter'
+SIGNIN_KEEP_DAYS = int(env('SIGNIN_KEEP_DAYS', '90'))  # how long the Recent sign-ins list remembers
 PASSKEY_RP_ID = env('PASSKEY_RP_ID', '')  # default: the host of APP_BASE_URL; changing it (or the host) invalidates every passkey
 # Social sign-in (v0.1.4, accounts/social.py): a provider is on when its client id and secret are set. Endpoints can be
 # overridden (SOCIAL_<P>_AUTH_URL / _TOKEN_URL / _JWKS_URL / _ISSUER) to point the browser suite at a fake provider.
@@ -269,6 +270,7 @@ CELERY_TASK_ROUTES = {
     # Housekeeping from beat. No worker consumes Celery's default `celery` queue, so an unrouted task is never run:
     # without these, jobs whose worker died stay "running" forever and hold the user's compile slots (429).
     'jobs.tasks.reap_stale_jobs': {'queue': 'import'},
+    'accounts.tasks.prune_sign_ins': {'queue': 'import'},
     'jobs.tasks.cleanup_old_jobs': {'queue': 'import'},
     'collab.tasks.*': {'queue': 'import'},
     'versions.tasks.*': {'queue': 'import'},
@@ -281,6 +283,7 @@ CELERY_BEAT_SCHEDULE = {
     'cleanup-expired-invites': {'task': 'collab.tasks.cleanup_expired_invites', 'schedule': 3600.0},
     'recover-collab-logs': {'task': 'collab.tasks.recover_update_logs', 'schedule': 60.0},
     'prune-versions': {'task': 'versions.tasks.prune_versions', 'schedule': 86400.0},
+    'prune-sign-ins': {'task': 'accounts.tasks.prune_sign_ins', 'schedule': 86400.0},
     'prune-llm-usage': {'task': 'integrations.tasks.prune_llm_usage', 'schedule': 86400.0},
     'cleanup-pending-uploads': {'task': 'projects.tasks.cleanup_pending_uploads', 'schedule': 900.0},
 }

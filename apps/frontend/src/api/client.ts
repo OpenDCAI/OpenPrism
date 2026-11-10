@@ -774,6 +774,8 @@ export interface Account {
   mfaEnabled?: boolean;
   /** An active superadmin: the account menu offers the Django admin. */
   isSuperuser?: boolean;
+  /** False for an account that signs in through a provider or a passkey and has set no password. */
+  hasPassword?: boolean;
 }
 
 async function authCall<T>(url: string, body: unknown): Promise<T> {
@@ -808,6 +810,11 @@ export async function cancelEmailChange(): Promise<void> { await request('/api/a
 /** From the mailed link (works signed in or not). Every browser is signed out by the change. */
 export async function confirmEmailChange(token: string) {
   return authCall<{ ok: boolean; email: string }>('/api/auth/email/confirm', { token });
+}
+
+export interface SignIn { method: string; at: string; network: string; userAgent: string }
+export async function recentSignIns(): Promise<SignIn[]> {
+  return (await request<{ signIns: SignIn[] }>('/api/auth/sign-ins')).signIns;
 }
 
 // ---- Social sign-in (Google, ORCID). The browser is sent through the server by navigation. ----
