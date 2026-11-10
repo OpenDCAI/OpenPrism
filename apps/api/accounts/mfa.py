@@ -241,7 +241,8 @@ class DisableView(APIView):
 
 
 def remove(user):
-    Authenticator.objects.filter(user=user).delete()
+    """Turn the code factor off: the authenticator app and the recovery codes. Passkeys are separate sign-in methods."""
+    Authenticator.objects.filter(user=user, type__in=[Authenticator.Type.TOTP, Authenticator.Type.RECOVERY_CODES]).delete()
 
 
 def admin_reset(user, actor):

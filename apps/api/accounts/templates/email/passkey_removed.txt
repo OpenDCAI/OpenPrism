@@ -1,0 +1,5 @@
+Hello {{ name }},
+
+A passkey was just removed from your OpenPrism account, and other signed-in browsers have been signed out.
+
+If this was not you, reset your password at {{ app_url }}/forgot-password and tell your workspace administrator.
