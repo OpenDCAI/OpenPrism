@@ -23,6 +23,13 @@ interface AuthScreenProps {
   onSubmitCode?: (code: string) => Promise<void>;
   /** Shows *Sign in with a passkey* on the sign-in form; reject with an Error to show it. */
   onPasskey?: () => Promise<void>;
+  /** Providers to offer as *Continue with …* (the operator's Google/ORCID); `onSocial` leaves for the provider. */
+  socialProviders?: { name: string; label: string }[];
+  onSocial?: (provider: string) => void;
+  /** Open on the code step (the provider sign-in already proved the password step). */
+  startAtCode?: boolean;
+  /** An error to show above the form when it opens (e.g. the provider sign-in failed). */
+  initialError?: string | null;
   /** Shows a "Forgot password?" link on the sign-in form. */
   onForgotPassword?: () => void;
   /** Pre-fills the email field (e.g. from an invitation link). */
@@ -66,7 +73,7 @@ export function ClosedSignup({ contactEmail, onSignIn }: { contactEmail: string 
   );
 }
 
-export function AuthScreen({ mode, onModeChange, onSubmit, onSubmitCode, onPasskey, notice, onForgotPassword, initialEmail = '', lockEmail = false, canRegister = true }: AuthScreenProps) {
+export function AuthScreen({ mode, onModeChange, onSubmit, onSubmitCode, onPasskey, socialProviders, onSocial, startAtCode = false, initialError = null, notice, onForgotPassword, initialEmail = '', lockEmail = false, canRegister = true }: AuthScreenProps) {
   const { t } = useTranslation();
   const uid = useId();
   const register = mode === 'register';
@@ -74,8 +81,8 @@ export function AuthScreen({ mode, onModeChange, onSubmit, onSubmitCode, onPassk
   const [touched, setTouched] = useState<Record<string, boolean>>({});
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [formError, setFormError] = useState<string | null>(null);
-  const [step, setStep] = useState<'password' | 'code'>('password');
+  const [formError, setFormError] = useState<string | null>(initialError);
+  const [step, setStep] = useState<'password' | 'code'>(startAtCode ? 'code' : 'password');
   const [code, setCode] = useState('');
   const [recovery, setRecovery] = useState(false);
 
@@ -266,6 +273,16 @@ export function AuthScreen({ mode, onModeChange, onSubmit, onSubmitCode, onPassk
             }}>{t('Sign in with a passkey')}</Button>
           )}
         </form>
+
+        {onSocial && socialProviders && socialProviders.length > 0 && !lockEmail && (
+          <div className="op-auth-social" role="group" aria-label={t('Or continue with')}>
+            {socialProviders.map((p) => (
+              <Button key={p.name} type="button" variant="secondary" size="lg" block disabled={busy} onClick={() => onSocial(p.name)}>
+                {t('Continue with {{provider}}', { provider: p.label })}
+              </Button>
+            ))}
+          </div>
+        )}
 
         {(register || canRegister) && (
           <p className="op-auth-switch">

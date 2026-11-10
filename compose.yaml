@@ -80,6 +80,15 @@ services:
       TRUSTED_PROXY_COUNT: "1" # the nginx web container: rate limits must key on the real client, not on it
       AI_RATE_PER_MINUTE: ${AI_RATE_PER_MINUTE:-30} # per user: llm, agent, vision, plot, transfer, arXiv import
       COMPILE_RATE_PER_MINUTE: ${COMPILE_RATE_PER_MINUTE:-30}
+      SOCIAL_GOOGLE_CLIENT_ID: ${SOCIAL_GOOGLE_CLIENT_ID:-} # Google / ORCID sign-in is on when the id and secret are set (README, "Social sign-in"); the *_URL overrides point the browser suite at accounts/fake_oidc.py
+      SOCIAL_GOOGLE_CLIENT_SECRET: ${SOCIAL_GOOGLE_CLIENT_SECRET:-}
+      SOCIAL_GOOGLE_AUTH_URL: ${SOCIAL_GOOGLE_AUTH_URL:-https://accounts.google.com/o/oauth2/v2/auth}
+      SOCIAL_GOOGLE_TOKEN_URL: ${SOCIAL_GOOGLE_TOKEN_URL:-https://oauth2.googleapis.com/token}
+      SOCIAL_GOOGLE_JWKS_URL: ${SOCIAL_GOOGLE_JWKS_URL:-https://www.googleapis.com/oauth2/v3/certs}
+      SOCIAL_GOOGLE_ISSUER: ${SOCIAL_GOOGLE_ISSUER:-https://accounts.google.com}
+      SOCIAL_ORCID_CLIENT_ID: ${SOCIAL_ORCID_CLIENT_ID:-}
+      SOCIAL_ORCID_CLIENT_SECRET: ${SOCIAL_ORCID_CLIENT_SECRET:-}
+      ORCID_SANDBOX: ${ORCID_SANDBOX:-0}
       SUPERADMIN_REQUIRE_MFA: ${SUPERADMIN_REQUIRE_MFA:-0} # 1: superadmins need two-factor authentication to use /admin/ (the application's default; compose stays off for the browser suite)
       REGISTRATION_MODE: ${REGISTRATION_MODE:-open} # invite: only invited addresses may register (the application's default; compose stays open for development and the browser suite)
       WORKSPACE_INVITES_ALLOW_SIGNUP: ${WORKSPACE_INVITES_ALLOW_SIGNUP:-1} # in invite mode, workspace invitations also open the door

@@ -249,3 +249,5 @@
 
 /* Links inside the signed-out notices (invitation-only access, v0.1.2) */
 .op-auth-banner a, .lp-invite-note a { color: var(--accent); }
+
+.op-auth-social { display: grid; gap: var(--sp-2); }
