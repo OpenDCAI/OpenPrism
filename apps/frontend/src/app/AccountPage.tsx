@@ -3,8 +3,8 @@ import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { AppTopBar, Button, CrumbSep, FieldError, Modal } from '@design';
-import { addPasskey, cancelEmailChange, listPasskeys, passkeysSupported, removePasskey, renamePasskey, changePassword, clearLocalSession, emailInfo, requestEmailChange, deleteAccount, mfaDisable, mfaEnable, mfaNewRecoveryCodes, mfaSetup, mfaStatus, myCredentialEvents } from '../api/client';
-import type { MfaSetup, MfaStatus, Passkey } from '../api/client';
+import { addPasskey, linkProvider, listLinkedProviders, unlinkProvider, cancelEmailChange, listPasskeys, passkeysSupported, removePasskey, renamePasskey, changePassword, clearLocalSession, emailInfo, requestEmailChange, deleteAccount, mfaDisable, mfaEnable, mfaNewRecoveryCodes, mfaSetup, mfaStatus, myCredentialEvents } from '../api/client';
+import type { LinkedProvider, MfaSetup, MfaStatus, Passkey } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { MIN_PASSWORD } from './PasswordPages';
 import CredentialHistory from './CredentialHistory';
@@ -341,6 +341,70 @@ function PasskeysSection() {
   );
 }
 
+function LinkedAccountsSection() {
+  const { t } = useTranslation();
+  const [providers, setProviders] = useState<LinkedProvider[] | null>(null);
+  const [mode, setMode] = useState<{ kind: 'link' | 'unlink'; provider: LinkedProvider } | null>(null);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const justLinked = new URLSearchParams(window.location.search).get('linked');
+
+  const load = () => listLinkedProviders().then(setProviders).catch(() => setProviders(null));
+  useEffect(() => { void load(); }, []);
+  if (!providers || providers.length === 0) return null;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!mode) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (mode.kind === 'link') { await linkProvider(mode.provider.name, password); return; }   // leaves for the provider
+      await unlinkProvider(mode.provider.linked!.id, password);
+      setMode(null);
+      setPassword('');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="account-section" aria-labelledby="account-linked">
+      <h2 id="account-linked">{t('Linked accounts')}</h2>
+      <p>{t('Sign in with an account you already have elsewhere.')}</p>
+      {justLinked && <p className="account-ok" role="status">{t('Linked.')}</p>}
+      <ul className="account-passkeys" aria-label={t('Linked accounts')}>
+        {providers.map((p) => (
+          <li key={p.name}>
+            <span><strong>{p.label}</strong>{p.linked && <> <span className="op-field-help">{p.linked.email || t('Linked')}</span></>}</span>
+            {p.linked
+              ? <Button size="sm" variant="danger" onClick={() => { setMode({ kind: 'unlink', provider: p }); setPassword(''); setError(''); }}>{t('Unlink')}</Button>
+              : <Button size="sm" variant="secondary" onClick={() => { setMode({ kind: 'link', provider: p }); setPassword(''); setError(''); }}>{t('Link')}</Button>}
+          </li>
+        ))}
+      </ul>
+      {mode && (
+        <form className="account-form" onSubmit={submit} noValidate>
+          <p>{mode.kind === 'link' ? t('Enter your password, then sign in at {{provider}} to link it.', { provider: mode.provider.label }) : t('Unlink {{provider}}? You can still sign in another way.', { provider: mode.provider.label })}</p>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="linked-password">{t('Password')}</label>
+            <input id="linked-password" className="op-input" type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <FieldError message={error || null} />
+          <div className="account-actions">
+            <Button type="submit" variant={mode.kind === 'link' ? 'primary' : 'danger'} loading={busy}>{mode.kind === 'link' ? t('Continue') : t('Unlink')}</Button>
+            <Button type="button" variant="secondary" onClick={() => setMode(null)}>{t('Cancel')}</Button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
 function DeleteAccountSection() {
   const { t } = useTranslation();
   const { signOut } = useAuth();
@@ -430,6 +494,7 @@ export default function AccountPage() {
         <ChangePasswordSection />
         <TwoFactorSection />
         <PasskeysSection />
+        <LinkedAccountsSection />
         <section className="account-section" aria-labelledby="account-keys">
           <h2 id="account-keys">{t('Your keys')}</h2>
           <p>{t('When your Zotero key and your own AI keys were set, replaced or removed.')}</p>

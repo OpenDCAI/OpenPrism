@@ -810,6 +810,30 @@ export async function confirmEmailChange(token: string) {
   return authCall<{ ok: boolean; email: string }>('/api/auth/email/confirm', { token });
 }
 
+// ---- Social sign-in (Google, ORCID). The browser is sent through the server by navigation. ----
+
+export interface LinkedProvider { name: string; label: string; linked: { id: string; email: string; createdAt: string } | null }
+
+/** Leave for the provider; the server brings the browser back signed in (or to /login?error=…). */
+export function startSocialLogin(provider: string, next = '/') {
+  window.location.assign(`/api/auth/social/${encodeURIComponent(provider)}/start?intent=login&next=${encodeURIComponent(next)}`);
+}
+
+export async function listLinkedProviders(): Promise<LinkedProvider[]> {
+  return (await request<{ providers: LinkedProvider[] }>('/api/auth/social')).providers;
+}
+
+/** Link a provider to this account: re-enter the password, then the browser goes to the provider and returns to /account. */
+export async function linkProvider(provider: string, password: string): Promise<void> {
+  const { ticket } = await request<{ ticket: string }>(`/api/auth/social/${encodeURIComponent(provider)}/link-ticket`, { method: 'POST', body: JSON.stringify({ password }) });
+  window.location.assign(`/api/auth/social/${encodeURIComponent(provider)}/start?intent=link&ticket=${encodeURIComponent(ticket)}&next=/account`);
+}
+
+export async function unlinkProvider(id: string, password: string): Promise<void> {
+  const res = await request<{ access: string }>(`/api/auth/social/${id}`, { method: 'DELETE', body: JSON.stringify({ password }) });
+  setSession({ access: res.access });
+}
+
 // ---- Passkeys (WebAuthn). The server speaks the WebAuthn JSON mapping; the browser wants ArrayBuffers. ----
 
 export interface Passkey { id: string; name: string; createdAt: string; lastUsedAt: string | null }
@@ -949,6 +973,8 @@ export interface PublicConfig {
   /** `invite`: registration needs an invitation (platform or workspace). */
   registration: 'open' | 'invite';
   contactEmail: string | null;
+  /** Sign-in providers the operator configured (Google, ORCID). */
+  socialProviders?: { name: string; label: string }[];
 }
 
 let publicConfig: Promise<PublicConfig> | null = null;
