@@ -4,7 +4,7 @@
 
 - [x] #88 Auth: spike - django-allauth as a library behind our JWT login (go/no-go)
 - [x] #89 Auth: foundation - allauth email addresses mirror our accounts
-- [ ] #90 Auth: change the account's email address
+- [x] #90 Auth: change the account's email address
 - [x] #91 Auth: two-factor (TOTP and recovery codes) at the API
 - [x] #92 Auth: second factor in the app (Account page and sign-in)
 - [x] #93 Admin: superadmins require two-factor; reset a locked-out user's second factor

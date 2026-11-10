@@ -1,0 +1,3 @@
+{% extends "email/base.html" %}
+{% block body %}<p>Hello {{ name }},</p>
+<p>Someone signed in to your account asked to change its email address to {{ new_email }}. Nothing changes until the link sent to that address is opened.</p><p>If this was not you, reset your password at {{ app_url }}/forgot-password.</p>{% endblock %}

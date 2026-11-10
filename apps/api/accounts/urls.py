@@ -1,6 +1,6 @@
 from django.urls import path
 
-from . import adminhandoff, mfa
+from . import adminhandoff, emailchange, mfa
 from .passwords import ChangePasswordView, ForgotPasswordView, ResetPasswordView
 from .verification import ResendVerificationView, VerifyEmailView
 from .views import LoginView, LogoutView, MeView, RefreshView, RegisterView
@@ -14,6 +14,9 @@ urlpatterns = [
     path('verify-email', VerifyEmailView.as_view()),
     path('verify-email/resend', ResendVerificationView.as_view()),
     path('login/mfa', mfa.LoginMfaView.as_view()),
+    path('email', emailchange.EmailView.as_view()),
+    path('email/change', emailchange.RequestChangeView.as_view()),
+    path('email/confirm', emailchange.ConfirmChangeView.as_view()),
     path('admin-handoff', adminhandoff.AdminHandoffView.as_view()),
     path('mfa', mfa.StatusView.as_view()),
     path('mfa/totp/setup', mfa.SetupView.as_view()),

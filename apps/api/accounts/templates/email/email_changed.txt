@@ -1,0 +1,5 @@
+Hello {{ name }},
+
+The email address of your OpenPrism account is now {{ new_email }}. Every browser was signed out; sign in with the new address.
+
+If this was not you, contact your site administrator at once.

@@ -3,7 +3,7 @@ import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { AppTopBar, Button, CrumbSep, FieldError, Modal } from '@design';
-import { changePassword, clearLocalSession, deleteAccount, mfaDisable, mfaEnable, mfaNewRecoveryCodes, mfaSetup, mfaStatus, myCredentialEvents } from '../api/client';
+import { cancelEmailChange, changePassword, clearLocalSession, emailInfo, requestEmailChange, deleteAccount, mfaDisable, mfaEnable, mfaNewRecoveryCodes, mfaSetup, mfaStatus, myCredentialEvents } from '../api/client';
 import type { MfaSetup, MfaStatus } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { MIN_PASSWORD } from './PasswordPages';
@@ -60,6 +60,71 @@ function ChangePasswordSection() {
         {saved && <p className="account-ok" role="status">{t('Password changed.')}</p>}
         <div><Button type="submit" variant="primary" loading={busy}>{t('Change password')}</Button></div>
       </form>
+    </section>
+  );
+}
+
+function EmailSection() {
+  const { t } = useTranslation();
+  const [info, setInfo] = useState<{ email: string; pending: string | null } | null>(null);
+  const [open, setOpen] = useState(false);
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = () => emailInfo().then(setInfo).catch(() => setInfo(null));
+  useEffect(() => { void load(); }, []);
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!email.trim()) return setError(t('Enter a new email address.'));
+    if (!password) return setError(t('Enter your password.'));
+    setBusy(true);
+    setError('');
+    try {
+      await requestEmailChange(email.trim(), password);
+      setOpen(false);
+      setEmail('');
+      setPassword('');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const cancel = async () => { await cancelEmailChange(); await load(); };
+
+  return (
+    <section className="account-section" aria-labelledby="account-email">
+      <h2 id="account-email">{t('Email address')}</h2>
+      {info && <p>{info.email}</p>}
+      {info?.pending && (
+        <p role="status">
+          {t('Waiting for you to open the link we sent to {{email}}. Until then you sign in with {{old}}.', { email: info.pending, old: info.email })}{' '}
+          <button type="button" className="op-link-btn" onClick={() => void cancel()}>{t('Cancel the change')}</button>
+        </p>
+      )}
+      {!open && <div><Button variant="secondary" onClick={() => setOpen(true)}>{t('Change email address…')}</Button></div>}
+      {open && (
+        <form className="account-form" onSubmit={submit} noValidate>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="email-new">{t('New email address')}</label>
+            <input id="email-new" className="op-input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+          </div>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="email-password">{t('Password')}</label>
+            <input id="email-password" className="op-input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <span className="op-field-help">{t('We send a link to the new address and a notice to this one. Everyone is signed out when you open the link.')}</span>
+          </div>
+          <FieldError message={error || null} />
+          <div className="account-actions">
+            <Button type="submit" variant="primary" loading={busy}>{t('Send the link')}</Button>
+            <Button type="button" variant="secondary" onClick={() => { setOpen(false); setError(''); }}>{t('Cancel')}</Button>
+          </div>
+        </form>
+      )}
     </section>
   );
 }
@@ -273,6 +338,7 @@ export default function AccountPage() {
       <main className="account-main">
         <h1>{t('Account settings')}</h1>
         {account && <p className="account-who">{account.name ? `${account.name} · ` : ''}{account.email}</p>}
+        <EmailSection />
         <ChangePasswordSection />
         <TwoFactorSection />
         <section className="account-section" aria-labelledby="account-keys">
