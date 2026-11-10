@@ -13,6 +13,9 @@ from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, Ou
 
 from common.admin import ReadOnlyAdmin
 
+from allauth.account.models import EmailAddress
+from allauth.mfa.models import Authenticator
+
 from . import invitations, superadmins
 from .models import PlatformInvite, User
 
@@ -20,6 +23,9 @@ admin.site.unregister(Group)  # permissions and groups mean nothing here: only s
 # simplejwt registers these itself. OutstandingToken holds whole refresh tokens, which are credentials: never list them.
 admin.site.unregister(OutstandingToken)
 admin.site.unregister(BlacklistedToken)
+# allauth registers these itself. Authenticator holds second-factor secrets; EmailAddress is kept in step by accounts/emails.py.
+admin.site.unregister(Authenticator)
+admin.site.unregister(EmailAddress)
 
 
 class UserForm(forms.ModelForm):

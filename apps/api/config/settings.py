@@ -80,6 +80,9 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',  # collectstatic for the admin (#79)
     'channels',
+    'allauth',  # a library, not a UI: no allauth URLs, views or sessions (docs/spike-allauth.md)
+    'allauth.account',
+    'allauth.mfa',
     'rest_framework',
     'rest_framework_simplejwt.token_blacklist',
     'accounts',
@@ -103,6 +106,7 @@ MIDDLEWARE = [
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
+    'allauth.account.middleware.AccountMiddleware',  # sets allauth's request context; required by the app, adds no routes
 ]
 
 ROOT_URLCONF = 'config.urls'
@@ -139,6 +143,14 @@ DATABASES = {'default': _database()}
 
 TEST_RUNNER = 'config.testrunner.Runner'
 AUTH_USER_MODEL = 'accounts.User'
+# django-allauth supplies the second factor (TOTP, recovery codes; passkeys and social sign-in later) as a library behind
+# our own JWT endpoints. Its secrets are encrypted with CREDENTIAL_ENCRYPTION_KEY instead of stored in the clear.
+ACCOUNT_USER_MODEL_USERNAME_FIELD = None
+ACCOUNT_LOGIN_METHODS = {'email'}
+ACCOUNT_SIGNUP_FIELDS = ['email*', 'password1*', 'password2*']
+MFA_SUPPORTED_TYPES = ['totp', 'recovery_codes']
+MFA_ADAPTER = 'accounts.mfa_adapter.FernetMFAAdapter'
+MFA_TOTP_ISSUER = 'OpenPrism'
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 AUTH_PASSWORD_VALIDATORS = [
     {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},

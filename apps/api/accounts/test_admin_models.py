@@ -9,6 +9,8 @@ from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
 
+from allauth.account.models import EmailAddress
+from allauth.mfa.models import Authenticator
 from collab.models import CollabDoc, CollabInvite
 from integrations.models import CredentialEvent, LlmUsage, UserCredential, WorkspaceLlmConfig, ZoteroConnection
 from jobs.models import Job
@@ -81,7 +83,7 @@ class AdminModelTests(TestCase):
 
     def test_models_that_hold_credentials_or_file_contents_are_not_registered(self):
         for model in (ZoteroConnection, UserCredential, WorkspaceLlmConfig, ProjectFile, CollabDoc, OutstandingToken,
-                      BlacklistedToken):
+                      Authenticator, EmailAddress, BlacklistedToken):
             self.assertFalse(admin.site.is_registered(model), model.__name__)
 
     def test_read_only_models_have_no_add_change_or_delete(self):
