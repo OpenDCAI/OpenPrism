@@ -1,0 +1,4 @@
+{% extends "email/base.html" %}
+{% block body %}<p>Hello {{ name }},</p>
+<p>A passkey was just removed from your OpenPrism account, and other signed-in browsers have been signed out.</p>
+<p>If this was not you, <a href="{{ app_url }}/forgot-password" style="color:#b8452e">reset your password</a> and tell your workspace administrator.</p>{% endblock %}
