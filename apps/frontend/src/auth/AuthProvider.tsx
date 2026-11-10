@@ -5,6 +5,7 @@ import {
   fetchMe,
   login as apiLogin,
   loginMfa as apiLoginMfa,
+  loginWithPasskey as apiLoginWithPasskey,
   logout as apiLogout,
   register as apiRegister,
   resolveCollabToken,
@@ -31,6 +32,8 @@ interface AuthContextValue {
   /** Resolves `{ mfaTicket }` when a code is still needed: finish with `signInMfa`. */
   signIn: (email: string, password: string) => Promise<{ mfaTicket?: string }>;
   signInMfa: (ticket: string, code: string) => Promise<void>;
+  /** Sign in with a passkey: no password, no code. */
+  signInWithPasskey: () => Promise<void>;
   signUp: (email: string, password: string, name?: string, invite?: string) => Promise<void>;
   /** Sign out of the account. */
   signOut: () => Promise<void>;
@@ -118,6 +121,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if ('mfaTicket' in res) return { mfaTicket: res.mfaTicket };
         setState({ status: 'user', account: res });
         return {};
+      } finally {
+        quiet.current--;
+      }
+    },
+    signInWithPasskey: async () => {
+      quiet.current++;
+      try {
+        setState({ status: 'user', account: await apiLoginWithPasskey() });
       } finally {
         quiet.current--;
       }

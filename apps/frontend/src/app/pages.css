@@ -217,6 +217,8 @@
 .account-actions { display: flex; flex-wrap: wrap; gap: var(--sp-2); }
 .account-qr { width: 184px; height: 184px; padding: var(--sp-2); background: #fff; border-radius: var(--r-md); } /* a QR code needs a light ground in dark mode too */
 .account-codes { margin: 0; padding: var(--sp-3); display: grid; grid-template-columns: repeat(2, max-content); gap: var(--sp-1) var(--sp-6); list-style: none; background: var(--surface-2); border-radius: var(--r-md); }
+.account-passkeys { margin: 0; padding: 0; list-style: none; display: grid; gap: var(--sp-2); }
+.account-passkeys li { display: flex; flex-wrap: wrap; gap: var(--sp-2); align-items: center; justify-content: space-between; padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); }
 .account-ok { color: var(--success); }
 .account-danger { border-color: var(--danger); }
 .account-blocked { margin: 0; padding-left: var(--sp-5); color: var(--text); }

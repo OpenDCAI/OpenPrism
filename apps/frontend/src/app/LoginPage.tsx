@@ -3,7 +3,7 @@ import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import { AuthScreen, ClosedSignup } from '@design';
 import type { AuthMode, AuthValues } from '@design';
-import { fetchPublicConfig, type PublicConfig } from '../api/client';
+import { fetchPublicConfig, passkeysSupported, type PublicConfig } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 
 /** Only follow same-site paths after sign-in (prevents `?next=https://evil.example` open redirects). */
@@ -14,7 +14,7 @@ export function safeNext(value: string | null): string | null {
 
 export default function LoginPage() {
   const { t } = useTranslation();
-  const { signIn, signInMfa, signUp } = useAuth();
+  const { signIn, signInMfa, signInWithPasskey, signUp } = useAuth();
   const [ticket, setTicket] = useState<string | null>(null);   // memory only: the password step's ticket
   const navigate = useNavigate();
   const { pathname } = useLocation();
@@ -48,6 +48,7 @@ export default function LoginPage() {
       lockEmail={!!invite}
       onModeChange={(m) => navigate(`${m === 'register' ? '/register' : '/login'}${qs}`, { replace: true })}
       onSubmit={submit}
+      onPasskey={passkeysSupported() ? signInWithPasskey : undefined}
       onSubmitCode={async (code) => { if (ticket) await signInMfa(ticket, code); }}
       onForgotPassword={() => navigate('/forgot-password')}
       initialEmail={params.get('email') || undefined}

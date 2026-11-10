@@ -21,6 +21,8 @@ interface AuthScreenProps {
   onSubmit: (values: AuthValues) => Promise<void | 'code'>;
   /** The second step: reject with an Error to show it, resolve on success. */
   onSubmitCode?: (code: string) => Promise<void>;
+  /** Shows *Sign in with a passkey* on the sign-in form; reject with an Error to show it. */
+  onPasskey?: () => Promise<void>;
   /** Shows a "Forgot password?" link on the sign-in form. */
   onForgotPassword?: () => void;
   /** Pre-fills the email field (e.g. from an invitation link). */
@@ -64,7 +66,7 @@ export function ClosedSignup({ contactEmail, onSignIn }: { contactEmail: string 
   );
 }
 
-export function AuthScreen({ mode, onModeChange, onSubmit, onSubmitCode, notice, onForgotPassword, initialEmail = '', lockEmail = false, canRegister = true }: AuthScreenProps) {
+export function AuthScreen({ mode, onModeChange, onSubmit, onSubmitCode, onPasskey, notice, onForgotPassword, initialEmail = '', lockEmail = false, canRegister = true }: AuthScreenProps) {
   const { t } = useTranslation();
   const uid = useId();
   const register = mode === 'register';
@@ -256,6 +258,13 @@ export function AuthScreen({ mode, onModeChange, onSubmit, onSubmitCode, notice,
           <Button type="submit" variant="primary" size="lg" block loading={busy}>
             {register ? t('Create account') : t('Sign in')}
           </Button>
+          {!register && onPasskey && (
+            <Button type="button" variant="secondary" size="lg" block disabled={busy} onClick={async () => {
+              setBusy(true);
+              setFormError(null);
+              try { await onPasskey(); } catch (err) { setFormError(err instanceof Error ? err.message : String(err)); setBusy(false); }
+            }}>{t('Sign in with a passkey')}</Button>
+          )}
         </form>
 
         {(register || canRegister) && (
