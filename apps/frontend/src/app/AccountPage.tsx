@@ -3,11 +3,69 @@ import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { AppTopBar, Button, CrumbSep, FieldError, Modal } from '@design';
-import { cancelEmailChange, changePassword, clearLocalSession, emailInfo, requestEmailChange, deleteAccount, mfaDisable, mfaEnable, mfaNewRecoveryCodes, mfaSetup, mfaStatus, myCredentialEvents } from '../api/client';
-import type { MfaSetup, MfaStatus } from '../api/client';
+import { recentSignIns, addPasskey, linkProvider, listLinkedProviders, unlinkProvider, cancelEmailChange, listPasskeys, passkeysSupported, removePasskey, renamePasskey, changePassword, clearLocalSession, emailInfo, requestEmailChange, deleteAccount, mfaDisable, mfaEnable, mfaNewRecoveryCodes, mfaSetup, mfaStatus, myCredentialEvents } from '../api/client';
+import type { SignIn, LinkedProvider, MfaSetup, MfaStatus, Passkey } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { MIN_PASSWORD } from './PasswordPages';
 import CredentialHistory from './CredentialHistory';
+
+const METHOD_LABELS: Record<string, string> = { password: 'Password', 'password+code': 'Password and code', passkey: 'Passkey', google: 'Google', orcid: 'ORCID' };
+
+/** One place that says how this account can sign in, and when it last did. */
+function SignInMethodsSection() {
+  const { t } = useTranslation();
+  const { state } = useAuth();
+  const account = state.status === 'user' ? state.account : null;
+  const [passkeys, setPasskeys] = useState<number | null>(null);
+  const [linked, setLinked] = useState<string[] | null>(null);
+  const [mfa, setMfa] = useState<boolean | null>(null);
+  const [history, setHistory] = useState<SignIn[] | null>(null);
+  useEffect(() => {
+    void listPasskeys().then((l) => setPasskeys(l.length)).catch(() => setPasskeys(null));
+    void listLinkedProviders().then((l) => setLinked(l.filter((p) => p.linked).map((p) => p.label))).catch(() => setLinked(null));
+    void mfaStatus().then((m) => setMfa(m.enabled)).catch(() => setMfa(null));
+    void recentSignIns().then(setHistory).catch(() => setHistory(null));
+  }, []);
+  if (!account) return null;
+  const rows: [string, string][] = [
+    [t('Email'), account.email],
+    [t('Password'), account.hasPassword === false ? t('Not set') : t('Set')],
+    ...(passkeys !== null ? [[t('Passkeys'), passkeys ? String(passkeys) : t('None')] as [string, string]] : []),
+    ...(linked !== null ? [[t('Linked accounts'), linked.length ? linked.join(', ') : t('None')] as [string, string]] : []),
+    ...(mfa !== null ? [[t('Two-factor authentication'), mfa ? t('On') : t('Off')] as [string, string]] : [])
+  ];
+  return (
+    <section className="account-section" aria-labelledby="account-methods">
+      <h2 id="account-methods">{t('Sign-in methods')}</h2>
+      <dl className="account-methods">
+        {rows.map(([k, v]) => (<div key={k}><dt>{k}</dt><dd>{v}</dd></div>))}
+      </dl>
+      <h3 className="account-sub">{t('Recent sign-ins')}</h3>
+      {history && history.length === 0 && <p>{t('Nothing yet.')}</p>}
+      {history && history.length > 0 && (
+        <ul className="account-passkeys" aria-label={t('Recent sign-ins')}>
+          {history.map((h, i) => (
+            <li key={`${h.at}-${i}`}>
+              <span><strong>{t(METHOD_LABELS[h.method] ?? h.method)}</strong> <span className="op-field-help">{h.network}</span></span>
+              <span className="op-field-help">{new Date(h.at).toLocaleString()}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
+/** What to ask when a change needs re-confirming: the password, or for an account that has none (it signs in through a
+ *  provider or a passkey) its own email address. */
+function useConfirm() {
+  const { t } = useTranslation();
+  const { state } = useAuth();
+  const noPassword = state.status === 'user' && state.account.hasPassword === false;
+  return noPassword
+    ? { label: t('Your email address'), type: 'email' as const, autoComplete: 'off' }
+    : { label: t('Password'), type: 'password' as const, autoComplete: 'current-password' };
+}
 
 function ChangePasswordSection() {
   const { t } = useTranslation();
@@ -17,17 +75,20 @@ function ChangePasswordSection() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [saved, setSaved] = useState(false);
+  const { state, refreshAccount } = useAuth();
+  const hasPassword = !(state.status === 'user' && state.account.hasPassword === false);
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
     setSaved(false);
-    if (!current) return setError(t('Enter your current password.'));
+    if (hasPassword && !current) return setError(t('Enter your current password.'));
     if (password.length < MIN_PASSWORD) return setError(t('Use at least {{count}} characters.', { count: MIN_PASSWORD }));
     if (password !== confirm) return setError(t('The two passwords do not match.'));
     setBusy(true);
     setError('');
     try {
       await changePassword(current, password);
+      if (!hasPassword) await refreshAccount();
       setCurrent('');
       setPassword('');
       setConfirm('');
@@ -41,12 +102,15 @@ function ChangePasswordSection() {
 
   return (
     <section className="account-section" aria-labelledby="account-password">
-      <h2 id="account-password">{t('Change password')}</h2>
+      <h2 id="account-password">{hasPassword ? t('Change password') : t('Set a password')}</h2>
+      {!hasPassword && <p>{t('You sign in without a password. Set one to be able to sign in with it too.')}</p>}
       <form className="account-form" onSubmit={submit} noValidate>
-        <div className="op-field">
-          <label className="op-field-label" htmlFor="pw-current">{t('Current password')}</label>
-          <input id="pw-current" className="op-input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
-        </div>
+        {hasPassword && (
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="pw-current">{t('Current password')}</label>
+            <input id="pw-current" className="op-input" type="password" autoComplete="current-password" value={current} onChange={(e) => setCurrent(e.target.value)} />
+          </div>
+        )}
         <div className="op-field">
           <label className="op-field-label" htmlFor="pw-new">{t('New password')}</label>
           <input id="pw-new" className="op-input" type="password" autoComplete="new-password" value={password} onChange={(e) => setPassword(e.target.value)} />
@@ -58,7 +122,7 @@ function ChangePasswordSection() {
         </div>
         <FieldError message={error || null} />
         {saved && <p className="account-ok" role="status">{t('Password changed.')}</p>}
-        <div><Button type="submit" variant="primary" loading={busy}>{t('Change password')}</Button></div>
+        <div><Button type="submit" variant="primary" loading={busy}>{hasPassword ? t('Change password') : t('Set password')}</Button></div>
       </form>
     </section>
   );
@@ -66,6 +130,7 @@ function ChangePasswordSection() {
 
 function EmailSection() {
   const { t } = useTranslation();
+  const confirmBy = useConfirm();
   const [info, setInfo] = useState<{ email: string; pending: string | null } | null>(null);
   const [open, setOpen] = useState(false);
   const [email, setEmail] = useState('');
@@ -114,8 +179,8 @@ function EmailSection() {
             <input id="email-new" className="op-input" type="email" autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} />
           </div>
           <div className="op-field">
-            <label className="op-field-label" htmlFor="email-password">{t('Password')}</label>
-            <input id="email-password" className="op-input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+            <label className="op-field-label" htmlFor="email-password">{confirmBy.label}</label>
+            <input id="email-password" className="op-input" type={confirmBy.type} autoComplete={confirmBy.autoComplete} value={password} onChange={(e) => setPassword(e.target.value)} />
             <span className="op-field-help">{t('We send a link to the new address and a notice to this one. Everyone is signed out when you open the link.')}</span>
           </div>
           <FieldError message={error || null} />
@@ -133,6 +198,7 @@ type TwoFactorView = 'idle' | 'password' | 'scan' | 'codes' | 'regenerate' | 'di
 
 function TwoFactorSection() {
   const { t } = useTranslation();
+  const confirmBy = useConfirm();
   const { refreshAccount } = useAuth();
   const [status, setStatus] = useState<MfaStatus | null>(null);
   const [view, setView] = useState<TwoFactorView>('idle');
@@ -175,8 +241,8 @@ function TwoFactorSection() {
 
   const passwordField = (
     <div className="op-field">
-      <label className="op-field-label" htmlFor="mfa-password">{t('Password')}</label>
-      <input id="mfa-password" className="op-input" type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+      <label className="op-field-label" htmlFor="mfa-password">{confirmBy.label}</label>
+      <input id="mfa-password" className="op-input" type={confirmBy.type} autoComplete={confirmBy.autoComplete} autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
     </div>
   );
   const codeField = (label: string) => (
@@ -253,8 +319,163 @@ function TwoFactorSection() {
   );
 }
 
+function PasskeysSection() {
+  const { t } = useTranslation();
+  const confirmBy = useConfirm();
+  const [list, setList] = useState<Passkey[] | null>(null);
+  const [mode, setMode] = useState<{ kind: 'idle' } | { kind: 'add' } | { kind: 'rename' | 'remove'; passkey: Passkey }>({ kind: 'idle' });
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = () => listPasskeys().then(setList).catch(() => setList(null));
+  useEffect(() => { void load(); }, []);
+  if (!passkeysSupported()) return null;
+
+  const go = (next: typeof mode, initialName = '') => { setMode(next); setName(initialName); setPassword(''); setError(''); };
+  const run = (work: () => Promise<void>) => async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try { await work(); go({ kind: 'idle' }); await load(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); }
+  };
+  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : t('never'));
+
+  return (
+    <section className="account-section" aria-labelledby="account-passkeys">
+      <h2 id="account-passkeys">{t('Passkeys')}</h2>
+      <p>{t('Sign in with your fingerprint, face or device PIN instead of a password. A passkey also replaces the code from your authenticator app.')}</p>
+      {list && list.length > 0 && (
+        <ul className="account-passkeys" aria-label={t('Your passkeys')}>
+          {list.map((p) => (
+            <li key={p.id}>
+              <span><strong>{p.name}</strong> <span className="op-field-help">{t('Added {{date}}, last used {{used}}', { date: when(p.createdAt), used: when(p.lastUsedAt) })}</span></span>
+              <span className="account-actions">
+                <Button size="sm" variant="secondary" onClick={() => go({ kind: 'rename', passkey: p }, p.name)}>{t('Rename')}</Button>
+                <Button size="sm" variant="danger" onClick={() => go({ kind: 'remove', passkey: p })}>{t('Remove')}</Button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {mode.kind === 'idle' && <div><Button variant="secondary" onClick={() => go({ kind: 'add' }, t('This device'))}>{t('Add a passkey…')}</Button></div>}
+      {mode.kind === 'add' && (
+        <form className="account-form" onSubmit={run(() => addPasskey(password, name))} noValidate>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="pk-name">{t('Name')}</label>
+            <input id="pk-name" className="op-input" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="pk-password">{confirmBy.label}</label>
+            <input id="pk-password" className="op-input" type={confirmBy.type} autoComplete={confirmBy.autoComplete} value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <FieldError message={error || null} />
+          <div className="account-actions">
+            <Button type="submit" variant="primary" loading={busy}>{t('Add passkey')}</Button>
+            <Button type="button" variant="secondary" onClick={() => go({ kind: 'idle' })}>{t('Cancel')}</Button>
+          </div>
+        </form>
+      )}
+      {mode.kind === 'rename' && (
+        <form className="account-form" onSubmit={run(() => renamePasskey(mode.passkey.id, name))} noValidate>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="pk-rename">{t('Name')}</label>
+            <input id="pk-rename" className="op-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <FieldError message={error || null} />
+          <div className="account-actions">
+            <Button type="submit" variant="primary" loading={busy}>{t('Save')}</Button>
+            <Button type="button" variant="secondary" onClick={() => go({ kind: 'idle' })}>{t('Cancel')}</Button>
+          </div>
+        </form>
+      )}
+      {mode.kind === 'remove' && (
+        <form className="account-form" onSubmit={run(() => removePasskey(mode.passkey.id, password))} noValidate>
+          <p>{t('Remove “{{name}}”? Other browsers where you are signed in will be signed out.', { name: mode.passkey.name })}</p>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="pk-remove-password">{confirmBy.label}</label>
+            <input id="pk-remove-password" className="op-input" type={confirmBy.type} autoComplete={confirmBy.autoComplete} autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <FieldError message={error || null} />
+          <div className="account-actions">
+            <Button type="submit" variant="danger" loading={busy}>{t('Remove passkey')}</Button>
+            <Button type="button" variant="secondary" onClick={() => go({ kind: 'idle' })}>{t('Cancel')}</Button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
+function LinkedAccountsSection() {
+  const { t } = useTranslation();
+  const confirmBy = useConfirm();
+  const [providers, setProviders] = useState<LinkedProvider[] | null>(null);
+  const [mode, setMode] = useState<{ kind: 'link' | 'unlink'; provider: LinkedProvider } | null>(null);
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+  const justLinked = new URLSearchParams(window.location.search).get('linked');
+
+  const load = () => listLinkedProviders().then(setProviders).catch(() => setProviders(null));
+  useEffect(() => { void load(); }, []);
+  if (!providers || providers.length === 0) return null;
+
+  const submit = async (e: FormEvent) => {
+    e.preventDefault();
+    if (!mode) return;
+    setBusy(true);
+    setError('');
+    try {
+      if (mode.kind === 'link') { await linkProvider(mode.provider.name, password); return; }   // leaves for the provider
+      await unlinkProvider(mode.provider.linked!.id, password);
+      setMode(null);
+      setPassword('');
+      await load();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section className="account-section" aria-labelledby="account-linked">
+      <h2 id="account-linked">{t('Linked accounts')}</h2>
+      <p>{t('Sign in with an account you already have elsewhere.')}</p>
+      {justLinked && <p className="account-ok" role="status">{t('Linked.')}</p>}
+      <ul className="account-passkeys" aria-label={t('Linked accounts')}>
+        {providers.map((p) => (
+          <li key={p.name}>
+            <span><strong>{p.label}</strong>{p.linked && <> <span className="op-field-help">{p.linked.email || t('Linked')}</span></>}</span>
+            {p.linked
+              ? <Button size="sm" variant="danger" onClick={() => { setMode({ kind: 'unlink', provider: p }); setPassword(''); setError(''); }}>{t('Unlink')}</Button>
+              : <Button size="sm" variant="secondary" onClick={() => { setMode({ kind: 'link', provider: p }); setPassword(''); setError(''); }}>{t('Link')}</Button>}
+          </li>
+        ))}
+      </ul>
+      {mode && (
+        <form className="account-form" onSubmit={submit} noValidate>
+          <p>{mode.kind === 'link' ? t('Enter your password, then sign in at {{provider}} to link it.', { provider: mode.provider.label }) : t('Unlink {{provider}}? You can still sign in another way.', { provider: mode.provider.label })}</p>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="linked-password">{confirmBy.label}</label>
+            <input id="linked-password" className="op-input" type={confirmBy.type} autoComplete={confirmBy.autoComplete} autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <FieldError message={error || null} />
+          <div className="account-actions">
+            <Button type="submit" variant={mode.kind === 'link' ? 'primary' : 'danger'} loading={busy}>{mode.kind === 'link' ? t('Continue') : t('Unlink')}</Button>
+            <Button type="button" variant="secondary" onClick={() => setMode(null)}>{t('Cancel')}</Button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
 function DeleteAccountSection() {
   const { t } = useTranslation();
+  const confirmBy = useConfirm();
   const { signOut } = useAuth();
   const navigate = useNavigate();
   const [open, setOpen] = useState(false);
@@ -309,8 +530,8 @@ function DeleteAccountSection() {
           <div className="account-form">
             <p>{t('Your projects, files and versions are deleted for good.')}</p>
             <div className="op-field">
-              <label className="op-field-label" htmlFor="delete-password">{t('Password')}</label>
-              <input id="delete-password" className="op-input" type="password" autoComplete="current-password" autoFocus value={password}
+              <label className="op-field-label" htmlFor="delete-password">{confirmBy.label}</label>
+              <input id="delete-password" className="op-input" type={confirmBy.type} autoComplete={confirmBy.autoComplete} autoFocus value={password}
                 onChange={(e) => setPassword(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void confirm(); }} />
             </div>
             <FieldError message={error || null} />
@@ -338,9 +559,12 @@ export default function AccountPage() {
       <main className="account-main">
         <h1>{t('Account settings')}</h1>
         {account && <p className="account-who">{account.name ? `${account.name} · ` : ''}{account.email}</p>}
+        <SignInMethodsSection />
         <EmailSection />
         <ChangePasswordSection />
         <TwoFactorSection />
+        <PasskeysSection />
+        <LinkedAccountsSection />
         <section className="account-section" aria-labelledby="account-keys">
           <h2 id="account-keys">{t('Your keys')}</h2>
           <p>{t('When your Zotero key and your own AI keys were set, replaced or removed.')}</p>

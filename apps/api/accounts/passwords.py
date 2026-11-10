@@ -80,7 +80,8 @@ class ChangePasswordView(APIView):
     def post(self, request):
         b = request.data if isinstance(request.data, dict) else {}
         user = request.user
-        if not user.check_password(str(b.get('current') or '')):
+        # An account that signs in through a provider or a passkey has no password yet: setting one needs no current one.
+        if user.has_usable_password() and not user.check_password(str(b.get('current') or '')):
             return Response({'ok': False, 'error': 'Your current password is not correct.'}, status=400)
         password = str(b.get('password') or '')
         error = _password_error(password, user)

@@ -122,7 +122,9 @@ bypass it.
 
 ## B) Social sign-in, two-factor and passkeys
 
-**Split:** v0.1.3 takes the spike, B1 (foundation, email change), B2 (TOTP, required for superadmins) and B6 (one
+**v0.1.4** (issues #96-#101 in `docs/todo.md`) takes B3, B4 and B5; decided: Google and ORCID through our own small OIDC client (no sessions), passkeys count as both factors, social sign-in still needs an invitation and a TOTP account still gets the code step.
+
+**Split:** v0.1.3 took the spike, B1 (foundation, email change), B2 (TOTP, required for superadmins) and B6 (one
 sign-in); issues #88-#95, done in `docs/xchangelog.md` (v0.1.3). Still here for v0.1.4: B3 passkeys, B4 social sign-in (ORCID and Google
 chosen), B5 sign-in methods page.
 
@@ -153,12 +155,12 @@ work and that a refresh cannot bypass a second factor.
       event log and account deletion. Closes the follow-up "no way to change the account's email address".
 - [x] **B2 Two-factor (TOTP + recovery codes).** Enrol and disable from the Account page; login asks for the code; a
       superadmin can reset a locked-out user's second factor (audited). Required for superadmins.
-- [ ] **B3 Passkeys.** Register and sign in with passkeys (WebAuthn). The relying-party id is the public host
+- [x] **B3 Passkeys.** Register and sign in with passkeys (WebAuthn). The relying-party id is the public host
       (`openprism.cent-su.org`; `localhost` in development); check it behind Caddy and nginx.
-- [ ] **B4 Social sign-in.** Providers to choose (Google, GitHub, ORCID, university OIDC/SAML). **Still requires an
+- [x] **B4 Social sign-in.** Providers to choose (Google, GitHub, ORCID, university OIDC/SAML). **Still requires an
       invitation (A).** Link a provider to an existing account only by an email the provider reports as verified (an
       unverified provider email is an account-takeover route); never create a second account for an invited address.
-- [ ] **B5 Account page: sign-in methods.** List and add/remove email addresses, social accounts, passkeys and the
+- [x] **B5 Account page: sign-in methods.** List and add/remove email addresses, social accounts, passkeys and the
       second factor; refuse to remove the last way to sign in; recent sign-ins.
 - [x] **B6 One sign-in for the app and the Django admin.** Today a superadmin signs in twice: the app (JWT in memory +
       httpOnly refresh cookie) and `/admin/` (its own `openprism_admin` session, v0.1.1) share nothing. First step: an

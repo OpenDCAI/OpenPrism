@@ -54,6 +54,14 @@ secrets:
   OPENPRISM_LLM_ENDPOINT: ""
   OPENPRISM_LLM_MODEL: ""
   OPENPRISM_MINERU_TOKEN: ""
+  # Sign in with Google / ORCID (v0.1.4): a provider is on when both of its values are set. Optional; see README, "Social sign-in".
+  SOCIAL_GOOGLE_CLIENT_ID: ""
+  SOCIAL_GOOGLE_CLIENT_SECRET: ""
+  SOCIAL_ORCID_CLIENT_ID: ""
+  SOCIAL_ORCID_CLIENT_SECRET: ""
+
+social:
+  orcidSandbox: false     # true: sandbox.orcid.org (register the app there first)
 
 # Who may create an account (v0.1.2). `invite` (default): only addresses a superadmin invited in /admin/ (platform
 # invitations) or, unless workspaceInvitesAllowSignup is false, that a workspace admin invited. `open`: anyone who finds

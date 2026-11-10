@@ -161,7 +161,7 @@ class PublicConfigTests(TestCase):
     def test_reports_the_mode_and_contact_and_nothing_else(self):
         res = APIClient().get('/api/config')
         self.assertEqual(res.status_code, 200)
-        self.assertEqual(set(res.json()), {'ok', 'registration', 'contactEmail'})
+        self.assertEqual(set(res.json()), {'ok', 'registration', 'contactEmail', 'socialProviders'})
         self.assertEqual(res.json()['registration'], 'open')
         with override_settings(REGISTRATION_MODE='invite', ACCESS_CONTACT_EMAIL='help@example.org'):
             body = APIClient().get('/api/config').json()

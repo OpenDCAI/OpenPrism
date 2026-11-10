@@ -1,0 +1,5 @@
+Hello {{ name }},
+
+A passkey was just added to your OpenPrism account. You can now sign in with it, without a password.
+
+If this was not you, reset your password at {{ app_url }}/forgot-password and tell your workspace administrator.

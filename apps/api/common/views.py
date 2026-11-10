@@ -12,7 +12,8 @@ def public_config(request):
     """What the signed-out pages need to know (v0.1.2): whether registration is open or by invitation, and whom to
     contact. Nothing else is revealed here."""
     response = JsonResponse({'ok': True, 'registration': settings.REGISTRATION_MODE,
-                             'contactEmail': settings.ACCESS_CONTACT_EMAIL or None})
+                             'contactEmail': settings.ACCESS_CONTACT_EMAIL or None,
+                             'socialProviders': [{'name': n, 'label': c['label']} for n, c in settings.SOCIAL_PROVIDERS.items()]})
     response['Cache-Control'] = 'public, max-age=60'
     return response
 
