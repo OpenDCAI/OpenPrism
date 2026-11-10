@@ -810,6 +810,103 @@ export async function confirmEmailChange(token: string) {
   return authCall<{ ok: boolean; email: string }>('/api/auth/email/confirm', { token });
 }
 
+// ---- Passkeys (WebAuthn). The server speaks the WebAuthn JSON mapping; the browser wants ArrayBuffers. ----
+
+export interface Passkey { id: string; name: string; createdAt: string; lastUsedAt: string | null }
+
+export const passkeysSupported = () => typeof window !== 'undefined' && !!window.PublicKeyCredential && !!navigator.credentials;
+
+const b64 = {
+  decode: (s: string) => {
+    const bin = atob(s.replace(/-/g, '+').replace(/_/g, '/').padEnd(Math.ceil(s.length / 4) * 4, '='));
+    return Uint8Array.from(bin, (c) => c.charCodeAt(0)).buffer;
+  },
+  encode: (buf: ArrayBuffer) => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+};
+
+type Json = Record<string, any>; // eslint-disable-line @typescript-eslint/no-explicit-any
+
+function creationOptions(o: Json): CredentialCreationOptions {
+  const pk = o.publicKey;
+  return { publicKey: {
+    ...pk,
+    challenge: b64.decode(pk.challenge),
+    user: { ...pk.user, id: b64.decode(pk.user.id) },
+    excludeCredentials: (pk.excludeCredentials || []).map((c: Json) => ({ ...c, id: b64.decode(c.id) }))
+  } };
+}
+
+function requestOptions(o: Json): CredentialRequestOptions {
+  const pk = o.publicKey;
+  return { publicKey: {
+    ...pk,
+    challenge: b64.decode(pk.challenge),
+    allowCredentials: (pk.allowCredentials || []).map((c: Json) => ({ ...c, id: b64.decode(c.id) }))
+  } };
+}
+
+function credentialJson(c: PublicKeyCredential): Json {
+  const r = c.response as AuthenticatorAttestationResponse & AuthenticatorAssertionResponse;
+  const response: Json = { clientDataJSON: b64.encode(r.clientDataJSON) };
+  if (r.attestationObject) {
+    response.attestationObject = b64.encode(r.attestationObject);
+    response.transports = r.getTransports?.() ?? [];
+  } else {
+    response.authenticatorData = b64.encode(r.authenticatorData);
+    response.signature = b64.encode(r.signature);
+    if (r.userHandle) response.userHandle = b64.encode(r.userHandle);
+  }
+  return { id: c.id, rawId: b64.encode(c.rawId), type: c.type, clientExtensionResults: c.getClientExtensionResults(), response };
+}
+
+/** A calm message for the browser prompt being cancelled or timing out. */
+function passkeyError(err: unknown): Error {
+  if (err instanceof DOMException && (err.name === 'NotAllowedError' || err.name === 'AbortError')) {
+    return new Error('The passkey prompt was cancelled or timed out. Try again.');
+  }
+  return err instanceof Error ? err : new Error(String(err));
+}
+
+export async function listPasskeys(): Promise<Passkey[]> {
+  return (await request<{ passkeys: Passkey[] }>('/api/auth/passkeys')).passkeys;
+}
+
+export async function addPasskey(password: string, name: string): Promise<void> {
+  const { options, state } = await request<{ options: Json; state: string }>('/api/auth/passkeys/options', { method: 'POST', body: JSON.stringify({ password }) });
+  let credential: Credential | null;
+  try {
+    credential = await navigator.credentials.create(creationOptions(options));
+  } catch (err) {
+    throw passkeyError(err);
+  }
+  if (!credential) throw new Error('The passkey prompt was cancelled or timed out. Try again.');
+  await request('/api/auth/passkeys', { method: 'POST', body: JSON.stringify({ state, name, credential: credentialJson(credential as PublicKeyCredential) }) });
+}
+
+export async function renamePasskey(id: string, name: string): Promise<void> {
+  await request(`/api/auth/passkeys/${id}`, { method: 'PATCH', body: JSON.stringify({ name }) });
+}
+
+export async function removePasskey(id: string, password: string): Promise<void> {
+  const res = await request<{ access: string }>(`/api/auth/passkeys/${id}`, { method: 'DELETE', body: JSON.stringify({ password }) });
+  setSession({ access: res.access });
+}
+
+/** Sign in with a passkey (no password, no code). */
+export async function loginWithPasskey(): Promise<Account> {
+  const { options, state } = await authCall<{ options: Json; state: string }>('/api/auth/passkeys/login/options', {});
+  let credential: Credential | null;
+  try {
+    credential = await navigator.credentials.get(requestOptions(options));
+  } catch (err) {
+    throw passkeyError(err);
+  }
+  if (!credential) throw new Error('The passkey prompt was cancelled or timed out. Try again.');
+  const res = await authCall<{ access: string }>('/api/auth/passkeys/login', { state, credential: credentialJson(credential as PublicKeyCredential) });
+  setSession({ access: res.access });
+  return fetchMe();
+}
+
 /** Open the Django admin signed in as this superadmin, in a new tab. The one-time code goes in a form POST, never a URL. */
 export async function openAdmin(): Promise<void> {
   const { code } = await request<{ code: string }>('/api/auth/admin-handoff', { method: 'POST' });

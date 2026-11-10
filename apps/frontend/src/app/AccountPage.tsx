@@ -3,8 +3,8 @@ import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import { AppTopBar, Button, CrumbSep, FieldError, Modal } from '@design';
-import { cancelEmailChange, changePassword, clearLocalSession, emailInfo, requestEmailChange, deleteAccount, mfaDisable, mfaEnable, mfaNewRecoveryCodes, mfaSetup, mfaStatus, myCredentialEvents } from '../api/client';
-import type { MfaSetup, MfaStatus } from '../api/client';
+import { addPasskey, cancelEmailChange, listPasskeys, passkeysSupported, removePasskey, renamePasskey, changePassword, clearLocalSession, emailInfo, requestEmailChange, deleteAccount, mfaDisable, mfaEnable, mfaNewRecoveryCodes, mfaSetup, mfaStatus, myCredentialEvents } from '../api/client';
+import type { MfaSetup, MfaStatus, Passkey } from '../api/client';
 import { useAuth } from '../auth/AuthProvider';
 import { MIN_PASSWORD } from './PasswordPages';
 import CredentialHistory from './CredentialHistory';
@@ -253,6 +253,94 @@ function TwoFactorSection() {
   );
 }
 
+function PasskeysSection() {
+  const { t } = useTranslation();
+  const [list, setList] = useState<Passkey[] | null>(null);
+  const [mode, setMode] = useState<{ kind: 'idle' } | { kind: 'add' } | { kind: 'rename' | 'remove'; passkey: Passkey }>({ kind: 'idle' });
+  const [name, setName] = useState('');
+  const [password, setPassword] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = () => listPasskeys().then(setList).catch(() => setList(null));
+  useEffect(() => { void load(); }, []);
+  if (!passkeysSupported()) return null;
+
+  const go = (next: typeof mode, initialName = '') => { setMode(next); setName(initialName); setPassword(''); setError(''); };
+  const run = (work: () => Promise<void>) => async (e: FormEvent) => {
+    e.preventDefault();
+    setBusy(true);
+    setError('');
+    try { await work(); go({ kind: 'idle' }); await load(); } catch (err) { setError(err instanceof Error ? err.message : String(err)); } finally { setBusy(false); }
+  };
+  const when = (iso: string | null) => (iso ? new Date(iso).toLocaleDateString() : t('never'));
+
+  return (
+    <section className="account-section" aria-labelledby="account-passkeys">
+      <h2 id="account-passkeys">{t('Passkeys')}</h2>
+      <p>{t('Sign in with your fingerprint, face or device PIN instead of a password. A passkey also replaces the code from your authenticator app.')}</p>
+      {list && list.length > 0 && (
+        <ul className="account-passkeys" aria-label={t('Your passkeys')}>
+          {list.map((p) => (
+            <li key={p.id}>
+              <span><strong>{p.name}</strong> <span className="op-field-help">{t('Added {{date}}, last used {{used}}', { date: when(p.createdAt), used: when(p.lastUsedAt) })}</span></span>
+              <span className="account-actions">
+                <Button size="sm" variant="secondary" onClick={() => go({ kind: 'rename', passkey: p }, p.name)}>{t('Rename')}</Button>
+                <Button size="sm" variant="danger" onClick={() => go({ kind: 'remove', passkey: p })}>{t('Remove')}</Button>
+              </span>
+            </li>
+          ))}
+        </ul>
+      )}
+      {mode.kind === 'idle' && <div><Button variant="secondary" onClick={() => go({ kind: 'add' }, t('This device'))}>{t('Add a passkey…')}</Button></div>}
+      {mode.kind === 'add' && (
+        <form className="account-form" onSubmit={run(() => addPasskey(password, name))} noValidate>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="pk-name">{t('Name')}</label>
+            <input id="pk-name" className="op-input" value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="pk-password">{t('Password')}</label>
+            <input id="pk-password" className="op-input" type="password" autoComplete="current-password" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <FieldError message={error || null} />
+          <div className="account-actions">
+            <Button type="submit" variant="primary" loading={busy}>{t('Add passkey')}</Button>
+            <Button type="button" variant="secondary" onClick={() => go({ kind: 'idle' })}>{t('Cancel')}</Button>
+          </div>
+        </form>
+      )}
+      {mode.kind === 'rename' && (
+        <form className="account-form" onSubmit={run(() => renamePasskey(mode.passkey.id, name))} noValidate>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="pk-rename">{t('Name')}</label>
+            <input id="pk-rename" className="op-input" autoFocus value={name} onChange={(e) => setName(e.target.value)} />
+          </div>
+          <FieldError message={error || null} />
+          <div className="account-actions">
+            <Button type="submit" variant="primary" loading={busy}>{t('Save')}</Button>
+            <Button type="button" variant="secondary" onClick={() => go({ kind: 'idle' })}>{t('Cancel')}</Button>
+          </div>
+        </form>
+      )}
+      {mode.kind === 'remove' && (
+        <form className="account-form" onSubmit={run(() => removePasskey(mode.passkey.id, password))} noValidate>
+          <p>{t('Remove “{{name}}”? Other browsers where you are signed in will be signed out.', { name: mode.passkey.name })}</p>
+          <div className="op-field">
+            <label className="op-field-label" htmlFor="pk-remove-password">{t('Password')}</label>
+            <input id="pk-remove-password" className="op-input" type="password" autoComplete="current-password" autoFocus value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <FieldError message={error || null} />
+          <div className="account-actions">
+            <Button type="submit" variant="danger" loading={busy}>{t('Remove passkey')}</Button>
+            <Button type="button" variant="secondary" onClick={() => go({ kind: 'idle' })}>{t('Cancel')}</Button>
+          </div>
+        </form>
+      )}
+    </section>
+  );
+}
+
 function DeleteAccountSection() {
   const { t } = useTranslation();
   const { signOut } = useAuth();
@@ -341,6 +429,7 @@ export default function AccountPage() {
         <EmailSection />
         <ChangePasswordSection />
         <TwoFactorSection />
+        <PasskeysSection />
         <section className="account-section" aria-labelledby="account-keys">
           <h2 id="account-keys">{t('Your keys')}</h2>
           <p>{t('When your Zotero key and your own AI keys were set, replaced or removed.')}</p>

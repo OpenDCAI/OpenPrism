@@ -1015,5 +1015,17 @@
   "Change email address…": "更改邮箱…",
   "New email address": "新邮箱地址",
   "We send a link to the new address and a notice to this one. Everyone is signed out when you open the link.": "我们会向新地址发送链接,并向当前地址发送通知。打开链接后所有设备都会退出登录。",
-  "Send the link": "发送链接"
+  "Send the link": "发送链接",
+  "Sign in with a passkey": "使用通行密钥登录",
+  "Passkeys": "通行密钥",
+  "Sign in with your fingerprint, face or device PIN instead of a password. A passkey also replaces the code from your authenticator app.": "用指纹、面部或设备 PIN 代替密码登录。通行密钥也可代替验证器应用的验证码。",
+  "Your passkeys": "您的通行密钥",
+  "Added {{date}}, last used {{used}}": "添加于 {{date}},上次使用 {{used}}",
+  "never": "从未",
+  "Rename": "重命名",
+  "Add a passkey…": "添加通行密钥…",
+  "This device": "此设备",
+  "Add passkey": "添加通行密钥",
+  "Remove “{{name}}”? Other browsers where you are signed in will be signed out.": "移除“{{name}}”?其他已登录的浏览器将退出登录。",
+  "Remove passkey": "移除通行密钥"
 }
