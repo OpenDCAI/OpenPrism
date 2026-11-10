@@ -1,5 +1,16 @@
 # Doing Now
 
+## v0.1.3 - Two-factor sign-in and one sign-in for the admin
+
+- [ ] #88 Auth: spike - django-allauth as a library behind our JWT login (go/no-go)
+- [ ] #89 Auth: foundation - allauth email addresses mirror our accounts
+- [ ] #90 Auth: change the account's email address
+- [ ] #91 Auth: two-factor (TOTP and recovery codes) at the API
+- [ ] #92 Auth: second factor in the app (Account page and sign-in)
+- [ ] #93 Admin: superadmins require two-factor; reset a locked-out user's second factor
+- [ ] #94 Admin: one sign-in for the app and the Django admin (B6)
+- [ ] #95 Release v0.1.3: deployment settings, docs and version
+
 ## v0.1.2 - Invitation-only access
 
 - [x] #83 Invitations: PlatformInvite model, service and mail

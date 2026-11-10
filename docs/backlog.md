@@ -122,6 +122,10 @@ bypass it.
 
 ## B) Social sign-in, two-factor and passkeys
 
+**Split:** v0.1.3 takes the spike, B1 (foundation, email change), B2 (TOTP, required for superadmins) and B6 (one
+sign-in); issues #88-#95 in `docs/todo.md`. Still here for v0.1.4: B3 passkeys, B4 social sign-in (ORCID and Google
+chosen), B5 sign-in methods page.
+
 **Use cases:** sign in with a social/SSO provider; one account that can be reached by several sign-in methods (separate
 the account from its email and sign-in method); two-factor authentication; passkeys.
 
