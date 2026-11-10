@@ -211,6 +211,8 @@ REFRESH_COOKIE_NAME = 'openprism_refresh'
 # The Django admin (#80) is the only user of sessions and CSRF cookies: the app itself authenticates with JWTs. Its own
 # cookie name and flags keep it apart from the app's cookies; the session is short.
 ADMIN_SESSION_HOURS = int(env('ADMIN_SESSION_HOURS', '8'))
+# Superadmins must have two-factor authentication to use the admin (on by default; compose and the test runner turn it off).
+SUPERADMIN_REQUIRE_MFA = env_bool('SUPERADMIN_REQUIRE_MFA', not TESTING)
 ADMIN_LOGIN_RATE_PER_15_MIN = int(env('ADMIN_LOGIN_RATE_PER_15_MIN', '10'))  # login form submissions per address
 SESSION_COOKIE_NAME = 'openprism_admin'
 SESSION_COOKIE_AGE = ADMIN_SESSION_HOURS * 3600

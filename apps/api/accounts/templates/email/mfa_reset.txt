@@ -1,0 +1,5 @@
+Hello {{ name }},
+
+A site administrator reset two-factor authentication on your OpenPrism account, and you have been signed out everywhere. Sign in with your password and turn two-factor authentication on again from Account settings.
+
+If you did not ask for this, reset your password at {{ app_url }}/forgot-password and tell your workspace administrator.

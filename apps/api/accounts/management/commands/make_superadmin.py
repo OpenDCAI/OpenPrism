@@ -30,3 +30,7 @@ class Command(BaseCommand):
         except superadmins.SuperadminError as e:
             raise CommandError(str(e))
         self.stdout.write(f'{user.email} is a superadmin' + (' (account created)' if created else '') + '.')
+        from django.conf import settings
+        from accounts import mfa
+        if settings.SUPERADMIN_REQUIRE_MFA and not mfa.enabled(user):
+            self.stdout.write('The admin needs two-factor authentication: sign in to the app, turn it on under Account settings, then open /admin/.')

@@ -244,6 +244,22 @@ def remove(user):
     Authenticator.objects.filter(user=user).delete()
 
 
+def admin_reset(user, actor):
+    """A superadmin removes someone's second factor (they lost the phone and the recovery codes). Signs them out
+    everywhere, writes the admin's log and tells the owner."""
+    from django.contrib.admin.models import CHANGE, LogEntry
+    from django.contrib.contenttypes.models import ContentType
+    if not enabled(user):
+        return False
+    with transaction.atomic():
+        remove(user)
+        revoke_refresh_tokens(user)
+        LogEntry.objects.create(user=actor, content_type=ContentType.objects.get_for_model(user), object_id=str(user.pk),
+                                object_repr=str(user), action_flag=CHANGE, change_message='Two-factor authentication reset.')
+    notice(user, 'mfa_reset')
+    return True
+
+
 class LoginMfaView(APIView):
     """POST {ticket, code}: the second step of signing in. Issues the tokens the password step withheld."""
     permission_classes = [AllowAny]
