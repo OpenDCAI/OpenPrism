@@ -122,7 +122,9 @@ bypass it.
 
 ## B) Social sign-in, two-factor and passkeys
 
-**Split:** v0.1.3 takes the spike, B1 (foundation, email change), B2 (TOTP, required for superadmins) and B6 (one
+**v0.1.4** (issues #96-#101 in `docs/todo.md`) takes B3, B4 and B5; decided: Google and ORCID through our own small OIDC client (no sessions), passkeys count as both factors, social sign-in still needs an invitation and a TOTP account still gets the code step.
+
+**Split:** v0.1.3 took the spike, B1 (foundation, email change), B2 (TOTP, required for superadmins) and B6 (one
 sign-in); issues #88-#95, done in `docs/xchangelog.md` (v0.1.3). Still here for v0.1.4: B3 passkeys, B4 social sign-in (ORCID and Google
 chosen), B5 sign-in methods page.
 
