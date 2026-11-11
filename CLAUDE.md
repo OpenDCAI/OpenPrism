@@ -21,7 +21,7 @@ npm run dev                         # Vite on :5173, proxies /api + websockets t
 ```
 
 - **Use the app** at http://localhost:5173 (hot reload) or http://localhost:8080 (the production `web` image). Register an account in the UI; there is no seeded user.
-- **Legacy data:** `docker compose exec api python manage.py import_legacy --owner you@example.com` loads `templates/` and `data/` (mounted read-only at `/legacy/`) into an account. Register that account first.
+- **Legacy data:** `docker compose exec api python manage.py import_legacy --owner you@example.com` loads `data/` (mounted read-only at `/legacy/data`; the built-in templates need no mount, see *Templates*) into an account. Register that account first.
 - **API tests** (real Postgres/Redis/Garage; run `deploy/garage-init.sh` once first; always pass `--noinput`, since a stale `test_openprism` database otherwise blocks on a prompt):
   - `docker compose run --rm api python manage.py test --noinput` (LaTeX/plot tests skip here)
   - `docker compose run --rm worker-tex python manage.py test jobs transfer --noinput` (real pdflatex/bibtex)
@@ -254,9 +254,9 @@ Rules when writing UI:
 
 `design/reference/` also has `index.html` (clickable prototype of the workspace home + editor shell), sharing `openprism.css` and `icons.js`. Open these directly in a browser; they are standalone HTML, not part of the Vite build.
 
-### Templates (`templates/`)
+### Templates (`apps/api/builtin_templates/`)
 
-Built-in conference templates (ACL, CVPR, NeurIPS, ICML) registered in `templates/manifest.json` (id, label, mainFile, category, bilingual descriptions, tags). In the Django API, templates are `Template` rows with files in Garage; users upload custom ones as a ZIP via `POST /api/templates/upload`. `manage.py import_legacy` loads this directory into them, and `manifest.json` is no longer the source of truth.
+Built-in conference templates (ACL, arXiv, CVPR, ICML, NeurIPS) registered in `builtin_templates/manifest.json` (id, label, mainFile, category, bilingual descriptions, tags). They live inside `apps/api` so every API/worker image carries them (`settings.BUILTIN_TEMPLATES_DIR`). In the Django API, templates are `Template` rows with files in object storage; users upload custom ones as a ZIP via `POST /api/templates/upload`. `manage.py load_builtin_templates` (a wrapper over `import_legacy --skip-projects`) creates or refreshes the built-ins from the image; it is idempotent, rewrites only built-ins, and leaves a user template that happens to share a built-in's id alone. The Helm `migrate` Job runs it after `migrate` on every release (a fresh database gets the built-ins that way, #75); compose and CI load them with `import_legacy --skip-projects`/`load_builtin_templates` by hand.
 
 ### Kubernetes (`deploy/helm`, `deploy/bootstrap`, `deploy/caddy`)
 

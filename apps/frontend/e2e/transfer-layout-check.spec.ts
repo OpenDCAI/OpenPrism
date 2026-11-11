@@ -8,7 +8,7 @@ import { newAccount, newProject, signIn } from './helpers';
 // PDF. The transfer endpoints are stubbed (no LLM needed); what is under test is that the panel renders the PDF's
 // pages, posts them, and resumes. Needs the templates loaded: docker compose exec api python manage.py import_legacy --skip-projects
 
-const PDF = readFileSync(fileURLToPath(new URL('../../../templates/arxiv/template.pdf', import.meta.url)));
+const PDF = readFileSync(fileURLToPath(new URL('../../api/builtin_templates/arxiv/template.pdf', import.meta.url)));
 const json = (route: Route, body: unknown) => route.fulfill({ contentType: 'application/json', body: JSON.stringify(body) });
 
 interface Stub { submitted: { images: { page: number; base64: string; mime: string }[] } | null; steps: number }
