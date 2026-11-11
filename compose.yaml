@@ -67,7 +67,7 @@ services:
     build: {context: ./apps/api, target: dev} # api + test-only dependencies (requirements-dev.txt)
     command: >
       sh -c "python manage.py migrate --noinput &&
-             uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload"
+             uvicorn config.asgi:application --host 0.0.0.0 --port 8000 --reload --timeout-graceful-shutdown 5"
     environment: &api-env
       DJANGO_DEBUG: "1"
       DJANGO_SECRET_KEY: ${DJANGO_SECRET_KEY:-dev-insecure-change-me}
