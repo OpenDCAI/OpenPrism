@@ -272,6 +272,7 @@ CELERY_TASK_ROUTES = {
     # without these, jobs whose worker died stay "running" forever and hold the user's compile slots (429).
     'jobs.tasks.reap_stale_jobs': {'queue': 'import'},
     'accounts.tasks.prune_sign_ins': {'queue': 'import'},
+    'accounts.tasks.clear_expired_sessions': {'queue': 'import'},
     'jobs.tasks.cleanup_old_jobs': {'queue': 'import'},
     'collab.tasks.*': {'queue': 'import'},
     'versions.tasks.*': {'queue': 'import'},
@@ -285,6 +286,7 @@ CELERY_BEAT_SCHEDULE = {
     'recover-collab-logs': {'task': 'collab.tasks.recover_update_logs', 'schedule': 60.0},
     'prune-versions': {'task': 'versions.tasks.prune_versions', 'schedule': 86400.0},
     'prune-sign-ins': {'task': 'accounts.tasks.prune_sign_ins', 'schedule': 86400.0},
+    'clear-expired-sessions': {'task': 'accounts.tasks.clear_expired_sessions', 'schedule': 86400.0},
     'prune-llm-usage': {'task': 'integrations.tasks.prune_llm_usage', 'schedule': 86400.0},
     'cleanup-pending-uploads': {'task': 'projects.tasks.cleanup_pending_uploads', 'schedule': 900.0},
 }

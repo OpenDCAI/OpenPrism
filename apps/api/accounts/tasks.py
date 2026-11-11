@@ -38,3 +38,10 @@ def send_email(self, to, template, context, invite_id=None, platform_invite_id=N
 def prune_sign_ins():
     from .signins import prune
     return prune()
+
+
+@shared_task(name='accounts.tasks.clear_expired_sessions')
+def clear_expired_sessions():
+    """The admin is the only user of Django sessions; delete the expired ones daily (#104)."""
+    from django.core.management import call_command
+    call_command('clearsessions')
