@@ -207,19 +207,12 @@ export function refreshSession(opts: { legacyRefresh?: string; quietReject?: boo
   refreshInFlight = withRefreshLock(async () => {
     if (session && session.access !== before && stillFresh(session.access)) return true; // another tab just did it
     try {
-      const post = () => fetch('/api/auth/refresh', {
+      const res = await fetch('/api/auth/refresh', {
         method: 'POST',
         credentials: 'same-origin',
         headers: { 'Content-Type': 'application/json', 'X-OpenPrism-Refresh': '1' },
         body: opts.legacyRefresh ? JSON.stringify({ refresh: opts.legacyRefresh }) : undefined
       });
-      let res = await post();
-      const noSession = res.status === 401 && ((await res.clone().json().catch(() => ({}))) as { code?: string }).code === 'no_session';
-      if (res.status === 401 && !noSession) {
-        // A token minted a moment ago is "not yet valid" to a server whose clock has just stepped back: try once more.
-        await new Promise((r) => setTimeout(r, 1500));
-        res = await post();
-      }
       if (res.status === 401 || res.status === 400 || res.status === 403) {
         if (opts.quietReject) dropSession();
         else clearSession(); // revoked or expired: the account must sign in again
