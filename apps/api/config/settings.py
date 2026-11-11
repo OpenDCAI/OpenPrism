@@ -34,6 +34,15 @@ SECRET_KEY = env('DJANGO_SECRET_KEY', 'test-only-secret' if TESTING else None, r
 # so a key is rotated by putting the new one in front. No default outside tests, like SECRET_KEY.
 CREDENTIAL_ENCRYPTION_KEY = env('CREDENTIAL_ENCRYPTION_KEY',
                                 'b3BlbnByaXNtLXRlc3Qta2V5LW5vdC1zZWNyZXQtMDE=' if TESTING else None, required=True)
+# Rotating DJANGO_SECRET_KEY: put the new value in DJANGO_SECRET_KEY and the old one here (comma-separated) so signed links,
+# tickets and URL tokens made with the old key still verify until they expire. Django uses these only to verify. The JWT
+# access and refresh tokens are signed with SECRET_KEY alone, so a rotation signs everyone out (README, "Secrets").
+SECRET_KEY_FALLBACKS = [k.strip() for k in (env('DJANGO_SECRET_KEY_FALLBACKS', '') or '').split(',') if k.strip()]
+if not (DEBUG or TESTING):
+    from common.secretcheck import problems as _secret_problems
+    _bad = _secret_problems(SECRET_KEY, CREDENTIAL_ENCRYPTION_KEY)
+    if _bad:   # a deployment with placeholder or weak secrets must not start (#117)
+        raise ImproperlyConfigured('Unfit secrets: ' + '; '.join(_bad))
 ZOTERO_API_BASE = env('ZOTERO_API_BASE', 'https://api.zotero.org').rstrip('/')
 if env_bool('DJANGO_BEHIND_TLS_PROXY', False):
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # the ingress terminates TLS

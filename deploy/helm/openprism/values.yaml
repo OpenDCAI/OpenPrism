@@ -46,6 +46,7 @@ mail:
 # commas or backslashes survive. Only the first three are required; the AI keys are optional server-side defaults.
 secrets:
   DJANGO_SECRET_KEY: ""
+  DJANGO_SECRET_KEY_FALLBACKS: ""  # only while rotating DJANGO_SECRET_KEY: the previous key(s), comma-separated (README, "Secrets")
   CREDENTIAL_ENCRYPTION_KEY: ""   # Fernet key(s); never change once users have stored keys (comma-separated rotates)
   REDIS_PASSWORD: ""
   EMAIL_HOST_USER: ""
