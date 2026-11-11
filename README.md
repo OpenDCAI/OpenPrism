@@ -179,6 +179,10 @@ In the editor's right rail choose **Zotero**, paste an API key created at https:
 
 The values in `.env.sample` (all-zero Garage secrets, `dev-insecure-change-me`) are for local development only. Never reuse them on a shared deployment.
 
+## Reporting issues and planning
+
+Bugs and ideas are GitHub issues: use **New issue** and pick *Bug report* or *Feature request* (the form asks for the version shown at the bottom of the account menu). Maintainers label each issue with a priority (`priority:P0`-`P3`), a type (`type:*`) and, once scheduled, a release (`vX.Y.Z` label and milestone). The milestones are the roadmap.
+
 ## Deployment
 
 Production runs on the cent Kubernetes cluster at https://openprism.cent-su.org: pushing a `vX.Y.Z` tag runs `.github/workflows/deploy-cent-k8s.yaml`, which builds the four images and installs the Helm chart in `deploy/helm/openprism` (Postgres, Redis and MinIO are the cluster's hosted services; an external Caddy2 proxies a NodePort). v0.1.0.4 is the first release that went through the whole pipeline; read `deploy/helm/README.md` for operating it and for what is still unverified.
