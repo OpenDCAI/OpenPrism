@@ -7,6 +7,9 @@ from django import forms
 from django.conf import settings
 from django.contrib.admin import AdminSite
 from django.contrib.admin.forms import AdminAuthenticationForm
+from django.contrib.auth.forms import PasswordChangeForm
+from django.contrib.auth.views import PasswordChangeView
+from django.urls import reverse
 from django.http import HttpResponse
 from rest_framework.throttling import BaseThrottle
 
@@ -39,8 +42,32 @@ class SuperuserAuthenticationForm(AdminAuthenticationForm):
             raise forms.ValidationError(NEEDS_MFA, code='needs_mfa')
 
 
+class SuperuserPasswordChangeForm(PasswordChangeForm):
+    """The admin's own *Change password* page must do what the app's does (#103): revoke every refresh token of the
+    account (Django already ends their other admin sessions, since the session hash follows the password) and mail the
+    notice."""
+
+    def save(self, commit=True):
+        user = super().save(commit)
+        if commit:
+            from . import passwords
+            passwords.password_changed(user)
+        return user
+
+
 class SuperuserAdminSite(AdminSite):
     login_form = SuperuserAuthenticationForm
+
+    def password_change(self, request, extra_context=None):
+        defaults = {
+            'form_class': SuperuserPasswordChangeForm,
+            'success_url': reverse('admin:password_change_done', current_app=self.name),
+            'extra_context': {**self.each_context(request), **(extra_context or {})},
+        }
+        if self.password_change_template is not None:
+            defaults['template_name'] = self.password_change_template
+        request.current_app = self.name
+        return PasswordChangeView.as_view(**defaults)(request)
 
     def has_permission(self, request):
         user = request.user
