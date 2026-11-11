@@ -301,6 +301,14 @@ superadmin, so a locked-out installation is recoverable only by running `make_su
 
 The five built-in templates (`apps/api/builtin_templates/`) are part of the `api` image. The `migrate` Job runs `manage.py load_builtin_templates` right after `migrate` on every release, so a fresh database gets them and a changed built-in follows the release. It is idempotent and never changes user-uploaded templates. To reload by hand: `kubectl -n openprism exec deploy/api -- python manage.py load_builtin_templates`.
 
+## Verified on the cluster
+
+- **Read-only root filesystem for the TeX worker** (#113, 2026-11-11, `worker-compile` v0.1.5): the container runs with
+  `readOnlyRootFilesystem: true`, non-root uid 1000, all capabilities dropped; writing to `/` or `/etc` fails ("Read-only
+  file system") and `/tmp` (an `emptyDir`) is writable. A small document compiled to a PDF with `pdflatex`, `xelatex`,
+  `lualatex`, `latexmk -norc -pdf` and tectonic (offline bundle), each with the compile environment (`HOME` in `/tmp`,
+  shell escape off, `openout_any=p`, `openin_any=p` except lualatex). 25 MB of `/tmp` used. No chart change was needed.
+
 ## Unverified
 
 The app is serving (`/api/health` through Caddy reports the deployed version; sign-in is required for the API). Not yet
@@ -308,8 +316,10 @@ checked on the cluster, in rough order of risk:
 
 - **Live editing** (`/api/collab` websocket) through Caddy and the NodePort, large uploads (150 MB and above) and the
   arXiv-import event stream; see `deploy/caddy/README.md`. Needs a browser session against the live site.
-- **Compiling LaTeX** in `worker-compile` with a read-only root filesystem: `pdflatex`, `xelatex`, `lualatex` and
-  `latexmk` inside the pod, caches under `/tmp`, and the compile hardening still holding.
+- **Compile hardening inside the pod** (#113): the engines themselves are verified (below), but a hostile document that
+  tries `\write18`, absolute-path reads and reading the worker's `/proc/*/environ` has not been run against the live pod.
+  The same cases run in `jobs/tests.py` (`HostileDocumentTests`, `ScrubbedEnvironmentTests`) under `worker-tex`; run them
+  with `docker compose run --rm worker-tex python manage.py test jobs --noinput`.
 - **No NetworkPolicies** are installed: `worker-compile` has no network isolation (see the security model above).
 - **The app uses the object store's root S3 key** unless `OPENPRISM_S3_ACCESS_KEY` / `_SECRET_KEY` exist (see the
   bootstrap section); to change it, delete `openprism-app-creds`, add the secrets, re-run the bootstrap workflow and redeploy.
