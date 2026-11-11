@@ -271,7 +271,14 @@ jobs:
           # First install: nothing earlier to return to, so remove it. Upgrade: restore the previous revision.
           revisions="$(helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" history "$HELM_RELEASE" 2>/dev/null | tail -n +2 | wc -l)"
           if [ "$revisions" -gt 1 ]; then
-            helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" rollback "$HELM_RELEASE" --wait --timeout 10m
+            # No --wait: the rollback re-creates the previous revision's migrate Job, and --wait made the rollback itself
+            # fail when that Job failed (the v0.1.5 incident, #153). The old schema is already applied and that Job is a
+            # no-op, so what matters is that the old Deployments are ready, checked by name below.
+            helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" rollback "$HELM_RELEASE" --timeout 10m
+            for d in api web beat worker-compile worker-transfer worker-ai; do
+              kubectl --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" rollout status "deploy/$d" --timeout=5m
+            done
+            helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" history "$HELM_RELEASE" | tail -4
           else
             helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" uninstall "$HELM_RELEASE" || true
           fi

@@ -80,6 +80,11 @@ workflow must never gain a `pull_request` trigger.
    as its own pod with its logs (with `OnFailure` the Job controller deleted the single pod when its 900 s deadline passed,
    which hid the error in the v0.1.5 deploy, #152); `diagnose.sh` prints the Job's status and events and every attempt's logs.
    Get them later with `kubectl -n openprism logs -l app.kubernetes.io/name=migrate --tail=100`.
+   The rollback does not use `--wait` (#153): it re-creates the previous revision's migrate Job, and waiting for that Job
+   turned a failing database into a failed rollback too (v0.1.5: revisions 5 and 6 both `failed`, the API without ready
+   pods). Instead the step checks `rollout status` of every Deployment. A release left in `failed` is not a problem for
+   the next `helm upgrade`; `helm history openprism` shows the last `deployed` revision, and `helm rollback openprism <rev>`
+   returns to it by hand.
 
 **Runner disk (#69).** The images build on the shared cluster runner, one at a time, and each is removed from the runner
 once pushed (only this release's tag and dangling layers; other repositories' images are left alone). The first step of
