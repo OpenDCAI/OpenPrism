@@ -17,6 +17,7 @@ spec:
   template:
     metadata:
       labels: {{- include "openprism.labels" (dict "root" . "name" "migrate") | nindent 8 }}
+        openprism.io/data: "true"
     spec:
       serviceAccountName: openprism-app
       {{- include "openprism.imagePullSecrets" . | nindent 6 }}

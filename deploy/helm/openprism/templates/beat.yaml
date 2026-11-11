@@ -12,6 +12,7 @@ spec:
   template:
     metadata:
       labels: {{- include "openprism.labels" (dict "root" . "name" "beat") | nindent 8 }}
+        openprism.io/data: "true"
       annotations: {{- include "openprism.configChecksum" . | nindent 8 }}
     spec:
       serviceAccountName: openprism-app

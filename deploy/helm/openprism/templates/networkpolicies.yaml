@@ -1,0 +1,108 @@
+{{- if .Values.networkPolicy.enabled }}
+{{- if not .Values.networkPolicy.dataCidrs }}{{ fail "networkPolicy.dataCidrs is required when networkPolicy.enabled (addresses of Postgres, Redis and the object store)" }}{{ end }}
+{{- $data := .Values.networkPolicy.dataCidrs }}
+{{- $private := list "10.0.0.0/8" "172.16.0.0/12" "192.168.0.0/16" "169.254.0.0/16" "100.64.0.0/10" "127.0.0.0/8" }}
+# Default deny, then only the flows that exist (#112). Needs a CNI that enforces NetworkPolicy; flannel does not.
+#
+#   Caddy -> NodePort -> web -> api -> data services (Postgres / Redis / object store, outside the cluster)
+#   workers, beat, migrate -> data services
+#   api, worker-transfer, worker-ai -> public internet on 443 (LLM providers, MinerU, arXiv)
+#   worker-compile (untrusted LaTeX), beat, migrate -> data services only
+#   worker-ai -> SMTP submission (587/465)
+# Pod labels drive the rules: openprism.io/data, openprism.io/internet, openprism.io/smtp.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: default-deny, labels: {app.kubernetes.io/part-of: openprism}}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: allow-dns, labels: {app.kubernetes.io/part-of: openprism}}
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to: [{namespaceSelector: {matchLabels: {kubernetes.io/metadata.name: kube-system}}, podSelector: {matchLabels: {k8s-app: kube-dns}}}]
+      ports: [{protocol: UDP, port: 53}, {protocol: TCP, port: 53}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: web-ingress, labels: {app.kubernetes.io/part-of: openprism}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: web}}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        {{- range .Values.networkPolicy.webIngressCidrs }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports: [{protocol: TCP, port: 8080}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: web-to-api, labels: {app.kubernetes.io/part-of: openprism}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: web}}
+  policyTypes: [Egress]
+  egress:
+    - to: [{podSelector: {matchLabels: {app.kubernetes.io/name: api}}}]
+      ports: [{protocol: TCP, port: 8000}]
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: api-from-web, labels: {app.kubernetes.io/part-of: openprism}}
+spec:
+  podSelector: {matchLabels: {app.kubernetes.io/name: api}}
+  policyTypes: [Ingress]
+  ingress:
+    - from: [{podSelector: {matchLabels: {app.kubernetes.io/name: web}}}]
+      ports: [{protocol: TCP, port: 8000}]
+---
+# The data services live outside the cluster, so the rule is by address and port.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: app-to-data-services, labels: {app.kubernetes.io/part-of: openprism}}
+spec:
+  podSelector: {matchLabels: {openprism.io/data: "true"}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        {{- range $data }}
+        - ipBlock: {cidr: {{ . | quote }}}
+        {{- end }}
+      ports:
+        - {protocol: TCP, port: {{ .Values.postgres.port }}}
+        - {protocol: TCP, port: {{ .Values.redis.port }}}
+        - {protocol: TCP, port: {{ .Values.s3.port }}}
+---
+# Public internet on 443 only, never an address inside the cluster or a cloud metadata endpoint. A second line behind the
+# application's own check on user-supplied URLs (ai/ssrf.py), which cannot see DNS rebinding.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: internet-egress, labels: {app.kubernetes.io/part-of: openprism}}
+spec:
+  podSelector: {matchLabels: {openprism.io/internet: "true"}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: {{ $private | toJson }}
+      ports: [{protocol: TCP, port: 443}]
+---
+# Outgoing mail: only the worker that runs the `import` queue (accounts.tasks.send_email) may reach SMTP submission ports.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata: {name: smtp-egress, labels: {app.kubernetes.io/part-of: openprism}}
+spec:
+  podSelector: {matchLabels: {openprism.io/smtp: "true"}}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except: {{ $private | toJson }}
+      ports: [{protocol: TCP, port: 587}, {protocol: TCP, port: 465}]
+{{- end }}

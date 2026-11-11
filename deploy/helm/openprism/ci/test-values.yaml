@@ -19,3 +19,6 @@ registration:
   workspaceInvitesAllowSignup: false
   contactEmail: help@test.example
   inviteDays: 3
+networkPolicy:        # the chart default is off; this file proves the policies render
+  enabled: true
+  dataCidrs: ["10.0.0.10/32"]
