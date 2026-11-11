@@ -76,6 +76,10 @@ workflow must never gain a `pull_request` trigger.
    events, node capacity and, per pod, container states, events and logs (also the previous run), and only then the
    release is rolled back (`helm rollback` if an earlier revision exists, else uninstalled). Run it by hand with
    `KUBECONFIG=... NAMESPACE=openprism deploy/diagnose.sh`.
+   The migrate Job runs with `restartPolicy: Never` and a `timeout 240` around its command, so each failed attempt stays
+   as its own pod with its logs (with `OnFailure` the Job controller deleted the single pod when its 900 s deadline passed,
+   which hid the error in the v0.1.5 deploy, #152); `diagnose.sh` prints the Job's status and events and every attempt's logs.
+   Get them later with `kubectl -n openprism logs -l app.kubernetes.io/name=migrate --tail=100`.
 
 **Runner disk (#69).** The images build on the shared cluster runner, one at a time, and each is removed from the runner
 once pushed (only this release's tag and dangling layers; other repositories' images are left alone). The first step of
