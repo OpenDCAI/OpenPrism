@@ -1,0 +1,38 @@
+name: Bug report
+description: Something in OpenPrism does not work as expected
+labels: ["triage", "type:bug"]
+body:
+  - type: markdown
+    attributes:
+      value: Thanks for the report. Please do not paste passwords, API keys or private documents.
+  - type: input
+    id: version
+    attributes:
+      label: Version
+      description: Shown at the bottom of the account menu.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open a project\n2. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include any error text, and a screenshot if it helps.
+    validations:
+      required: true
+  - type: input
+    id: browser
+    attributes:
+      label: Browser and device

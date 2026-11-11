@@ -1,3 +1,5 @@
+> Frozen history up to v0.1.4. From v0.1.5 on, release notes are the closed issues of each GitHub milestone.
+
 # Completed features and their release
 
 ## v0.0.1 - Templates

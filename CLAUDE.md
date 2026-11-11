@@ -39,24 +39,24 @@ npm run dev                         # Vite on :5173, proxies /api + websockets t
 - LaTeX compile needs a TeX engine; only the `worker-tex` image carries full TeX Live (the devcontainer has `latexmk` + a subset of `texlive-*`).
 
 ## Conventions
-- Requirements live in `docs/`. If a request contradicts them, say so rather than guessing.
+- Requirements live in `docs/` (plans live in GitHub issues). If a request contradicts them, say so rather than guessing.
 
 - Commit messages say what was decided, not just what changed. "Update file" is never acceptable.
 
 ## Instructions for Claude
 
-1. Project planning goes on the backlog in `docs/backlog.md`. These should be grouped logically by user story or feature. New issues and bugs start here.
-2. `docs/todo.md` Contains items moved from `docs/backlog.md` that we are working on NOW. We should complete the todo's before working on the next backlog item. 
+1. **GitHub issues are the only tracker** (`docs/backlog.md`, `docs/todo.md` and `docs/xchangelog.md` are retired; the changelog is frozen history). New bugs, ideas and requests (including ones users file with the issue forms) start as an issue labelled `status:backlog`, or `triage` when a user filed it. Always pass `-R cent-ischool/OpenPrism` to `gh`: its default repository is the upstream fork.
+2. **The current release is a milestone** (`vX.Y.Z`): its open issues are the todo list. Finish them before starting the next release's issues. Release notes are the milestone's closed issues; no file needs updating when an issue closes.
 3. We don't write code unless there is a GitHub issue for it.
-4. Each todo should land in Github as an issue to be coded, issues numbers tracking back to the item. It should be labeled / tagged with its Epic (usually a version number like v0.0.1)
+4. Scheduling an issue means giving it the release label (`vX.Y.Z`, green `Epic:` label) **and** the matching milestone, and removing `status:backlog`.
 5. All GitHub issues should be well-defined so a programmer of moderate ability can complete the task trivially.
 6. All GitHub issues should have acceptance criteria and definition of done sections, suitable for a product manager.
-7. Track the Github issue back to the backlog version number with labels ex: v1.10.0, US01, etc.
-8. Do not wander off task. If you encounter a bug, feature or enhancement idea while working, add it to the backlog and label it. 
+7. Every issue has exactly one priority label (`priority:P0` security/data loss/outage, `P1` next release, `P2` soon, `P3` nice to have) and one type label (`type:bug|feature|chore|security|ops|docs`), plus the existing area labels (`authentication`, `deploy`, `collab`, ...).
+8. Do not wander off task. If you encounter a bug, feature or enhancement idea while working, open an issue for it (`status:backlog`, priority, type) and carry on.
 9. Code in a `dev/<issue>-<slug>` branch cut from the current release branch (`release/vX.Y.Z`) and merge it back with `--no-ff`. The release branch merges to `main`, tagged, when every issue in it is closed.
 10. We test the code we write. Unit and integration tests.
 11. An issue is not done until tests pass, the server runs and the app runs without error. Use Playwright to QA features as part of the verification of accepatance critieria as appropriate.
-12. As you close Github issues review `docs/todo.md` and move completed items into `docs/xchangelog.md`
+12. When an issue closes, say in its closing comment which commit or PR fixed it and how it was verified.
 13. Start each issue from the release branch with a clean working directory.
 
 
@@ -124,7 +124,7 @@ New async features follow this pattern: model in `jobs`, task in `jobs/tasks.py`
   - **Progress, cancel, limit:** the editor picks the `jobId` (a UUID in the request) so it can call `POST /api/jobs/:id/cancel` before the first poll answers, and shows `progressLog` (the agent logs `Thinking…`, `Reading <file>`, …) from the polls (cancel is owner only; marks the job failed with `result.cancelled`, so polling and any blocked request end at once; the worker checks the flag before each model call and raises `agent.Cancelled`, and `run_ai_job` never overwrites a cancelled job). Edit requests are limited per user per minute (`AI_EDIT_RATE_PER_MINUTE`, default 20; 429 `{ok:false,error}`), counted in the Redis cache; the plain Assistant is not limited.
   - **Editor** (`app/AiCommandBar.tsx`, `EditorPage.runAiEdit`/`applyPending`): Ctrl/Cmd+K at `Prec.highest`, also the toolbar button and the Insert menu; hidden unless the tree says `canWrite` and the tab is not a guest. Proposals open in the Diff preview and apply as one CodeMirror transaction (one Undo; a live room carries it through the shared document). `resolveProposal` re-reads the file: unchanged → as proposed; changed → `merge3` (line-level three-way merge, `app/merge3.ts`) when the edits do not overlap, otherwise the item is marked stale and nothing is written. Recent requests: `localStorage` `openprism-ai-recent-v1` (20, Up/Down in an empty bar). Browser tests: `e2e/ai-command.spec.ts` (the job protocol stubbed at the network by `stubAiJob`, plus one test against the real API).
 - **The agent** (`ai/agent.py`) talks to the OpenAI tools API directly (no LangChain): up to 15 tool steps; tool failures go back to the model as `Error: …` text instead of aborting; patches are only *proposed* (`{path, original, content, diff}`), never written. Unified diffs are built/applied by `ai/patches.py` (tolerates shifted hunks and stripped blank context lines).
-- **Plot** (`ai/plot.py` + `plot_runner.py`) runs LLM-written Python in a subprocess: AST check (no imports/dunders/introspection) → whitelisted builtins → scrubbed environment → rlimits + timeout → temp dir deleted. This is defence in depth, **not a real sandbox** (e.g. `plt.sys.modules` is reachable). Real isolation must come from the deployment: `worker-ai` with no extra secrets, a pids limit, and a NetworkPolicy denying egress except LLM providers (the Helm chart does not ship one yet; see `docs/backlog.md`, v0.1.0).
+- **Plot** (`ai/plot.py` + `plot_runner.py`) runs LLM-written Python in a subprocess: AST check (no imports/dunders/introspection) → whitelisted builtins → scrubbed environment → rlimits + timeout → temp dir deleted. This is defence in depth, **not a real sandbox** (e.g. `plt.sys.modules` is reachable). Real isolation must come from the deployment: `worker-ai` with no extra secrets, a pids limit, and a NetworkPolicy denying egress except LLM providers (the Helm chart does not ship one yet; see issues #111 and #112).
 - Tests fake the LLM with a local HTTP server (`FakeLLM` in `ai/tests.py`) and run the task inline; real-Celery routing was verified manually with `docker compose up worker-ai`.
 
 **Template transfer (`apps/api/transfer`).** Port of the LangGraph pipeline with the same endpoints and `{status, progressLog, error}` shape as Node (`pending|running|waiting_images|success|failed`), but nothing blocks: `/start` creates the target project from the template and a `Job`; the **first `/step` claims the job and enqueues segment 1; later `/step` calls are read-only status polls**, as is `/status/:id`.
