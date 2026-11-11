@@ -36,7 +36,7 @@ test('an open site is unchanged', async ({ page }) => {
 });
 
 test('the mailed invitation link opens the form with the address fixed, and registering signs the person in verified', async ({ page, request }) => {
-  const root = newSuperuser('invitee-admin');
+  const root = await newSuperuser('invitee-admin');
   const email = `invited-${Date.now().toString(36)}@example.com`;
   // The superadmin invites through the admin (a browser session), the mail's link is followed in the app.
   await page.goto('/admin/login/');

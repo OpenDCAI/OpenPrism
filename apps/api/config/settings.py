@@ -236,6 +236,7 @@ REFRESH_COOKIE_NAME = 'openprism_refresh'
 # cookie name and flags keep it apart from the app's cookies; the session is short.
 ADMIN_SESSION_HOURS = int(env('ADMIN_SESSION_HOURS', '8'))
 # Superadmins must have two-factor authentication to use the admin (on by default; compose and the test runner turn it off).
+E2E_SUPERUSER_TOKEN = env('E2E_SUPERUSER_TOKEN', '')  # dev/test stacks only (DEBUG): lets the browser suite make a superuser over HTTP
 SUPERADMIN_REQUIRE_MFA = env_bool('SUPERADMIN_REQUIRE_MFA', not TESTING)
 ADMIN_LOGIN_RATE_PER_15_MIN = int(env('ADMIN_LOGIN_RATE_PER_15_MIN', '10'))  # login form submissions per address
 SESSION_COOKIE_NAME = 'openprism_admin'

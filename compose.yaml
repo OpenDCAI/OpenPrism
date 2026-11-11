@@ -89,6 +89,7 @@ services:
       SOCIAL_ORCID_CLIENT_ID: ${SOCIAL_ORCID_CLIENT_ID:-}
       SOCIAL_ORCID_CLIENT_SECRET: ${SOCIAL_ORCID_CLIENT_SECRET:-}
       ORCID_SANDBOX: ${ORCID_SANDBOX:-0}
+      E2E_SUPERUSER_TOKEN: ${E2E_SUPERUSER_TOKEN:-} # dev only: the browser suite makes superusers over HTTP with it (accounts/e2e.py)
       SUPERADMIN_REQUIRE_MFA: ${SUPERADMIN_REQUIRE_MFA:-0} # 1: superadmins need two-factor authentication to use /admin/ (the application's default; compose stays off for the browser suite)
       REGISTRATION_MODE: ${REGISTRATION_MODE:-open} # invite: only invited addresses may register (the application's default; compose stays open for development and the browser suite)
       WORKSPACE_INVITES_ALLOW_SIGNUP: ${WORKSPACE_INVITES_ALLOW_SIGNUP:-1} # in invite mode, workspace invitations also open the door
