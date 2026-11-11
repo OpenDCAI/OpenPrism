@@ -55,7 +55,7 @@ class UserAdmin(admin.ModelAdmin):
     ordering = ('-created_at',)
     fields = ('email', 'name', 'is_active', 'is_staff', 'is_superuser', 'email_verified_at', 'created_at', 'id')
     readonly_fields = ('email', 'email_verified_at', 'created_at', 'id')  # the address is the login: it is not edited here
-    actions = ['mark_email_verified', 'reset_two_factor']
+    actions = ['mark_email_verified', 'reset_two_factor', 'send_password_reset', 'clear_lockouts']
     list_per_page = 50
 
     def get_readonly_fields(self, request, obj=None):
@@ -83,6 +83,29 @@ class UserAdmin(admin.ModelAdmin):
             elif mfa.admin_reset(user, request.user):
                 done += 1
         self.message_user(request, f'{done} account(s) reset: signed out everywhere and told by mail.')
+
+    @admin.action(description='Send a password reset link (signs them out everywhere)')
+    def send_password_reset(self, request, queryset):
+        from . import lockouts
+        done = 0
+        for user in queryset:
+            if user.pk == request.user.pk:
+                self.message_user(request, 'Not your own: change it on the Change password page.', level=messages.ERROR)
+            elif lockouts.send_password_reset(user, request.user):
+                done += 1
+        self.message_user(request, f'{done} reset link(s) mailed; those accounts are signed out everywhere.')
+
+    @admin.action(description='Clear sign-in lockouts (wrong-code and attempt counters)')
+    def clear_lockouts(self, request, queryset):
+        from django.contrib.admin.models import CHANGE, LogEntry
+        from django.contrib.contenttypes.models import ContentType
+        from . import lockouts
+        for user in queryset:
+            lockouts.clear(user)
+            LogEntry.objects.create(user=request.user, content_type=ContentType.objects.get_for_model(user),
+                                    object_id=str(user.pk), object_repr=str(user), action_flag=CHANGE,
+                                    change_message='Sign-in lockouts cleared.')
+        self.message_user(request, f'Lockouts cleared for {queryset.count()} account(s).')
 
     @admin.action(description='Mark the selected accounts\' email addresses as verified')
     def mark_email_verified(self, request, queryset):

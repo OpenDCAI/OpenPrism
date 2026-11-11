@@ -96,3 +96,63 @@ class AdminResetTests(TestCase):
         res = self.reset(self.root)
         self.assertContains(res, 'Not your own')
         self.assertTrue(mfa.enabled(self.root))
+
+
+class AdminLockoutAndResetLinkTests(TestCase):
+    """#110: superadmins can mail a reset link and lift sign-in lockouts, with a log entry and no secret shown."""
+
+    def setUp(self):
+        cache.clear()
+        self.root = User.objects.create_superuser('root@example.com', PASSWORD)
+        self.user = User.objects.create_user('ann@example.com', PASSWORD)
+        self.secret = enrol(self.user)
+        self.client = Client()
+        self.client.force_login(self.root)
+
+    def act(self, action, *users):
+        return self.client.post(reverse('admin:accounts_user_changelist'),
+                                {'action': action, '_selected_action': [str(u.pk) for u in users]}, follow=True)
+
+    def test_clear_lockouts_lifts_the_wrong_code_lock_and_logs_it(self):
+        for _ in range(mfa.ADDRESS_ATTEMPTS + 1):
+            try:
+                mfa.check_code(self.user, '000000')
+            except mfa.MfaError:
+                pass
+        with self.assertRaises(mfa.MfaError):
+            mfa.check_code(self.user, code(self.secret))  # even the right code is refused while locked
+        res = self.act('clear_lockouts', self.user)
+        self.assertContains(res, 'Lockouts cleared for 1')
+        self.assertTrue(mfa.check_code(self.user, code(self.secret)))
+        entry = LogEntry.objects.get(object_id=str(self.user.pk))
+        self.assertEqual((entry.user, entry.change_message), (self.root, 'Sign-in lockouts cleared.'))
+
+    def test_send_reset_link_mails_the_link_revokes_sessions_and_never_shows_a_secret(self):
+        from rest_framework_simplejwt.tokens import RefreshToken
+        token = str(RefreshToken.for_user(self.user))
+        outbox.outbox.clear()
+        with self.captureOnCommitCallbacks(execute=True):
+            res = self.act('send_password_reset', self.user)
+        self.assertContains(res, '1 reset link(s) mailed')
+        self.assertEqual(APIClient().post('/api/auth/refresh', {'refresh': token}, format='json').status_code, 401)
+        self.assertEqual([m.to for m in outbox.outbox], [['ann@example.com']])
+        self.assertIn('/reset-password?uid=', outbox.outbox[0].body)
+        self.assertNotIn('/reset-password?uid=', res.content.decode())  # the link is mailed, not displayed
+        entry = LogEntry.objects.get(object_id=str(self.user.pk))
+        self.assertEqual(entry.change_message, 'Password reset link sent.')
+        self.user.refresh_from_db()
+        self.assertTrue(self.user.check_password(PASSWORD))  # the password itself is untouched
+
+    def test_not_for_yourself_and_not_for_an_inactive_account(self):
+        outbox.outbox.clear()
+        self.assertContains(self.act('send_password_reset', self.root), 'Not your own')
+        inactive = User.objects.create_user('gone@example.com', PASSWORD, is_active=False)
+        self.assertContains(self.act('send_password_reset', inactive), '0 reset link(s) mailed')
+        self.assertEqual(outbox.outbox, [])
+
+    def test_only_superadmins_can_run_the_actions(self):
+        plain = Client()
+        res = plain.post(reverse('admin:accounts_user_changelist'),
+                         {'action': 'clear_lockouts', '_selected_action': [str(self.user.pk)]})
+        self.assertEqual(res.status_code, 302)  # to the login page
+        self.assertFalse(LogEntry.objects.filter(object_id=str(self.user.pk)).exists())

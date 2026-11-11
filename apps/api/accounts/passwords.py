@@ -44,6 +44,12 @@ def set_new_password(user, password):
     password_changed(user)
 
 
+def send_reset_mail(user):
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    link = mail.app_link(f'/reset-password?uid={uid}&token={default_token_generator.make_token(user)}')
+    mail.send_template(user.email, 'password_reset', {'name': user.name or user.email, 'link': link})
+
+
 class ForgotPasswordView(APIView):
     permission_classes = [AllowAny]
     throttle_scope = 'auth'
@@ -52,9 +58,7 @@ class ForgotPasswordView(APIView):
         email = str((request.data or {}).get('email') or '').strip().lower()
         user = User.objects.filter(email=email, is_active=True).first() if email else None
         if user:
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            link = mail.app_link(f'/reset-password?uid={uid}&token={default_token_generator.make_token(user)}')
-            mail.send_template(user.email, 'password_reset', {'name': user.name or user.email, 'link': link})
+            send_reset_mail(user)
         return Response({'ok': True})  # the same answer either way: whether an account exists is not revealed
 
 
