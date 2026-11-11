@@ -7,7 +7,11 @@ metadata:
   name: {{ printf "migrate-%s-r%d" (.Values.image.tag | toString | replace "." "-" | lower | trunc 12) .Release.Revision }}
   labels: {{- include "openprism.labels" (dict "root" . "name" "migrate") | nindent 4 }}
 spec:
-  backoffLimit: 4
+  # restartPolicy Never: every failed attempt stays as its own pod with its logs. With OnFailure the container restarts in
+  # one pod and the Job controller deletes that pod when activeDeadlineSeconds passes, so a failed deploy lost the very
+  # error it needed to explain (#152). The command is bounded by `timeout` so a hung database connection ends as a failed
+  # pod (with logs) before the deadline removes it.
+  backoffLimit: 3
   activeDeadlineSeconds: 900
   ttlSecondsAfterFinished: 86400
   template:
@@ -16,13 +20,13 @@ spec:
     spec:
       serviceAccountName: openprism-app
       {{- include "openprism.imagePullSecrets" . | nindent 6 }}
-      restartPolicy: OnFailure
+      restartPolicy: Never
       securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
       containers:
         - name: migrate
           image: {{ include "openprism.image" (dict "root" . "name" "api") }}
           # Built-in templates ship in the image: load them after the schema is current (idempotent, user templates untouched).
-          command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py load_builtin_templates"]
+          command: ["sh", "-c", "timeout 240 sh -c 'python manage.py migrate --noinput && python manage.py load_builtin_templates'"]
           {{- include "openprism.envFrom" . | nindent 10 }}
           env:
             {{- include "openprism.env" . | nindent 12 }}
