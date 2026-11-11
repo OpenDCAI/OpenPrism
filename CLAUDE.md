@@ -90,7 +90,7 @@ Monorepo: `apps/frontend` (React 18 + TypeScript + Vite; the only npm workspace)
 | `api` | Django + DRF + Channels, uvicorn (ASGI) | Stateless REST **and the collab websocket** (`/api/collab`); `/healthz`, `/readyz`; the Django admin at `/admin/` with its static files served by WhiteNoise (collected into `/app-static` when the image is built; debug and tests read the apps' files directly; `CSRF_TRUSTED_ORIGINS` = `TRUSTED_ORIGINS`). Scales horizontally: replicas sync through Redis, no sticky routing |
 | `worker-tex` | Celery, queues `compile` + `transfer` | TeX Live image (template transfer compiles LaTeX and also calls LLM/MinerU). Per-command timeout, CPU/file-size rlimits, shell-escape off. Set container CPU/mem limits in k8s |
 | `worker-ai` | Celery, queues `ai` + `import` | LLM, vision, plot (runs LLM-generated Python), agent, arXiv import. Image adds matplotlib/pandas/seaborn (`requirements-ai.txt`) |
-| `beat` | Celery beat | Reaps jobs whose worker died, deletes finished jobs after 24 h, removes expired collab invites, saves the update logs of dead collab replicas every minute |
+| `beat` | Celery beat | Reaps jobs whose worker died, deletes finished jobs after 24 h, clears expired admin sessions daily, removes expired collab invites, saves the update logs of dead collab replicas every minute |
 | `postgres`, `redis`, `garage` | | In `compose.yaml`; managed services/operators in k8s |
 
 Design rules: services are stateless and 12-factor (env-only config, no shared volumes; workers materialise project files into a temp dir), long operations become `Job` rows + Celery tasks that the frontend polls, and nothing user-visible depends on local disk.

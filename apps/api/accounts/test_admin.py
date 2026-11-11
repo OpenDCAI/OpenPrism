@@ -150,3 +150,21 @@ class AdminPasswordChangeTests(TestCase):
         self.assertEqual(res.status_code, 200)
         self.assertEqual(BlacklistedToken.objects.count(), 0)
         self.assertEqual(self.outbox, [])
+
+
+class ExpiredSessionCleanupTests(TestCase):
+    """#104: the admin's expired sessions are deleted by a daily beat task; live ones stay."""
+
+    def test_the_task_removes_only_expired_sessions_and_is_scheduled_daily(self):
+        from datetime import timedelta
+        from django.conf import settings
+        from django.contrib.sessions.models import Session
+        from django.utils import timezone
+        from . import tasks
+        Session.objects.create(session_key='expired', session_data='x', expire_date=timezone.now() - timedelta(hours=1))
+        Session.objects.create(session_key='live', session_data='x', expire_date=timezone.now() + timedelta(hours=1))
+        tasks.clear_expired_sessions()
+        self.assertEqual(list(Session.objects.values_list('session_key', flat=True)), ['live'])
+        entry = settings.CELERY_BEAT_SCHEDULE['clear-expired-sessions']
+        self.assertEqual((entry['task'], entry['schedule']), ('accounts.tasks.clear_expired_sessions', 86400.0))
+        self.assertEqual(settings.CELERY_TASK_ROUTES['accounts.tasks.clear_expired_sessions'], {'queue': 'import'})
