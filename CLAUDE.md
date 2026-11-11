@@ -61,6 +61,15 @@ npm run dev                         # Vite on :5173, proxies /api + websockets t
 
 
 
+### Workflow with GitHub issues
+
+All commands use `gh ... -R cent-ischool/OpenPrism`.
+- **Triage.** Users file issues through the forms (`triage` label plus `type:bug` or `type:feature`). Read it, reproduce bugs, ask for what is missing, set one `priority:*` and one `type:*`, add area labels, then either schedule it (release label and milestone, no `status:backlog`) or mark it `status:backlog`; remove `triage`. Close duplicates and invalid reports with a reason. A `priority:P0` issue goes into the current release at once.
+- **Set up a release.** Create the label (`vX.Y.Z`, colour `0e8a16`, description `Epic: <theme>`) and the milestone of the same name, then schedule issues into it (rule 4). The last issue of every release is `Release vX.Y.Z` (version bump in `apps/api/VERSION`, Helm/workflow/runbook changes, docs).
+- **Work an issue.** Follow rules 3-13: branch `dev/<issue>-<slug>` from `release/vX.Y.Z`, put `(#<issue>)` in the commit message, merge back with `--no-ff`, close the issue with a comment naming the commit and how it was verified.
+- **Close a release.** When the milestone has no open issues: merge `release/vX.Y.Z` to `main` with `--no-ff`, tag `vX.Y.Z` (the tag deploys to the cent cluster, so only when the user asks), close the milestone, and publish the release notes from its closed issues (`gh release create vX.Y.Z --generate-notes` or a list of the milestone's issues). Merging a release branch to `main` without a tag (e.g. to publish docs or issue forms early) does not deploy.
+- **Unscheduled work** (`status:backlog`) has no milestone; it is reviewed when the next release is planned.
+
 ## Configuration
 
 Everything is environment variables. `.env` at the repo root (copied from `.env.sample`, gitignored) is passed into the devcontainer via `runArgs --env-file` and read by compose for `${VAR}` interpolation. Compose supplies container-side URLs (`postgres`, `redis`, `garage`) itself, so `.env` values like `DATABASE_URL=...@localhost` are for tools running in the devcontainer, not for compose services.
