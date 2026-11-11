@@ -53,7 +53,7 @@ EMAIL_TIMEOUT = int(env('EMAIL_TIMEOUT', '20'))
 # REGISTRATION_MODE: `invite` (the default: only addresses with a platform or workspace invitation) or `open` (anyone).
 # The test runner defaults to `open`, since most tests register accounts freely; tests of the gate set the mode themselves.
 REQUIRE_EMAIL_VERIFICATION = env_bool('REQUIRE_EMAIL_VERIFICATION', False)
-REGISTRATION_MODE = env('REGISTRATION_MODE', 'open' if TESTING else 'invite')
+REGISTRATION_MODE = 'open' if TESTING else env('REGISTRATION_MODE', 'invite')  # tests ignore the environment (#105)
 if REGISTRATION_MODE not in ('open', 'invite'):
     raise ImproperlyConfigured('REGISTRATION_MODE must be "open" or "invite"')
 # Platform invitations (v0.1.2): a superadmin's invitation to register lives this many days. WORKSPACE_INVITES_ALLOW_SIGNUP:
@@ -211,9 +211,9 @@ REST_FRAMEWORK = {
     'NUM_PROXIES': int(env('TRUSTED_PROXY_COUNT', '0')),  # reverse proxies in front of the API: rate limits key on the real client
     'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],  # only views that set throttle_scope
     'DEFAULT_THROTTLE_RATES': {
-        'auth': env('AUTH_RATE_LIMIT', '10000/min' if TESTING else '20/min'),
+        'auth': '10000/min' if TESTING else env('AUTH_RATE_LIMIT', '20/min'),  # tests ignore compose's limit (#105)
         # every tab refreshes on load (the access token lives in memory only); a refresh needs a valid refresh token
-        'refresh': env('AUTH_REFRESH_RATE_LIMIT', '10000/min' if TESTING else '120/min'),
+        'refresh': '10000/min' if TESTING else env('AUTH_REFRESH_RATE_LIMIT', '120/min'),
     },
     'EXCEPTION_HANDLER': 'common.exceptions.ok_error_handler',
 }
