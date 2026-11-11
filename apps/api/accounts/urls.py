@@ -1,11 +1,13 @@
 from django.urls import path
 
 from . import adminhandoff, emailchange, mfa, passkeys, signins, socialviews
+from .e2e import E2ESuperuserView
 from .passwords import ChangePasswordView, ForgotPasswordView, ResetPasswordView
 from .verification import ResendVerificationView, VerifyEmailView
 from .views import LoginView, LogoutView, MeView, RefreshView, RegisterView
 
 urlpatterns = [
+    path('e2e/superuser', E2ESuperuserView.as_view()),  # test stacks only, see accounts/e2e.py
     path('register', RegisterView.as_view()),
     path('login', LoginView.as_view()),
     path('refresh', RefreshView.as_view()),

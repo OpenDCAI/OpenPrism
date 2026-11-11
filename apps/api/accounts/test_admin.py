@@ -168,3 +168,46 @@ class ExpiredSessionCleanupTests(TestCase):
         entry = settings.CELERY_BEAT_SCHEDULE['clear-expired-sessions']
         self.assertEqual((entry['task'], entry['schedule']), ('accounts.tasks.clear_expired_sessions', 86400.0))
         self.assertEqual(settings.CELERY_TASK_ROUTES['accounts.tasks.clear_expired_sessions'], {'queue': 'import'})
+
+
+class E2ESuperuserEndpointTests(TestCase):
+    """#106: a test-only way to make a superuser over HTTP; absent unless debug is on AND a token is configured."""
+    URL = '/api/auth/e2e/superuser'
+
+    def post(self, token='s3cret-test-token', **extra):
+        headers = {'HTTP_X_E2E_TOKEN': token} if token is not None else {}
+        body = {'email': 'Made@Example.com', 'password': PASSWORD, **extra}
+        return Client().post(self.URL, body, content_type='application/json', **headers)
+
+    @override_settings(E2E_SUPERUSER_TOKEN='s3cret-test-token', DEBUG=True)
+    def test_with_the_token_in_debug_it_makes_a_superuser_who_can_use_the_admin(self):
+        self.assertEqual(self.post().status_code, 200)
+        made = get_user_model().objects.get(email='made@example.com')
+        self.assertTrue(made.is_superuser and made.is_staff)
+        self.assertTrue(made.memberships.exists())
+        client = Client()
+        self.assertEqual(login(client, 'made@example.com', ip='198.51.100.77').status_code, 302)
+        self.assertEqual(client.get('/admin/').status_code, 200)
+
+    @override_settings(E2E_SUPERUSER_TOKEN='s3cret-test-token', DEBUG=True)
+    def test_it_can_make_a_staff_account_without_superuser_and_refuses_a_taken_address(self):
+        self.assertEqual(self.post(superuser=False).status_code, 200)
+        made = get_user_model().objects.get(email='made@example.com')
+        self.assertEqual((made.is_staff, made.is_superuser), (True, False))
+        self.assertEqual(self.post().status_code, 400)
+
+    @override_settings(E2E_SUPERUSER_TOKEN='s3cret-test-token', DEBUG=False, TESTING=False)
+    def test_without_debug_it_does_not_exist_even_with_the_right_token(self):
+        """Production (DEBUG off): a configured token must not turn this on."""
+        self.assertEqual(self.post().status_code, 404)
+        self.assertFalse(get_user_model().objects.filter(email='made@example.com').exists())
+
+    @override_settings(E2E_SUPERUSER_TOKEN='', DEBUG=True)
+    def test_without_a_configured_token_it_does_not_exist(self):
+        self.assertEqual(self.post(token='').status_code, 404)
+
+    @override_settings(E2E_SUPERUSER_TOKEN='s3cret-test-token', DEBUG=True)
+    def test_a_wrong_or_missing_token_is_a_404(self):
+        self.assertEqual(self.post(token='nope').status_code, 404)
+        self.assertEqual(self.post(token=None).status_code, 404)
+        self.assertFalse(get_user_model().objects.filter(email='made@example.com').exists())

@@ -137,12 +137,23 @@ export function mailLink(text: string): string {
 }
 
 /**
- * An account that may use the Django admin, made through the running api container (the only way to get one: nobody
- * can register as a superuser). Needs `docker compose` and the stack from the repo root, as the rest of the suite does.
+ * An account that may use the Django admin (nobody can register as a superuser). With `E2E_SUPERUSER_TOKEN` set (the same
+ * value the api was started with, dev stacks only, see accounts/e2e.py) it is made over HTTP, so the suite can run
+ * against a stack it has no Docker access to; otherwise through the running api container, which needs `docker compose`
+ * and the stack at the repo root.
  */
-export function newSuperuser(prefix = 'root', opts: { superuser?: boolean } = {}): { email: string; password: string } {
+export async function newSuperuser(prefix = 'root', opts: { superuser?: boolean } = {}): Promise<{ email: string; password: string }> {
   const email = `${prefix}-${Date.now()}-${Math.floor(Math.random() * 1e6)}@example.com`;
   const superuser = opts.superuser !== false;
+  const token = process.env.E2E_SUPERUSER_TOKEN;
+  if (token) {
+    const res = await fetch(`${baseUrl()}/api/auth/e2e/superuser`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'X-E2E-Token': token },
+      body: JSON.stringify({ email, password: PASSWORD, superuser })
+    });
+    if (!res.ok) throw new Error(`POST /api/auth/e2e/superuser -> ${res.status}: ${await res.text()}`);
+    return { email, password: PASSWORD };
+  }
   const code = `from django.contrib.auth import get_user_model as g; u = g().objects.create_user(${JSON.stringify(email)}, ${JSON.stringify(PASSWORD)}, is_staff=True, is_superuser=${superuser ? 'True' : 'False'}); from projects.models import Membership as M, Workspace as W; M.objects.create(workspace=W.objects.create(name='Personal', kind=W.PERSONAL, color='#5b6573'), user=u, role=M.OWNER)`; // a personal workspace, so the account can use the app
   execFileSync('docker', ['compose', 'exec', '-T', 'api', 'python', 'manage.py', 'shell', '-c', code], {
     cwd: fileURLToPath(new URL('../../../', import.meta.url)), stdio: 'pipe'
