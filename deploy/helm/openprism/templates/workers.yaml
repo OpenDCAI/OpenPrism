@@ -31,6 +31,9 @@ spec:
     spec:
       serviceAccountName: openprism-app
       {{- include "openprism.imagePullSecrets" $ | nindent 6 }}
+      {{- with $.Values.sandbox.runtimeClassName }}
+      runtimeClassName: {{ . | quote }}   # untrusted LaTeX / LLM-written Python: a sandboxed runtime (gVisor, Kata), see README
+      {{- end }}
       terminationGracePeriodSeconds: {{ $w.terminationGracePeriodSeconds }}
       securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
       topologySpreadConstraints:

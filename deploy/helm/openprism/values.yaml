@@ -142,3 +142,10 @@ networkPolicy:
   enabled: false
   dataCidrs: []                 # required when enabled: the addresses of Postgres, Redis and the object store, e.g. ["10.30.78.118/32"]
   webIngressCidrs: ["0.0.0.0/0"]   # who may reach the web pods (Caddy forwards to the NodePort from outside the pod network)
+
+# Sandboxed runtime for the three Celery workers (they run untrusted LaTeX, the compiles inside template transfer, and
+# LLM-written Python). Empty = the node's default runtime (runc), which is what the cent cluster has today. Set it to the
+# name of a RuntimeClass that exists (gVisor: "gvisor", Kata: "kata"); the pod stays Pending if it does not. See README,
+# "Sandboxed runtime and pids limit" (#111) for the decision and the install steps.
+sandbox:
+  runtimeClassName: ""
