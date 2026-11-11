@@ -20,6 +20,13 @@ spec:
   template:
     metadata:
       labels: {{- include "openprism.labels" (dict "root" $ "name" (printf "worker-%s" $name)) | nindent 8 }}
+        openprism.io/data: "true"
+        {{- if $w.internet }}
+        openprism.io/internet: "true"
+        {{- end }}
+        {{- if $w.smtp }}
+        openprism.io/smtp: "true"
+        {{- end }}
       annotations: {{- include "openprism.configChecksum" $ | nindent 8 }}
     spec:
       serviceAccountName: openprism-app

@@ -86,6 +86,29 @@ workflow must never gain a `pull_request` trigger.
    the next `helm upgrade`; `helm history openprism` shows the last `deployed` revision, and `helm rollback openprism <rev>`
    returns to it by hand.
 
+## Network policies (#112)
+
+The chart can ship NetworkPolicies (`templates/networkpolicies.yaml`, `networkPolicy.enabled`, **off by default**). **They do
+nothing on the cent cluster today:** it is a single-node microk8s whose CNI is flannel (`flanneld`, no calico/cilium pods),
+and flannel does not enforce NetworkPolicy. The API accepts the objects and ignores them, so do not read a green
+`kubectl get networkpolicy` as protection. Check what a cluster does before relying on it: `kubectl -n kube-system get
+pods | grep -iE 'calico|cilium|canal'` and `ls /var/snap/microk8s/current/args/cni-network/` (microk8s).
+
+When enabled (needs an enforcing CNI): default deny both ways; DNS to kube-dns; web accepts 8080 from
+`networkPolicy.webIngressCidrs` (Caddy reaches the NodePort from outside the pod network) and talks only to the api; pods
+labelled `openprism.io/data` reach Postgres, Redis and the object store **only at `networkPolicy.dataCidrs` on their
+configured ports** (required: they live outside the cluster); `openprism.io/internet` (api, worker-transfer, worker-ai)
+reaches public HTTPS only, never a private, link-local or metadata address; `openprism.io/smtp` (worker-ai) reaches ports
+587/465. **worker-compile has the data label only, so a document that fetches a URL cannot connect.** Pod labels come from
+the templates (`internet`/`smtp` flags under `workers.*`). Adding the labels changes the pod templates, so the next deploy
+restarts every Deployment once (rolling, as usual).
+
+To turn it on: get an enforcing CNI, set `networkPolicy.enabled: true` and `networkPolicy.dataCidrs` (the addresses of
+`storage.cent-su.org`), deploy, then check from a pod: `kubectl -n openprism exec deploy/worker-compile -- python -c
+"import socket;socket.create_connection(('example.com',443),5)"` must time out, the api `/readyz` must stay 200 and a
+compile must succeed. Kubelet probes come from the node and are allowed by Calico and Cilium; if a CNI blocks them, add
+the node address to the policies.
+
 **Runner disk (#69).** The images build on the shared cluster runner, one at a time, and each is removed from the runner
 once pushed (only this release's tag and dangling layers; other repositories' images are left alone). The first step of
 every build fails early with the free space if less than 12 GB is available under Docker's data root; plan for about
