@@ -21,7 +21,8 @@ spec:
       containers:
         - name: migrate
           image: {{ include "openprism.image" (dict "root" . "name" "api") }}
-          command: ["python", "manage.py", "migrate", "--noinput"]
+          # Built-in templates ship in the image: load them after the schema is current (idempotent, user templates untouched).
+          command: ["sh", "-c", "python manage.py migrate --noinput && python manage.py load_builtin_templates"]
           {{- include "openprism.envFrom" . | nindent 10 }}
           env:
             {{- include "openprism.env" . | nindent 12 }}

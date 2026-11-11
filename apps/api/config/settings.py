@@ -10,6 +10,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 # The app version has one source: apps/api/VERSION (the web build and Vite read the same file).
+BUILTIN_TEMPLATES_DIR = BASE_DIR / 'builtin_templates'  # shipped in the image, loaded by `load_builtin_templates`
 VERSION = (BASE_DIR / 'VERSION').read_text().strip()
 
 

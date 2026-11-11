@@ -9,6 +9,7 @@ import os
 import shutil
 from unittest import mock, skipUnless
 
+from django.conf import settings
 from django.core.management import call_command
 from django.test import override_settings
 
@@ -21,7 +22,7 @@ from templates_app.models import Template
 from . import tasks as ai_tasks
 from .patches import apply_patch
 
-TEMPLATES_DIR = '/legacy/templates'
+TEMPLATES_DIR = str(settings.BUILTIN_TEMPLATES_DIR)
 KEY = 'sk-test-edit-tasks'
 HAS_TEX = shutil.which('pdflatex') is not None
 
@@ -40,7 +41,7 @@ class TemplateEditTaskTests(ApiBase):
     def setUp(self):
         super().setUp()
         if not os.path.isdir(TEMPLATES_DIR):
-            self.skipTest('templates/ is not mounted at /legacy/templates')
+            self.skipTest('builtin_templates/ is missing')
         call_command('import_legacy', '--skip-projects', templates_dir=TEMPLATES_DIR, stdout=io.StringIO())
         sync = lambda job_id, secrets=None: ai_tasks.run_ai_job.run(job_id, secrets)
         patcher = mock.patch('ai.views.run_ai_job.delay', side_effect=sync)

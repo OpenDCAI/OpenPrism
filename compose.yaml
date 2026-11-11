@@ -118,7 +118,6 @@ services:
       - "8000:8000"
     volumes:
       - ./apps/api:/app
-      - ./templates:/legacy/templates:ro # for `manage.py import_legacy`
       - ./data:/legacy/data:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')"]
@@ -151,7 +150,6 @@ services:
       garage: {condition: service_healthy}
     volumes:
       - ./apps/api:/app
-      - ./templates:/legacy/templates:ro # real-compile tests of the built-in templates
     healthcheck:
       test: ["CMD-SHELL", "celery -A config inspect ping -d celery@$$HOSTNAME"]
       interval: 15s
