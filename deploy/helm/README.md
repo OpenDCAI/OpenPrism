@@ -86,6 +86,29 @@ workflow must never gain a `pull_request` trigger.
    the next `helm upgrade`; `helm history openprism` shows the last `deployed` revision, and `helm rollback openprism <rev>`
    returns to it by hand.
 
+## Sandboxed runtime and pids limit (#111)
+
+**Decision (2026-11-11): no sandboxed runtime is available on the cent cluster, so the chart supports one but leaves it
+off.** What was found (read-only, from the cluster host): single-node microk8s v1.36.2, cgroup v2, containerd with only
+`runc` (a `kata` stanza in `containerd-template.toml` but no `kata-runtime` or `runsc` binary), no `RuntimeClass` objects,
+no `--pod-max-pids` in the kubelet arguments. The node is a VMware guest with `/dev/kvm` and CPU virtualization flags, so
+Kata would run, and gVisor (`runsc`) needs no KVM at all. Neither is installed; installing one changes a shared node, so
+it is the cluster owner's decision (other tenants: jupyterhub, graderthan, iot-portal).
+
+The chart: `sandbox.runtimeClassName` (default empty) sets `runtimeClassName` on `worker-compile`, `worker-transfer` and
+`worker-ai`, the only pods that run untrusted input. Set it only after the RuntimeClass exists, or the pods stay Pending.
+Typical gVisor setup on microk8s (host steps, not done): install `runsc` and `containerd-shim-runsc-v1`, add a `runsc`
+runtime stanza to `containerd-template.toml`, restart microk8s, then
+`kubectl apply -f - <<< '{"apiVersion":"node.k8s.io/v1","kind":"RuntimeClass","metadata":{"name":"gvisor"},"handler":"runsc"}'`.
+Check before relying on it: gVisor's `runsc` does not support everything TeX Live and matplotlib do, so run a compile and a
+plot job under it first (a `dmesg` inside the pod shows gVisor's banner).
+
+**pids limit.** Kubernetes has no per-pod pids field; the limit is the kubelet's `--pod-max-pids` (or `podPidsLimit`),
+cluster-wide, in `/var/snap/microk8s/current/args/kubelet` (then `microk8s stop && microk8s start`). A value such as 1024
+stops a fork bomb inside a pod from exhausting the node while leaving the workers room (compile concurrency 2 plus TeX
+child processes). It is not set today. In-process limits remain: shell escape off, `RLIMIT_CPU/FSIZE/AS` on the children
+(`jobs/compile.py`, `ai/plot.py`; `RLIMIT_NPROC` cannot be used because it counts every process of the worker's uid).
+
 ## Network policies (#112)
 
 The chart can ship NetworkPolicies (`templates/networkpolicies.yaml`, `networkPolicy.enabled`, **off by default**). **They do
