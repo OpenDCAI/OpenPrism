@@ -309,13 +309,22 @@ The five built-in templates (`apps/api/builtin_templates/`) are part of the `api
   `lualatex`, `latexmk -norc -pdf` and tectonic (offline bundle), each with the compile environment (`HOME` in `/tmp`,
   shell escape off, `openout_any=p`, `openin_any=p` except lualatex). 25 MB of `/tmp` used. No chart change was needed.
 
+- **Through the live proxy chain, without credentials** (#115, 2026-11-11, https://openprism.cent-su.org via Caddy and the web nginx):
+  a websocket upgrade on `/api/collab` answers `101 Switching Protocols` (so Caddy and nginx pass upgrades to the api); a
+  150 MB request body reaches the api (it answers 404 for the made-up project, so neither proxy refused it) in about 21 s;
+  a 210 MB body gets `413` from Caddy (`max_size 200MB`); the arXiv event-stream endpoint without a token answers `401`
+  JSON. Caddy runs on a host outside the cluster, so its access log was not readable from here.
+
 ## Unverified
 
 The app is serving (`/api/health` through Caddy reports the deployed version; sign-in is required for the API). Not yet
 checked on the cluster, in rough order of risk:
 
-- **Live editing** (`/api/collab` websocket) through Caddy and the NodePort, large uploads (150 MB and above) and the
-  arXiv-import event stream; see `deploy/caddy/README.md`. Needs a browser session against the live site.
+- **Needs a signed-in session or Caddy's host** (#115): live editing typed in two browsers, a real 150 MB upload that is
+  stored, the arXiv import progress stream arriving unbuffered, and that `?token=` never reaches Caddy's access log. For the
+  log, two requests carrying the sentinels `sentinel-token-check-1` (websocket) and `sentinel-token-check-2` (upload) were
+  sent on 2026-11-11 23:40 UTC: on the Caddy host, `grep -c sentinel-token-check <access log>` must print 0. See
+  `deploy/caddy/README.md`.
 - **Compile hardening inside the pod** (#113): the engines themselves are verified (below), but a hostile document that
   tries `\write18`, absolute-path reads and reading the worker's `/proc/*/environ` has not been run against the live pod.
   The same cases run in `jobs/tests.py` (`HostileDocumentTests`, `ScrubbedEnvironmentTests`) under `worker-tex`; run them
