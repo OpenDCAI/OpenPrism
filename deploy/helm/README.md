@@ -242,6 +242,10 @@ superadmin, so a locked-out installation is recoverable only by running `make_su
 - User-supplied API keys live in Redis only for the length of a job, never in Secrets.
 - Migrations must stay backward compatible with the previous release for the duration of a rolling update.
 
+## Built-in templates
+
+The five built-in templates (`apps/api/builtin_templates/`) are part of the `api` image. The `migrate` Job runs `manage.py load_builtin_templates` right after `migrate` on every release, so a fresh database gets them and a changed built-in follows the release. It is idempotent and never changes user-uploaded templates. To reload by hand: `kubectl -n openprism exec deploy/api -- python manage.py load_builtin_templates`.
+
 ## Unverified
 
 The app is serving (`/api/health` through Caddy reports the deployed version; sign-in is required for the API). Not yet

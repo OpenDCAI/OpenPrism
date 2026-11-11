@@ -279,7 +279,7 @@ class TemplateTests(ApiBase):
 
 class BuiltinTemplateTests(ApiBase):
     """Every template shipped in templates/ must have a main file the editor and transfer can compile."""
-    TEMPLATES_DIR = '/legacy/templates'
+    TEMPLATES_DIR = str(settings.BUILTIN_TEMPLATES_DIR)
 
     def _cleanup(self):
         # These tests import the *real* templates into the bucket the running app also uses, so the shared cleanup
@@ -291,17 +291,51 @@ class BuiltinTemplateTests(ApiBase):
         import os
         from django.core.management import call_command
         if not os.path.isdir(self.TEMPLATES_DIR):
-            self.skipTest('templates/ is not mounted at /legacy/templates')
+            self.skipTest('builtin_templates/ is missing')
         call_command('import_legacy', '--skip-projects', templates_dir=self.TEMPLATES_DIR, stdout=io.StringIO())
         self._cleanup()
         for tpl in Template.objects.all():
             self.assertTrue(list(templates.list_paths(tpl)), f'{tpl.id}: files were deleted from storage')
 
+    def test_load_builtin_templates_is_idempotent_and_leaves_user_templates_alone(self):
+        """#75: every release runs this after migrate. Built-ins appear and follow the image; user templates stay."""
+        import json
+        import tempfile
+        from pathlib import Path
+        from django.core.management import call_command
+        from django.test import override_settings
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            (root / 'alpha').mkdir()
+            (root / 'alpha' / 'main.tex').write_text('\\documentclass{article}\n% v1\n')
+            (root / 'taken').mkdir()
+            (root / 'taken' / 'main.tex').write_text('\\documentclass{article}\n% builtin\n')
+            (root / 'manifest.json').write_text(json.dumps({'templates': [
+                {'id': 'alpha', 'label': 'Alpha', 'mainFile': 'main.tex'},
+                {'id': 'taken', 'label': 'Taken', 'mainFile': 'main.tex'}]}))
+            mine = Template.objects.create(id='taken', label='My own', main_file='main.tex', builtin=False)
+            templates.write(mine, 'main.tex', b'user content')
+            with override_settings(BUILTIN_TEMPLATES_DIR=root):
+                call_command('load_builtin_templates', stdout=io.StringIO())
+                call_command('load_builtin_templates', stdout=io.StringIO())
+                self.assertEqual(Template.objects.filter(id='alpha', builtin=True).count(), 1)
+                self.assertEqual(templates.read(Template.objects.get(id='alpha'), 'main.tex'), b'\\documentclass{article}\n% v1\n')
+                (root / 'alpha' / 'main.tex').write_text('\\documentclass{article}\n% v2\n')
+                call_command('load_builtin_templates', stdout=io.StringIO())
+            self.assertIn(b'% v2', templates.read(Template.objects.get(id='alpha'), 'main.tex'))
+            kept = Template.objects.get(id='taken')
+            self.assertFalse(kept.builtin)
+            self.assertEqual(kept.label, 'My own')
+            self.assertEqual(templates.read(kept, 'main.tex'), b'user content')
+            for t in Template.objects.filter(id__in=['alpha', 'taken']):
+                templates.clear(t)
+                t.delete()
+
     def test_every_builtin_template_has_an_existing_main_file(self):
         import os
         from django.core.management import call_command
         if not os.path.isdir(self.TEMPLATES_DIR):
-            self.skipTest('templates/ is not mounted at /legacy/templates')
+            self.skipTest('builtin_templates/ is missing')
         call_command('import_legacy', '--skip-projects', templates_dir=self.TEMPLATES_DIR, stdout=io.StringIO())
         listing = {t['id']: t for t in self.c.get('/api/templates').data['templates']}
         self.assertEqual({'acl', 'arxiv', 'cvpr', 'icml', 'neurips'}, set(listing))
@@ -317,7 +351,7 @@ class BuiltinTemplateTests(ApiBase):
         from django.core.management import call_command
         from jobs.compile import compile_project
         if not os.path.isdir(self.TEMPLATES_DIR):
-            self.skipTest('templates/ is not mounted at /legacy/templates')
+            self.skipTest('builtin_templates/ is missing')
         call_command('import_legacy', '--skip-projects', templates_dir=self.TEMPLATES_DIR, stdout=io.StringIO())
         for tid in ('acl', 'arxiv'):
             pid = self.new_project(tid, template=tid)
@@ -330,7 +364,7 @@ class BuiltinTemplateTests(ApiBase):
         from django.core.management import call_command
         from jobs.compile import compile_project
         if not os.path.isdir(self.TEMPLATES_DIR):
-            self.skipTest('templates/ is not mounted at /legacy/templates')
+            self.skipTest('builtin_templates/ is missing')
         call_command('import_legacy', '--skip-projects', templates_dir=self.TEMPLATES_DIR, stdout=io.StringIO())
         for tpl in Template.objects.filter(pk__in=['acl', 'arxiv', 'cvpr', 'icml', 'neurips']):
             pid = self.new_project(f'{tpl.id} tectonic', template=tpl.id)

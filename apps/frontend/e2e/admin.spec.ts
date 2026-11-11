@@ -1,10 +1,10 @@
 import { expect, test } from '@playwright/test';
-import { latestMail, mailLink, newSuperuser } from './helpers';
+import { latestMail, mailLink, newAccount, newSuperuser } from './helpers';
 
 // The Django admin (v0.1.1, #79): reachable through the same origin as the app, styled, and kept apart from the app.
 
 test('a superadmin signs in to the styled Django admin through the app origin', async ({ page }) => {
-  const root = newSuperuser('admin');
+  const root = await newSuperuser('admin');
   const failed: string[] = [];
   page.on('response', (r) => { if (r.status() >= 400 && /\/(static|admin)\//.test(r.url())) failed.push(`${r.status()} ${r.url()}`); });
 
@@ -31,7 +31,7 @@ test('the app and its routes are not shadowed by the admin routes', async ({ pag
 });
 
 test('only superusers get in: a staff account without superuser is refused, and the admin session is not an app session', async ({ page, request }) => {
-  const staff = newSuperuser('staff', { superuser: false });
+  const staff = await newSuperuser('staff', { superuser: false });
   await page.goto('/admin/login/');
   await page.getByLabel('Email:').fill(staff.email);
   await page.getByLabel('Password:').fill(staff.password);
@@ -41,7 +41,7 @@ test('only superusers get in: a staff account without superuser is refused, and 
   await expect(page).toHaveURL(/\/admin\/login\//);
 
   // A superuser's admin session cookie is its own and opens nothing in the app's API.
-  const root = newSuperuser('only');
+  const root = await newSuperuser('only');
   await page.getByLabel('Email:').fill(root.email);
   await page.getByLabel('Password:').fill(root.password);
   await page.getByRole('button', { name: /log in/i }).click();
@@ -56,7 +56,7 @@ test('only superusers get in: a staff account without superuser is refused, and 
 });
 
 test('a superadmin browses the registered models and finds accounts, but cannot add or delete them', async ({ page }) => {
-  const root = newSuperuser('lists');
+  const root = await newSuperuser('lists');
   await page.goto('/admin/login/');
   await page.getByLabel('Email:').fill(root.email);
   await page.getByLabel('Password:').fill(root.password);
@@ -79,7 +79,7 @@ test('a superadmin browses the registered models and finds accounts, but cannot 
 });
 
 test('a superadmin invites people, resends and revokes, and the mailed link registers a verified account', async ({ page, request }) => {
-  const root = newSuperuser('inviter');
+  const root = await newSuperuser('inviter');
   const stamp = Date.now().toString(36);
   const one = `invited1-${stamp}@example.com`;
   const two = `invited2-${stamp}@example.com`;
@@ -122,7 +122,7 @@ test('a superadmin invites people, resends and revokes, and the mailed link regi
 });
 
 test('a superadmin signed in to the app opens the admin from the account menu without a second login', async ({ page, context }) => {
-  const root = newSuperuser('handoff');
+  const root = await newSuperuser('handoff');
   await page.goto('/login');
   await page.getByLabel('Email address').fill(root.email);
   await page.getByLabel('Password', { exact: true }).fill(root.password);
@@ -136,7 +136,7 @@ test('a superadmin signed in to the app opens the admin from the account menu wi
 });
 
 test('an ordinary account has no Admin item in the account menu', async ({ page }) => {
-  const user = newSuperuser('plain', { superuser: false });
+  const user = await newSuperuser('plain', { superuser: false });
   await page.goto('/login');
   await page.getByLabel('Email address').fill(user.email);
   await page.getByLabel('Password', { exact: true }).fill(user.password);
@@ -144,4 +144,29 @@ test('an ordinary account has no Admin item in the account menu', async ({ page 
   await page.getByRole('button', { name: 'Account menu' }).click();
   await expect(page.getByRole('menuitem', { name: 'Account settings' })).toBeVisible();
   await expect(page.getByRole('menuitem', { name: 'Admin' })).toHaveCount(0);
+});
+
+test('a superadmin mails a locked-out person a password reset link from the users list, and it is logged', async ({ page }) => {
+  const root = await newSuperuser('resetter');
+  const ann = await newAccount('locked');
+  await page.goto('/admin/login/');
+  await page.getByLabel('Email:').fill(root.email);
+  await page.getByLabel('Password:').fill(root.password);
+  await page.getByRole('button', { name: /log in/i }).click();
+  await page.getByRole('link', { name: 'Users', exact: true }).first().click();
+  await page.locator('#searchbar').fill(ann.user.email);
+  await page.locator('#changelist-search input[type=submit]').click();
+  await page.locator('input[name="_selected_action"]').first().check();
+  await page.locator('select[name="action"]').selectOption({ label: 'Send a password reset link (signs them out everywhere)' });
+  await page.getByRole('button', { name: 'Go' }).click();
+  await expect(page.getByText('1 reset link(s) mailed')).toBeVisible();
+  await page.screenshot({ path: 'test-results/admin-reset-link.png', fullPage: true });
+
+  const mail = await latestMail(ann.user.email, { subject: /reset/i });
+  expect(mailLink(mail.text)).toContain('/reset-password?uid=');
+
+  await page.locator('input[name="_selected_action"]').first().check();
+  await page.locator('select[name="action"]').selectOption({ label: 'Clear sign-in lockouts (wrong-code and attempt counters)' });
+  await page.getByRole('button', { name: 'Go' }).click();
+  await expect(page.getByText('Lockouts cleared for 1 account(s).')).toBeVisible();
 });

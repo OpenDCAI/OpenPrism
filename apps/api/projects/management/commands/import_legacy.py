@@ -4,6 +4,7 @@ import mimetypes
 from datetime import datetime, timezone
 from pathlib import Path
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
@@ -36,7 +37,7 @@ class Command(BaseCommand):
     help = 'Import legacy templates and projects from the Node backend data directories (idempotent).'
 
     def add_arguments(self, parser):
-        parser.add_argument('--templates-dir', default='/legacy/templates')
+        parser.add_argument('--templates-dir', default=str(settings.BUILTIN_TEMPLATES_DIR))
         parser.add_argument('--data-dir', default='/legacy/data')
         parser.add_argument('--owner', help='Email of the user who will own imported projects')
         parser.add_argument('--skip-projects', action='store_true')
@@ -59,6 +60,11 @@ class Command(BaseCommand):
             if entry is None and not any(f.suffix == '.tex' for f in d.iterdir()):
                 continue
             entry = entry or {'id': d.name, 'label': d.name}
+            existing = Template.objects.filter(pk=d.name).first()
+            if existing and not existing.builtin and d.name in known:
+                # A user's template with a built-in's id keeps its place: releases never touch user templates.
+                self.stdout.write(f'template {d.name}: a user template has this id, left alone')
+                continue
             contents = {rel: path for path, rel in walk_all(d)}
             declared = entry.get('mainFile')
             main_file = declared if declared in contents else templates.detect_main_file(

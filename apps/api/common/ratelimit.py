@@ -30,3 +30,9 @@ def enforce(scope, user, per_minute):
     wait = hit(scope, ident_for(user), per_minute)
     if wait:
         raise Throttled(wait=wait, detail='Too many requests: try again in a minute.')
+
+
+def reset(scope, ident, window_seconds=60):
+    """Forget the count for `ident` in `scope` (the current window and the one before it)."""
+    window = int(time.time() // window_seconds)
+    cache.delete_many([f'rate:{scope}:{ident}:{w}' for w in (window - 1, window)])

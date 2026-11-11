@@ -32,11 +32,22 @@ def _password_error(password, user):
     return None
 
 
+def password_changed(user):
+    """What every password change does, wherever it happens: sign the account out everywhere and tell its owner."""
+    revoke_refresh_tokens(user)
+    mail.send_template(user.email, 'password_changed', {'name': user.name or user.email})
+
+
 def set_new_password(user, password):
     user.set_password(password)
     user.save(update_fields=['password'])
-    revoke_refresh_tokens(user)
-    mail.send_template(user.email, 'password_changed', {'name': user.name or user.email})
+    password_changed(user)
+
+
+def send_reset_mail(user):
+    uid = urlsafe_base64_encode(force_bytes(user.pk))
+    link = mail.app_link(f'/reset-password?uid={uid}&token={default_token_generator.make_token(user)}')
+    mail.send_template(user.email, 'password_reset', {'name': user.name or user.email, 'link': link})
 
 
 class ForgotPasswordView(APIView):
@@ -47,9 +58,7 @@ class ForgotPasswordView(APIView):
         email = str((request.data or {}).get('email') or '').strip().lower()
         user = User.objects.filter(email=email, is_active=True).first() if email else None
         if user:
-            uid = urlsafe_base64_encode(force_bytes(user.pk))
-            link = mail.app_link(f'/reset-password?uid={uid}&token={default_token_generator.make_token(user)}')
-            mail.send_template(user.email, 'password_reset', {'name': user.name or user.email, 'link': link})
+            send_reset_mail(user)
         return Response({'ok': True})  # the same answer either way: whether an account exists is not revealed
 
 

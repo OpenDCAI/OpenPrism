@@ -109,3 +109,105 @@ class AdminAccessTests(TestCase):
         self.assertGreater(int(res['Retry-After']), 0)
         other = '192.0.2.%d' % (uuid.uuid4().int % 250 + 1)
         self.assertEqual(login(Client(), 'root@example.com', ip=other).status_code, 302)  # others are not affected
+
+
+class AdminPasswordChangeTests(TestCase):
+    """#103: changing the password on the admin's own page signs the account out of the app and mails the notice."""
+
+    def setUp(self):
+        from django.core import mail as outbox
+        self.outbox = outbox.outbox
+        self.root = get_user_model().objects.create_superuser('root@example.com', PASSWORD)
+        self.ip = '198.51.100.%d' % (uuid.uuid4().int % 250 + 1)
+
+    def test_it_revokes_refresh_tokens_and_sends_the_notice(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+        from rest_framework_simplejwt.tokens import RefreshToken
+        RefreshToken.for_user(self.root)
+        RefreshToken.for_user(self.root)
+        self.assertEqual(OutstandingToken.objects.filter(user=self.root).count(), 2)
+        client = Client()
+        login(client, 'root@example.com', ip=self.ip)
+        self.outbox.clear()
+        res = client.post('/admin/password_change/', {'old_password': PASSWORD, 'new_password1': 'a-new-long-passphrase-9',
+                                                      'new_password2': 'a-new-long-passphrase-9'}, REMOTE_ADDR=self.ip)
+        self.assertEqual((res.status_code, res['Location']), (302, '/admin/password_change/done/'))
+        self.root.refresh_from_db()
+        self.assertTrue(self.root.check_password('a-new-long-passphrase-9'))
+        self.assertEqual(BlacklistedToken.objects.filter(token__user=self.root).count(), 2)
+        self.assertEqual([m.to[0] for m in self.outbox], ['root@example.com'])
+        self.assertEqual(client.get('/admin/', REMOTE_ADDR=self.ip).status_code, 200)  # this admin session stays
+
+    def test_a_refused_change_revokes_and_mails_nothing(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+        from rest_framework_simplejwt.tokens import RefreshToken
+        RefreshToken.for_user(self.root)
+        client = Client()
+        login(client, 'root@example.com', ip=self.ip)
+        self.outbox.clear()
+        res = client.post('/admin/password_change/', {'old_password': 'not-it', 'new_password1': 'a-new-long-passphrase-9',
+                                                      'new_password2': 'a-new-long-passphrase-9'}, REMOTE_ADDR=self.ip)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(BlacklistedToken.objects.count(), 0)
+        self.assertEqual(self.outbox, [])
+
+
+class ExpiredSessionCleanupTests(TestCase):
+    """#104: the admin's expired sessions are deleted by a daily beat task; live ones stay."""
+
+    def test_the_task_removes_only_expired_sessions_and_is_scheduled_daily(self):
+        from datetime import timedelta
+        from django.conf import settings
+        from django.contrib.sessions.models import Session
+        from django.utils import timezone
+        from . import tasks
+        Session.objects.create(session_key='expired', session_data='x', expire_date=timezone.now() - timedelta(hours=1))
+        Session.objects.create(session_key='live', session_data='x', expire_date=timezone.now() + timedelta(hours=1))
+        tasks.clear_expired_sessions()
+        self.assertEqual(list(Session.objects.values_list('session_key', flat=True)), ['live'])
+        entry = settings.CELERY_BEAT_SCHEDULE['clear-expired-sessions']
+        self.assertEqual((entry['task'], entry['schedule']), ('accounts.tasks.clear_expired_sessions', 86400.0))
+        self.assertEqual(settings.CELERY_TASK_ROUTES['accounts.tasks.clear_expired_sessions'], {'queue': 'import'})
+
+
+class E2ESuperuserEndpointTests(TestCase):
+    """#106: a test-only way to make a superuser over HTTP; absent unless debug is on AND a token is configured."""
+    URL = '/api/auth/e2e/superuser'
+
+    def post(self, token='s3cret-test-token', **extra):
+        headers = {'HTTP_X_E2E_TOKEN': token} if token is not None else {}
+        body = {'email': 'Made@Example.com', 'password': PASSWORD, **extra}
+        return Client().post(self.URL, body, content_type='application/json', **headers)
+
+    @override_settings(E2E_SUPERUSER_TOKEN='s3cret-test-token', DEBUG=True)
+    def test_with_the_token_in_debug_it_makes_a_superuser_who_can_use_the_admin(self):
+        self.assertEqual(self.post().status_code, 200)
+        made = get_user_model().objects.get(email='made@example.com')
+        self.assertTrue(made.is_superuser and made.is_staff)
+        self.assertTrue(made.memberships.exists())
+        client = Client()
+        self.assertEqual(login(client, 'made@example.com', ip='198.51.100.77').status_code, 302)
+        self.assertEqual(client.get('/admin/').status_code, 200)
+
+    @override_settings(E2E_SUPERUSER_TOKEN='s3cret-test-token', DEBUG=True)
+    def test_it_can_make_a_staff_account_without_superuser_and_refuses_a_taken_address(self):
+        self.assertEqual(self.post(superuser=False).status_code, 200)
+        made = get_user_model().objects.get(email='made@example.com')
+        self.assertEqual((made.is_staff, made.is_superuser), (True, False))
+        self.assertEqual(self.post().status_code, 400)
+
+    @override_settings(E2E_SUPERUSER_TOKEN='s3cret-test-token', DEBUG=False, TESTING=False)
+    def test_without_debug_it_does_not_exist_even_with_the_right_token(self):
+        """Production (DEBUG off): a configured token must not turn this on."""
+        self.assertEqual(self.post().status_code, 404)
+        self.assertFalse(get_user_model().objects.filter(email='made@example.com').exists())
+
+    @override_settings(E2E_SUPERUSER_TOKEN='', DEBUG=True)
+    def test_without_a_configured_token_it_does_not_exist(self):
+        self.assertEqual(self.post(token='').status_code, 404)
+
+    @override_settings(E2E_SUPERUSER_TOKEN='s3cret-test-token', DEBUG=True)
+    def test_a_wrong_or_missing_token_is_a_404(self):
+        self.assertEqual(self.post(token='nope').status_code, 404)
+        self.assertEqual(self.post(token=None).status_code, 404)
+        self.assertFalse(get_user_model().objects.filter(email='made@example.com').exists())

@@ -10,6 +10,7 @@ from django.core.exceptions import ImproperlyConfigured
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 # The app version has one source: apps/api/VERSION (the web build and Vite read the same file).
+BUILTIN_TEMPLATES_DIR = BASE_DIR / 'builtin_templates'  # shipped in the image, loaded by `load_builtin_templates`
 VERSION = (BASE_DIR / 'VERSION').read_text().strip()
 
 
@@ -52,7 +53,7 @@ EMAIL_TIMEOUT = int(env('EMAIL_TIMEOUT', '20'))
 # REGISTRATION_MODE: `invite` (the default: only addresses with a platform or workspace invitation) or `open` (anyone).
 # The test runner defaults to `open`, since most tests register accounts freely; tests of the gate set the mode themselves.
 REQUIRE_EMAIL_VERIFICATION = env_bool('REQUIRE_EMAIL_VERIFICATION', False)
-REGISTRATION_MODE = env('REGISTRATION_MODE', 'open' if TESTING else 'invite')
+REGISTRATION_MODE = 'open' if TESTING else env('REGISTRATION_MODE', 'invite')  # tests ignore the environment (#105)
 if REGISTRATION_MODE not in ('open', 'invite'):
     raise ImproperlyConfigured('REGISTRATION_MODE must be "open" or "invite"')
 # Platform invitations (v0.1.2): a superadmin's invitation to register lives this many days. WORKSPACE_INVITES_ALLOW_SIGNUP:
@@ -210,9 +211,9 @@ REST_FRAMEWORK = {
     'NUM_PROXIES': int(env('TRUSTED_PROXY_COUNT', '0')),  # reverse proxies in front of the API: rate limits key on the real client
     'DEFAULT_THROTTLE_CLASSES': ['rest_framework.throttling.ScopedRateThrottle'],  # only views that set throttle_scope
     'DEFAULT_THROTTLE_RATES': {
-        'auth': env('AUTH_RATE_LIMIT', '10000/min' if TESTING else '20/min'),
+        'auth': '10000/min' if TESTING else env('AUTH_RATE_LIMIT', '20/min'),  # tests ignore compose's limit (#105)
         # every tab refreshes on load (the access token lives in memory only); a refresh needs a valid refresh token
-        'refresh': env('AUTH_REFRESH_RATE_LIMIT', '10000/min' if TESTING else '120/min'),
+        'refresh': '10000/min' if TESTING else env('AUTH_REFRESH_RATE_LIMIT', '120/min'),
     },
     'EXCEPTION_HANDLER': 'common.exceptions.ok_error_handler',
 }
@@ -235,6 +236,7 @@ REFRESH_COOKIE_NAME = 'openprism_refresh'
 # cookie name and flags keep it apart from the app's cookies; the session is short.
 ADMIN_SESSION_HOURS = int(env('ADMIN_SESSION_HOURS', '8'))
 # Superadmins must have two-factor authentication to use the admin (on by default; compose and the test runner turn it off).
+E2E_SUPERUSER_TOKEN = env('E2E_SUPERUSER_TOKEN', '')  # dev/test stacks only (DEBUG): lets the browser suite make a superuser over HTTP
 SUPERADMIN_REQUIRE_MFA = env_bool('SUPERADMIN_REQUIRE_MFA', not TESTING)
 ADMIN_LOGIN_RATE_PER_15_MIN = int(env('ADMIN_LOGIN_RATE_PER_15_MIN', '10'))  # login form submissions per address
 SESSION_COOKIE_NAME = 'openprism_admin'
@@ -271,6 +273,7 @@ CELERY_TASK_ROUTES = {
     # without these, jobs whose worker died stay "running" forever and hold the user's compile slots (429).
     'jobs.tasks.reap_stale_jobs': {'queue': 'import'},
     'accounts.tasks.prune_sign_ins': {'queue': 'import'},
+    'accounts.tasks.clear_expired_sessions': {'queue': 'import'},
     'jobs.tasks.cleanup_old_jobs': {'queue': 'import'},
     'collab.tasks.*': {'queue': 'import'},
     'versions.tasks.*': {'queue': 'import'},
@@ -284,6 +287,7 @@ CELERY_BEAT_SCHEDULE = {
     'recover-collab-logs': {'task': 'collab.tasks.recover_update_logs', 'schedule': 60.0},
     'prune-versions': {'task': 'versions.tasks.prune_versions', 'schedule': 86400.0},
     'prune-sign-ins': {'task': 'accounts.tasks.prune_sign_ins', 'schedule': 86400.0},
+    'clear-expired-sessions': {'task': 'accounts.tasks.clear_expired_sessions', 'schedule': 86400.0},
     'prune-llm-usage': {'task': 'integrations.tasks.prune_llm_usage', 'schedule': 86400.0},
     'cleanup-pending-uploads': {'task': 'projects.tasks.cleanup_pending_uploads', 'schedule': 900.0},
 }

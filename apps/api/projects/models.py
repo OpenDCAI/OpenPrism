@@ -8,8 +8,8 @@ class Workspace(models.Model):
     PERSONAL, TEAM = 'personal', 'team'
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     name = models.CharField(max_length=200)
-    kind = models.CharField(max_length=10, choices=[(PERSONAL, 'Personal'), (TEAM, 'Team')], default=TEAM)
-    color = models.CharField(max_length=9, blank=True, default='')  # '#rrggbb'; picked by the server for new workspaces
+    kind = models.CharField(max_length=10, choices=[(PERSONAL, 'Personal'), (TEAM, 'Team')], default=TEAM, db_default=TEAM)
+    color = models.CharField(max_length=9, blank=True, default='', db_default='')  # '#rrggbb'; picked by the server for new workspaces
     # Unnamed project versions older than this many days are pruned (each project's newest is kept); null: count only.
     version_retention_days = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -43,7 +43,7 @@ class WorkspaceInvite(models.Model):
     invited_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
     created_at = models.DateTimeField(auto_now_add=True)
     last_sent_at = models.DateTimeField(null=True, blank=True)  # when the invitation mail was last queued
-    send_failed = models.BooleanField(default=False)  # the last mail could not be delivered after every retry
+    send_failed = models.BooleanField(default=False, db_default=False)  # the last mail could not be delivered after every retry
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['workspace', 'email'], name='uniq_workspace_invite')]

@@ -36,7 +36,7 @@ apps/frontend/   React 18 + TypeScript + Vite single-page app
 apps/api/        Django project (accounts, projects, templates_app, jobs, ai, transfer, collab)
 design/          Shared UI design system, imported by the frontend as @design
 deploy/          Garage bootstrap script (compose), the Helm chart (`deploy/helm`), the one-time bootstrap of the hosted Postgres/MinIO (`deploy/bootstrap`) and the Caddy reference config (`deploy/caddy`)
-templates/       Built-in conference templates (ACL, CVPR, NeurIPS, ICML)
+apps/api/builtin_templates/   Built-in conference templates (ACL, arXiv, CVPR, ICML, NeurIPS), loaded by `manage.py load_builtin_templates`
 compose.yaml     Local stack definition
 ```
 
@@ -119,7 +119,7 @@ After changing Django models: `docker compose run --rm api python manage.py make
 
 ### Importing the pre-migration data
 
-Earlier versions kept templates and projects on disk. To load `templates/` and `data/` into an account (register it first):
+Earlier versions kept templates and projects on disk. To load `data/` into an account (built-in templates load with `manage.py load_builtin_templates`) (register it first):
 
 ```bash
 docker compose exec api python manage.py import_legacy --owner you@example.com
