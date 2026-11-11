@@ -32,11 +32,16 @@ def _password_error(password, user):
     return None
 
 
+def password_changed(user):
+    """What every password change does, wherever it happens: sign the account out everywhere and tell its owner."""
+    revoke_refresh_tokens(user)
+    mail.send_template(user.email, 'password_changed', {'name': user.name or user.email})
+
+
 def set_new_password(user, password):
     user.set_password(password)
     user.save(update_fields=['password'])
-    revoke_refresh_tokens(user)
-    mail.send_template(user.email, 'password_changed', {'name': user.name or user.email})
+    password_changed(user)
 
 
 class ForgotPasswordView(APIView):

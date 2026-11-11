@@ -109,3 +109,44 @@ class AdminAccessTests(TestCase):
         self.assertGreater(int(res['Retry-After']), 0)
         other = '192.0.2.%d' % (uuid.uuid4().int % 250 + 1)
         self.assertEqual(login(Client(), 'root@example.com', ip=other).status_code, 302)  # others are not affected
+
+
+class AdminPasswordChangeTests(TestCase):
+    """#103: changing the password on the admin's own page signs the account out of the app and mails the notice."""
+
+    def setUp(self):
+        from django.core import mail as outbox
+        self.outbox = outbox.outbox
+        self.root = get_user_model().objects.create_superuser('root@example.com', PASSWORD)
+        self.ip = '198.51.100.%d' % (uuid.uuid4().int % 250 + 1)
+
+    def test_it_revokes_refresh_tokens_and_sends_the_notice(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
+        from rest_framework_simplejwt.tokens import RefreshToken
+        RefreshToken.for_user(self.root)
+        RefreshToken.for_user(self.root)
+        self.assertEqual(OutstandingToken.objects.filter(user=self.root).count(), 2)
+        client = Client()
+        login(client, 'root@example.com', ip=self.ip)
+        self.outbox.clear()
+        res = client.post('/admin/password_change/', {'old_password': PASSWORD, 'new_password1': 'a-new-long-passphrase-9',
+                                                      'new_password2': 'a-new-long-passphrase-9'}, REMOTE_ADDR=self.ip)
+        self.assertEqual((res.status_code, res['Location']), (302, '/admin/password_change/done/'))
+        self.root.refresh_from_db()
+        self.assertTrue(self.root.check_password('a-new-long-passphrase-9'))
+        self.assertEqual(BlacklistedToken.objects.filter(token__user=self.root).count(), 2)
+        self.assertEqual([m.to[0] for m in self.outbox], ['root@example.com'])
+        self.assertEqual(client.get('/admin/', REMOTE_ADDR=self.ip).status_code, 200)  # this admin session stays
+
+    def test_a_refused_change_revokes_and_mails_nothing(self):
+        from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken
+        from rest_framework_simplejwt.tokens import RefreshToken
+        RefreshToken.for_user(self.root)
+        client = Client()
+        login(client, 'root@example.com', ip=self.ip)
+        self.outbox.clear()
+        res = client.post('/admin/password_change/', {'old_password': 'not-it', 'new_password1': 'a-new-long-passphrase-9',
+                                                      'new_password2': 'a-new-long-passphrase-9'}, REMOTE_ADDR=self.ip)
+        self.assertEqual(res.status_code, 200)
+        self.assertEqual(BlacklistedToken.objects.count(), 0)
+        self.assertEqual(self.outbox, [])
