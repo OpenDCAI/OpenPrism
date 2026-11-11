@@ -133,7 +133,7 @@ helm upgrade --install openprism deploy/helm/openprism -n openprism \
 - **Workers** are one template (`templates/workers.yaml`) driven by `workers.*`. `terminationGracePeriodSeconds` must stay
   above each task's hard time limit (330 s / 1860 s / 960 s) or a rolling update kills a running job.
 - **Not included (decided for the shared cluster):** Ingress, NetworkPolicies, autoscaling, Postgres/Redis/MinIO.
-  See `docs/backlog.md` (v0.1.0) for what still needs checking once it runs.
+  The checks that remain are GitHub issues labelled `v0.1.6` (`deploy`).
 
 ## Security model
 
@@ -151,7 +151,7 @@ The compile worker executes documents written by whoever can edit a project, inc
    because the cluster's CNI enforcement is unknown and the data services are now outside the namespace. **Until they
    are added, `worker-compile` can reach whatever the pod network allows**, so untrusted LaTeX has no network
    isolation beyond layers 1 and 2. They remain in git history (`deploy/k8s/base/networkpolicies.yaml` before v0.1.0)
-   and are tracked in `docs/backlog.md` (v0.1.0).
+   and are tracked in the `v0.1.6` GitHub issues (NetworkPolicies, sandboxed runtime).
 4. **Stronger, optional:** run `worker-compile` and `worker-ai` under a sandboxed runtime (`runtimeClassName: gvisor` or
    Kata); the right fix for LLM-written plot code and LaTeX sharing a user with the worker process.
 

@@ -47,4 +47,4 @@ release sign-off, a look at a real deployment, and anything a spec cannot judge 
 ## Recording results
 
 Copy the script into the release's issue or a scratch file, tick each step, and for any failure write: what you did, what you
-expected, what happened, a screenshot, and the browser. New bugs go on `docs/backlog.md` (see CLAUDE.md).
+expected, what happened, a screenshot, and the browser. File new bugs as GitHub issues (label `QA`, plus a priority and type; see CLAUDE.md).
