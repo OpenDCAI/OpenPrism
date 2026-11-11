@@ -23,9 +23,9 @@ class ProjectVersion(models.Model):
     manifest_hash = models.CharField(max_length=64)
     pdf_key = models.CharField(max_length=1200, blank=True, default='')
     pdf_size = models.BigIntegerField(default=0)
-    status = models.CharField(max_length=7, choices=[(SUCCESS, 'Success'), (FAILED, 'Failed')], default=SUCCESS)
-    log_key = models.CharField(max_length=1200, blank=True, default='')  # the compile log (text/plain); blank before v0.0.4.1
-    log_size = models.BigIntegerField(default=0)
+    status = models.CharField(max_length=7, choices=[(SUCCESS, 'Success'), (FAILED, 'Failed')], default=SUCCESS, db_default=SUCCESS)
+    log_key = models.CharField(max_length=1200, blank=True, default='', db_default='')  # the compile log (text/plain); blank before v0.0.4.1
+    log_size = models.BigIntegerField(default=0, db_default=0)
     name = models.CharField(max_length=100, blank=True, default='')  # a named version is pinned: retention keeps it forever
     restored_from = models.ForeignKey('self', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
 
