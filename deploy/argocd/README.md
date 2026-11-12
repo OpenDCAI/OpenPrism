@@ -16,9 +16,8 @@ Argo CD sync: wave -1 settings ─► Sync hook: migrate (+ built-in templates) 
 |---|---|
 | `project.yaml` | AppProjects: `openprism` (this repo, namespace `openprism` only, nothing cluster-scoped) and `openprism-platform` (Sealed Secrets) |
 | `root.yaml` | app of apps: watches `apps/` on `main` |
-| `apps/openprism.yaml` | the release: chart at the **tag**; `values-cent.yaml` and `secrets/` from **main** |
+| `apps/openprism.yaml` | the release: chart at the **tag**; the cluster's values (`valuesObject`, here) and `secrets/` from **main**; `secrets.revision` rolls the pods after a re-seal |
 | `apps/sealed-secrets.yaml` | Sealed Secrets controller (pinned chart) |
-| `values-cent.yaml` | non-secret cluster values; `secrets.revision` rolls the pods after a re-seal |
 | `secrets/` | SealedSecrets `openprism-core`, `openprism-ai` (if set), `ghcr-login-secret` |
 
 `openprism-app-creds` (database password, S3 keys) is still made once by `deploy/bootstrap` and is not in git.
@@ -52,8 +51,8 @@ then the first release through a Deploy PR. Until then `apps/openprism.yaml` poi
 chart while its appVersion was still 0.1.7.1, so the images are v0.1.7.1's), not at a tag.
 
 Before: v0.1.7.1 is live through the old workflow; `release/v0.1.8` (VERSION 0.1.8) is merged to `main` **without a tag**
-(merging does not deploy), so `root.yaml` finds `deploy/argocd/apps/`. `values-cent.yaml` was checked on 2026-11-12:
-`helm get manifest openprism` and `helm template` with it differ only in sync waves, the pods' checksum annotations,
+(merging does not deploy), so `root.yaml` finds `deploy/argocd/apps/`. The values in `apps/openprism.yaml` were checked on 2026-11-12:
+`helm get manifest openprism` and `helm template` with them differ only in sync waves, the pods' checksum annotations,
 and the migrate and PostSync Jobs (Secrets left out of the comparison).
 
 1. **Projects and controller:** `kubectl apply -f deploy/argocd/project.yaml -f deploy/argocd/root.yaml`. The root app
