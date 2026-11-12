@@ -192,6 +192,10 @@ helm upgrade --install openprism deploy/helm/openprism -n openprism \
 
 ## Upgrading to v0.1.7: AI settings are per workspace and per project (#78)
 
+**v0.1.7 itself never reached the cluster** (the migrate Job failed on `MissingContentMD5`, #164; the release rolled back to
+0.1.5). Its schema migrations had already applied and are kept; the old code runs on them (they only add tables and
+columns). v0.1.7.1 is v0.1.7 plus that fix and is what to deploy.
+
 What changes for people: **personal keys are no longer a separate layer.** A person's own AI keys are now the settings of their
 *personal workspace* and apply to projects there. In a **team** workspace only the team's settings apply (an owner or admin sets
 them under Settings, and a project can override each one in *Project AI settings*). Search, Vision and MinerU now exist at both
