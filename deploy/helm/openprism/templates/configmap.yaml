@@ -3,6 +3,7 @@ apiVersion: v1
 kind: ConfigMap
 metadata:
   name: openprism-config
+  {{- with (include "openprism.wave" (dict "root" . "wave" "-1")) }}{{ . | nindent 2 }}{{ end }}
 data:
   DJANGO_DEBUG: "0"
   DJANGO_ALLOWED_HOSTS: {{ printf "%s,api" (required "host is required" .Values.host) | quote }}

@@ -3,6 +3,7 @@ kind: Deployment
 metadata:
   name: web
   labels: {{- include "openprism.labels" (dict "root" . "name" "web") | nindent 4 }}
+  {{- with (include "openprism.wave" (dict "root" . "wave" "1")) }}{{ . | nindent 2 }}{{ end }}
 spec:
   replicas: {{ .Values.web.replicas }}
   strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}
