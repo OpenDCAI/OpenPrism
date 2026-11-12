@@ -3,7 +3,7 @@
 
 image:
   registry: ghcr.io/cent-ischool/openprism   # images are <registry>/{api,web,worker-tex,worker-ai}:<tag>
-  tag: ""                                    # required: the workflow passes the git sha
+  tag: ""                                    # empty = "v" + the chart's appVersion (= apps/api/VERSION at the release tag)
   pullSecrets: [ghcr-login-secret]           # created by the workflow from GHCR_USERNAME / GHCR_PASSWORD
 
 # Public hostname served by the external Caddy2 (TLS ends there). Used for APP_BASE_URL, allowed hosts and mail links.
@@ -45,6 +45,11 @@ mail:
 # Rendered into the openprism-core / openprism-ai Secrets. The workflow passes these with --set-file so values with
 # commas or backslashes survive. Only the first three are required; the AI keys are optional server-side defaults.
 secrets:
+  # true: the chart renders openprism-core / openprism-ai from the values below (the Helm workflow passes them with
+  # --set-file). false: they already exist in the namespace (Sealed Secrets under Argo CD, deploy/argocd) and the chart
+  # only reads them; then `revision` is what rolls the pods when they change (the seal workflow bumps it).
+  create: true
+  revision: ""
   DJANGO_SECRET_KEY: ""
   DJANGO_SECRET_KEY_FALLBACKS: ""  # only while rotating DJANGO_SECRET_KEY: the previous key(s), comma-separated (README, "Secrets")
   CREDENTIAL_ENCRYPTION_KEY: ""   # Fernet key(s); never change once users have stored keys (comma-separated rotates)

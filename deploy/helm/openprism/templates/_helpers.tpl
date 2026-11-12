@@ -1,6 +1,6 @@
 {{/* Image reference: <registry>/<name>:<tag> */}}
 {{- define "openprism.image" -}}
-{{ .root.Values.image.registry }}/{{ .name }}:{{ required "image.tag is required (the workflow passes the git sha)" .root.Values.image.tag }}
+{{ .root.Values.image.registry }}/{{ .name }}:{{ .root.Values.image.tag | default (printf "v%s" .root.Chart.AppVersion) }}
 {{- end }}
 
 {{/* Labels every workload carries. */}}
@@ -64,5 +64,10 @@ envFrom:
 {{/* Pods restart when the settings or the chart-managed secrets change. */}}
 {{- define "openprism.configChecksum" -}}
 checksum/config: {{ include (print .Template.BasePath "/configmap.yaml") . | sha256sum }}
+{{- if .Values.secrets.create }}
 checksum/secrets: {{ include (print .Template.BasePath "/secret.yaml") . | sha256sum }}
+{{- else }}
+{{- /* Secrets come from outside the chart (Sealed Secrets under Argo CD): the seal workflow bumps this to roll the pods. */}}
+checksum/secrets: {{ .Values.secrets.revision | toString | quote }}
+{{- end }}
 {{- end }}
