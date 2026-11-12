@@ -760,6 +760,19 @@ export function blobUrl(projectId: string, path: string) {
   return `/api/projects/${projectId}/blob?${params.toString()}`;
 }
 
+/** What exporting a project would hold, or why it cannot be exported (#162). Nothing is built. */
+export function checkProjectExport(projectId: string) {
+  return request<{ ok: boolean; files?: number; bytes?: number; name?: string; error?: string }>(`/api/projects/${encodeURIComponent(projectId)}/export?check=1`);
+}
+/**
+ * The address that downloads the project as one zip. A browser navigation cannot send an Authorization header, so it
+ * carries the project's short-lived URL token (never the access token).
+ */
+export async function projectExportUrl(projectId: string) {
+  const token = await ensureUrlToken(projectId);
+  return `/api/projects/${encodeURIComponent(projectId)}/export?token=${encodeURIComponent(token)}`;
+}
+
 // ─── Accounts ───
 
 export interface Account {
@@ -1204,6 +1217,92 @@ export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: stri
     body: JSON.stringify(payload)
   });
 }
+export type AiProfileName = 'llm' | 'search' | 'vision' | 'mineru';
+export interface AiProfileStatus {
+  configured: boolean;
+  updatedAt?: string;
+  /** Owners and admins also get these (never the key). Other members only see `model`. */
+  endpoint?: string;
+  model?: string;
+  lastFour?: string;
+  dailyLimit?: number | null;
+  /** AI requests paid by this setting: today (UTC) and in the last 30 days. Owners and admins only. */
+  usage?: { today: number; last30Days: number };
+}
+export interface WorkspaceAiStatus {
+  ok: boolean;
+  error?: string;
+  canManage?: boolean;
+  canUse?: boolean;
+  profiles: Record<AiProfileName, AiProfileStatus>;
+}
+/** All AI settings of a workspace: AI model, Search, Vision and MinerU (#78). */
+export function getWorkspaceAi(workspaceId: string) {
+  return request<WorkspaceAiStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/ai`);
+}
+export function saveWorkspaceAiProfile(workspaceId: string, profile: AiProfileName, payload: { endpoint?: string; model?: string; apiKey?: string; dailyLimit?: number | null }) {
+  return request<WorkspaceAiStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/ai/${profile}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+export function removeWorkspaceAiProfile(workspaceId: string, profile: AiProfileName) {
+  return request<WorkspaceAiStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/ai/${profile}`, { method: 'DELETE' });
+}
+
+/** How a project gets one AI setting (#78): its own override, the workspace's, or the server's. */
+export interface ProjectAiProfileStatus {
+  source: 'project' | 'workspace' | 'server';
+  /** Search / Vision following the AI model because they are unset. */
+  viaLlm: boolean;
+  overridden: boolean;
+  model?: string;
+  /** Only for those who can change overrides. */
+  endpoint?: string;
+  lastFour?: string;
+  dailyLimit?: number | null;
+  usage?: { today: number; last30Days: number };
+}
+export interface ProjectAiStatus {
+  ok: boolean;
+  error?: string;
+  canManage?: boolean;
+  canUse?: boolean;
+  profiles: Record<AiProfileName, ProjectAiProfileStatus>;
+}
+export function getProjectAi(projectId: string) {
+  return request<ProjectAiStatus>(`/api/projects/${encodeURIComponent(projectId)}/ai`);
+}
+export function saveProjectAiProfile(projectId: string, profile: AiProfileName, payload: { endpoint?: string; model?: string; apiKey?: string; dailyLimit?: number | null }) {
+  return request<ProjectAiStatus>(`/api/projects/${encodeURIComponent(projectId)}/ai/${profile}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+/** Reset: the project goes back to the workspace's setting. */
+export function removeProjectAiProfile(projectId: string, profile: AiProfileName) {
+  return request<ProjectAiStatus>(`/api/projects/${encodeURIComponent(projectId)}/ai/${profile}`, { method: 'DELETE' });
+}
+export function projectCredentialEvents(projectId: string, before?: string) {
+  const q = before ? `?before=${encodeURIComponent(before)}` : '';
+  return request<CredentialEventPage>(`/api/projects/${encodeURIComponent(projectId)}/credential-events${q}`);
+}
+export function listProjectAiModels(projectId: string, payload: ProviderCheckPayload) {
+  return request<{ ok: boolean; models?: string[]; error?: string }>(`/api/projects/${encodeURIComponent(projectId)}/ai/models`, { method: 'POST', body: JSON.stringify(payload) });
+}
+export function testProjectAi(projectId: string, payload: ProviderCheckPayload) {
+  return request<{ ok: boolean; latencyMs?: number; error?: string }>(`/api/projects/${encodeURIComponent(projectId)}/ai/test`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
+export interface ProviderCheckPayload { endpoint?: string; model?: string; apiKey?: string; profile?: AiProfileName }
+/** Ask the server for the provider's model list (#76). An empty key with an unchanged endpoint uses the stored key. */
+export function listWorkspaceLlmModels(workspaceId: string, payload: ProviderCheckPayload) {
+  return request<{ ok: boolean; models?: string[]; error?: string }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm/models`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+/** Send one tiny chat request to the chosen model (#76). Advice only; saving never depends on it. */
+export function testWorkspaceLlm(workspaceId: string, payload: ProviderCheckPayload) {
+  return request<{ ok: boolean; latencyMs?: number; error?: string }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm/test`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
 export function removeWorkspaceLlm(workspaceId: string) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, { method: 'DELETE' });
 }
@@ -1231,7 +1330,7 @@ export function removeAiKey(profile: AiKeyProfile) {
 export interface CredentialEvent {
   id: string;
   createdAt: string;
-  kind: 'workspace_llm' | 'zotero' | 'user_llm' | 'user_mineru';
+  kind: 'workspace_llm' | 'zotero' | 'user_llm' | 'user_mineru' | 'ai_profile';
   action: 'set' | 'rotated' | 'updated' | 'removed';
   /** the key's last four characters after the change ('' when removed) */
   lastFour: string;

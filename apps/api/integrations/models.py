@@ -32,18 +32,22 @@ class WorkspaceLlmConfig(models.Model):
 class LlmUsage(models.Model):
     """AI jobs per UTC day, by who ran them, in which workspace, and whose key paid (`source`). Counts requests, not
     tokens. Outlives the 24 h Job rows; pruned after LLM_USAGE_KEEP_DAYS. Written by ai.usage.charge()."""
-    WORKSPACE, USER, BROWSER, SERVER = 'workspace', 'user', 'browser', 'server'
-    SOURCES = [(s, s) for s in (WORKSPACE, USER, BROWSER, SERVER)]
+    PROJECT, WORKSPACE, USER, BROWSER, SERVER = 'project', 'workspace', 'user', 'browser', 'server'   # USER: history only
+    SOURCES = [(s, s) for s in (PROJECT, WORKSPACE, USER, BROWSER, SERVER)]
 
     day = models.DateField()
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name='+')
     workspace = models.ForeignKey('projects.Workspace', null=True, on_delete=models.CASCADE, related_name='+')
+    # Set for jobs paid by a project's own setting (source `project`), so a project's daily limit and usage can be counted.
+    project = models.ForeignKey('projects.Project', null=True, blank=True, on_delete=models.CASCADE, related_name='+')
+    # Which AI setting paid (llm, search, vision, mineru); blank for server / browser keys and rows from before #78.
+    profile = models.CharField(max_length=10, blank=True, default='', db_default='')
     source = models.CharField(max_length=10, choices=SOURCES)
     count = models.PositiveIntegerField(default=0, db_default=0)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['day', 'user', 'workspace', 'source'], nulls_distinct=False,
-                                               name='llm_usage_unique_row')]
+        constraints = [models.UniqueConstraint(fields=['day', 'user', 'workspace', 'project', 'profile', 'source'],
+                                               nulls_distinct=False, name='llm_usage_unique_row')]
         indexes = [models.Index(fields=['workspace', 'day'])]
 
 
@@ -51,7 +55,8 @@ class CredentialEvent(models.Model):
     """Append-only history of stored credentials: who set, rotated, changed or removed one, and when. Never holds key
     material beyond the last four characters the UI already shows. Written only by integrations.audit.record()."""
     WORKSPACE_LLM, ZOTERO, USER_LLM, USER_MINERU = 'workspace_llm', 'zotero', 'user_llm', 'user_mineru'
-    KINDS = [(k, k) for k in (WORKSPACE_LLM, ZOTERO, USER_LLM, USER_MINERU)]
+    AI_PROFILE = 'ai_profile'   # any profile other than a workspace's llm, and every project override (detail says which)
+    KINDS = [(k, k) for k in (WORKSPACE_LLM, ZOTERO, USER_LLM, USER_MINERU, AI_PROFILE)]
     SET, ROTATED, UPDATED, REMOVED = 'set', 'rotated', 'updated', 'removed'
     ACTIONS = [(a, a) for a in (SET, ROTATED, UPDATED, REMOVED)]
 
@@ -60,6 +65,8 @@ class CredentialEvent(models.Model):
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
     actor_name = models.CharField(max_length=300, blank=True)  # kept after the actor's account is deleted
     workspace = models.ForeignKey('projects.Workspace', null=True, blank=True, on_delete=models.CASCADE, related_name='+')
+    # A change to a project's own AI setting also names the project (kept as detail.projectId if the project is deleted).
+    project = models.ForeignKey('projects.Project', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name='+')
     kind = models.CharField(max_length=20, choices=KINDS)
     action = models.CharField(max_length=10, choices=ACTIONS)
@@ -67,7 +74,8 @@ class CredentialEvent(models.Model):
     detail = models.JSONField(default=dict, blank=True)  # non-secret fields that changed, e.g. {"model": "gpt-4o"}
 
     class Meta:
-        indexes = [models.Index(fields=['workspace', '-created_at']), models.Index(fields=['owner', '-created_at'])]
+        indexes = [models.Index(fields=['workspace', '-created_at']), models.Index(fields=['owner', '-created_at']),
+                   models.Index(fields=['project', '-created_at'])]
 
 
 class UserCredential(models.Model):
@@ -87,3 +95,35 @@ class UserCredential(models.Model):
 
     class Meta:
         constraints = [models.UniqueConstraint(fields=['user', 'profile'], name='user_credential_profile')]
+
+
+class AiProfile(models.Model):
+    """One AI setting of a workspace or of a project (#78): `llm` (the assistant and agent), `search` and `vision` (fall
+    back to `llm` when unset) and `mineru` (endpoint = MinerU API base, no model). A project's row overrides its
+    workspace's for that profile only. The key is encrypted (integrations.crypto), never serialised; only
+    aiprofiles.usable() decrypts it. Replaces WorkspaceLlmConfig and UserCredential, whose rows are copied here by
+    migration 0007 (those tables stay for one release and are no longer read)."""
+    LLM, SEARCH, VISION, MINERU = 'llm', 'search', 'vision', 'mineru'
+    PROFILES = [(p, p) for p in (LLM, SEARCH, VISION, MINERU)]
+
+    workspace = models.ForeignKey('projects.Workspace', null=True, blank=True, on_delete=models.CASCADE, related_name='ai_profiles')
+    project = models.ForeignKey('projects.Project', null=True, blank=True, on_delete=models.CASCADE, related_name='ai_profiles')
+    profile = models.CharField(max_length=10, choices=PROFILES)
+    endpoint = models.CharField(max_length=500, blank=True, default='', db_default='')
+    model = models.CharField(max_length=200, blank=True, default='', db_default='')
+    api_key_encrypted = models.BinaryField()
+    last_four = models.CharField(max_length=4)
+    daily_limit = models.PositiveIntegerField(null=True, blank=True, db_default=None)   # AI jobs per UTC day; null = no limit
+    updated_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=(models.Q(workspace__isnull=False, project__isnull=True)
+                                              | models.Q(workspace__isnull=True, project__isnull=False)),
+                                   name='ai_profile_one_owner'),
+            models.UniqueConstraint(fields=['workspace', 'profile'], condition=models.Q(workspace__isnull=False),
+                                    name='ai_profile_workspace_unique'),
+            models.UniqueConstraint(fields=['project', 'profile'], condition=models.Q(project__isnull=False),
+                                    name='ai_profile_project_unique'),
+        ]

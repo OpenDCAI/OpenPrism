@@ -20,10 +20,20 @@ spec:
   template:
     metadata:
       labels: {{- include "openprism.labels" (dict "root" $ "name" (printf "worker-%s" $name)) | nindent 8 }}
+        openprism.io/data: "true"
+        {{- if $w.internet }}
+        openprism.io/internet: "true"
+        {{- end }}
+        {{- if $w.smtp }}
+        openprism.io/smtp: "true"
+        {{- end }}
       annotations: {{- include "openprism.configChecksum" $ | nindent 8 }}
     spec:
       serviceAccountName: openprism-app
       {{- include "openprism.imagePullSecrets" $ | nindent 6 }}
+      {{- with $.Values.sandbox.runtimeClassName }}
+      runtimeClassName: {{ . | quote }}   # untrusted LaTeX / LLM-written Python: a sandboxed runtime (gVisor, Kata), see README
+      {{- end }}
       terminationGracePeriodSeconds: {{ $w.terminationGracePeriodSeconds }}
       securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
       topologySpreadConstraints:

@@ -226,6 +226,7 @@ jobs:
           # Optional: empty means the chart leaves them out.
           EMAIL_HOST_USER: ${{ secrets.EMAIL_HOST_USER }}
           EMAIL_HOST_PASSWORD: ${{ secrets.EMAIL_HOST_PASSWORD }}
+          DJANGO_SECRET_KEY_FALLBACKS: ${{ secrets.DJANGO_SECRET_KEY_FALLBACKS }}   # only while rotating DJANGO_SECRET_KEY
           OPENPRISM_LLM_API_KEY: ${{ secrets.OPENPRISM_LLM_API_KEY }}
           OPENPRISM_LLM_ENDPOINT: ${{ secrets.OPENPRISM_LLM_ENDPOINT }}
           OPENPRISM_LLM_MODEL: ${{ secrets.OPENPRISM_LLM_MODEL }}
@@ -240,9 +241,11 @@ jobs:
                    DJANGO_SECRET_KEY CREDENTIAL_ENCRYPTION_KEY REDIS_PASSWORD; do
             [ -n "${!v:-}" ] || { echo "::error::secret $v is empty or missing"; exit 1; }
           done
+          # Placeholder or weak secrets never reach the cluster (#117); the message never contains a value.
+          python3 apps/api/common/secretcheck.py
           dir="$(mktemp -d)"; chmod 700 "$dir"; trap 'rm -rf "$dir"' EXIT
           setfile=()
-          for k in DJANGO_SECRET_KEY CREDENTIAL_ENCRYPTION_KEY REDIS_PASSWORD EMAIL_HOST_USER EMAIL_HOST_PASSWORD \
+          for k in DJANGO_SECRET_KEY DJANGO_SECRET_KEY_FALLBACKS CREDENTIAL_ENCRYPTION_KEY REDIS_PASSWORD EMAIL_HOST_USER EMAIL_HOST_PASSWORD \
                    OPENPRISM_LLM_API_KEY OPENPRISM_LLM_ENDPOINT OPENPRISM_LLM_MODEL OPENPRISM_MINERU_TOKEN \
                    SOCIAL_GOOGLE_CLIENT_ID SOCIAL_GOOGLE_CLIENT_SECRET SOCIAL_ORCID_CLIENT_ID SOCIAL_ORCID_CLIENT_SECRET; do
             printf '%s' "${!k:-}" > "$dir/$k"
@@ -271,7 +274,14 @@ jobs:
           # First install: nothing earlier to return to, so remove it. Upgrade: restore the previous revision.
           revisions="$(helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" history "$HELM_RELEASE" 2>/dev/null | tail -n +2 | wc -l)"
           if [ "$revisions" -gt 1 ]; then
-            helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" rollback "$HELM_RELEASE" --wait --timeout 10m
+            # No --wait: the rollback re-creates the previous revision's migrate Job, and --wait made the rollback itself
+            # fail when that Job failed (the v0.1.5 incident, #153). The old schema is already applied and that Job is a
+            # no-op, so what matters is that the old Deployments are ready, checked by name below.
+            helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" rollback "$HELM_RELEASE" --timeout 10m
+            for d in api web beat worker-compile worker-transfer worker-ai; do
+              kubectl --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" rollout status "deploy/$d" --timeout=5m
+            done
+            helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" history "$HELM_RELEASE" | tail -4
           else
             helm --kubeconfig=./"$KUBE_CONFIG" -n "$K8S_NAMESPACE" uninstall "$HELM_RELEASE" || true
           fi

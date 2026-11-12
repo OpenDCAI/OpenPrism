@@ -402,7 +402,7 @@ class CompileWithZoteroEntriesTests(AddFixture):
         self.assertNotIn("Citation `lovelace_notes_1843' undefined", out['log'].split('This is pdfTeX')[-1])
 
 
-from .models import WorkspaceLlmConfig
+from .models import AiProfile
 from . import llmconfig
 
 LLM_KEY = 'sk-workspace-SECRET-9876'
@@ -413,7 +413,7 @@ class WorkspaceLlmTests(ApiBase):
         super().setUp()
         self.ws = self.c.post('/api/workspaces', {'name': 'Lab'}, format='json').data['workspace']['id']
         self.url = f'/api/workspaces/{self.ws}/llm'
-        pub = mock.patch('integrations.llmconfig.assert_public_url')  # no DNS in tests; the guard has its own tests
+        pub = mock.patch('integrations.aiprofiles.assert_public_url')  # no DNS in tests; the guard has its own tests
         pub.start()
         self.addCleanup(pub.stop)
 
@@ -439,12 +439,12 @@ class WorkspaceLlmTests(ApiBase):
         self.assertEqual(llmconfig.workspace_llm_for(Workspace.objects.get(pk=self.ws), self.user)[1], {'apiKey': 'sk-new-key-0001'})
         # remove
         self.assertFalse(self.c.delete(self.url).json()['configured'])
-        self.assertFalse(WorkspaceLlmConfig.objects.exists())
+        self.assertFalse(AiProfile.objects.exists())
 
     def test_first_save_needs_a_key_and_long_keys_are_refused(self):
         self.assertEqual(self.put(model='m').json(), {'ok': False, 'error': 'Enter an API key.'})
         self.assertFalse(self.put(apiKey='x' * 501).json()['ok'])
-        self.assertFalse(WorkspaceLlmConfig.objects.exists())
+        self.assertFalse(AiProfile.objects.exists())
 
     def test_private_endpoints_are_refused(self):
         mock.patch.stopall()
@@ -452,7 +452,7 @@ class WorkspaceLlmTests(ApiBase):
             for bad in ('http://127.0.0.1:8000/v1', 'http://169.254.169.254/', 'http://localhost/v1', 'file:///etc/passwd'):
                 res = self.put(endpoint=bad, apiKey=LLM_KEY).json()
                 self.assertFalse(res['ok'], bad)
-        self.assertFalse(WorkspaceLlmConfig.objects.exists())
+        self.assertFalse(AiProfile.objects.exists())
 
     def test_roles(self):
         self.put(model='m', apiKey=LLM_KEY)
@@ -467,7 +467,7 @@ class WorkspaceLlmTests(ApiBase):
             self.assertNotIn('lastFour', seen)
             self.assertEqual(self.put(c, model='x', apiKey='k').status_code, 403, role)
             self.assertEqual(c.delete(self.url).status_code, 403, role)
-        self.assertEqual(WorkspaceLlmConfig.objects.get().model, 'by-admin')
+        self.assertEqual(AiProfile.objects.get().model, 'by-admin')
 
     def test_outsiders_and_anonymous(self):
         self.put(model='m', apiKey=LLM_KEY)
@@ -482,7 +482,7 @@ class WorkspaceLlmTests(ApiBase):
         self.assertNotIn(LLM_KEY, res.content.decode())
         self.assertNotIn(LLM_KEY, self.c.get(self.url).content.decode())
         with connection.cursor() as cur:
-            cur.execute('SELECT api_key_encrypted FROM integrations_workspacellmconfig')
+            cur.execute('SELECT api_key_encrypted FROM integrations_aiprofile')
             raw = bytes(cur.fetchone()[0])
         self.assertNotIn(LLM_KEY.encode(), raw)
         self.assertEqual(crypto.decrypt(raw), LLM_KEY)
@@ -508,4 +508,4 @@ class WorkspaceLlmTests(ApiBase):
     def test_deleting_the_workspace_deletes_the_config(self):
         self.put(model='m', apiKey=LLM_KEY)
         Workspace.objects.filter(pk=self.ws).delete()
-        self.assertFalse(WorkspaceLlmConfig.objects.exists())
+        self.assertFalse(AiProfile.objects.exists())

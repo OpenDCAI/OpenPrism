@@ -46,6 +46,7 @@ mail:
 # commas or backslashes survive. Only the first three are required; the AI keys are optional server-side defaults.
 secrets:
   DJANGO_SECRET_KEY: ""
+  DJANGO_SECRET_KEY_FALLBACKS: ""  # only while rotating DJANGO_SECRET_KEY: the previous key(s), comma-separated (README, "Secrets")
   CREDENTIAL_ENCRYPTION_KEY: ""   # Fernet key(s); never change once users have stored keys (comma-separated rotates)
   REDIS_PASSWORD: ""
   EMAIL_HOST_USER: ""
@@ -109,6 +110,7 @@ workers:
     terminationGracePeriodSeconds: 360      # task hard limit is 330 s
     tmpSize: 2Gi
     aiSecret: false
+    internet: false     # NetworkPolicy: untrusted LaTeX never reaches the internet
     resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "2", memory: 3Gi, ephemeral-storage: 2Gi}}
   transfer:    # template transfer: LLM calls plus compiles
     image: worker-tex
@@ -118,6 +120,7 @@ workers:
     terminationGracePeriodSeconds: 1900     # task hard limit is 1860 s
     tmpSize: 2Gi
     aiSecret: true
+    internet: true      # LLM providers, MinerU
     resources: {requests: {cpu: 500m, memory: 1Gi}, limits: {cpu: "2", memory: 3Gi, ephemeral-storage: 2Gi}}
   ai:          # LLM, vision, plot, agent, arXiv import, account mail
     image: worker-ai
@@ -127,4 +130,23 @@ workers:
     terminationGracePeriodSeconds: 1000     # task hard limit is 960 s
     tmpSize: 1Gi
     aiSecret: true
+    internet: true      # LLM providers, arXiv
+    smtp: true          # the queue that sends account mail (accounts.tasks.send_email)
     resources: {requests: {cpu: 250m, memory: 512Mi}, limits: {cpu: "1", memory: 2Gi, ephemeral-storage: 1Gi}}
+
+# NetworkPolicies (#112). OFF by default: the cent cluster's CNI is flannel, which does not enforce them, so turning this on
+# there changes nothing until the cluster gets an enforcing CNI (Calico, Cilium, ...). See README, "Network policies".
+# When on: default deny, DNS, web <- anywhere (Caddy reaches the NodePort), web -> api, pods labelled openprism.io/data ->
+# the data services at dataCidrs only, openprism.io/internet -> public HTTPS, openprism.io/smtp -> SMTP submission.
+# worker-compile gets data services only: a document that fetches a URL cannot connect.
+networkPolicy:
+  enabled: false
+  dataCidrs: []                 # required when enabled: the addresses of Postgres, Redis and the object store, e.g. ["10.30.78.118/32"]
+  webIngressCidrs: ["0.0.0.0/0"]   # who may reach the web pods (Caddy forwards to the NodePort from outside the pod network)
+
+# Sandboxed runtime for the three Celery workers (they run untrusted LaTeX, the compiles inside template transfer, and
+# LLM-written Python). Empty = the node's default runtime (runc), which is what the cent cluster has today. Set it to the
+# name of a RuntimeClass that exists (gVisor: "gvisor", Kata: "kata"); the pod stays Pending if it does not. See README,
+# "Sandboxed runtime and pids limit" (#111) for the decision and the install steps.
+sandbox:
+  runtimeClassName: ""

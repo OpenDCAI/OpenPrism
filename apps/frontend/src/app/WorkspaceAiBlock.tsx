@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import type { FormEvent } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getWorkspaceLlm, removeWorkspaceLlm, saveWorkspaceLlm, workspaceCredentialEvents } from '../api/client';
+import { getWorkspaceLlm, listWorkspaceLlmModels, removeWorkspaceLlm, saveWorkspaceLlm, testWorkspaceLlm, workspaceCredentialEvents } from '../api/client';
 import type { WorkspaceLlmStatus } from '../api/client';
 import { Button, FieldError } from '@design';
 import CredentialHistory from './CredentialHistory';
@@ -23,6 +23,9 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
   const [replacing, setReplacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [models, setModels] = useState<string[]>([]);
+  const [check, setCheck] = useState<{ kind: 'models' | 'test'; ok: boolean; text: string } | null>(null);
+  const [checking, setChecking] = useState<'models' | 'test' | null>(null);
 
   const loadEvents = useCallback((before?: string) => workspaceCredentialEvents(workspaceId, before), [workspaceId]);
 
@@ -33,6 +36,8 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
     setApiKey('');
     setDailyLimit(s.dailyLimit ? String(s.dailyLimit) : '');
     setReplacing(false);
+    setModels([]);
+    setCheck(null);
   }, []);
 
   useEffect(() => {
@@ -47,6 +52,40 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
 
   const configured = Boolean(status.configured);
   const showKeyInput = !configured || replacing;
+
+  // Both helpers run on the server (the browser never sees the key). They are advice: saving works without them.
+  const payload = () => ({ endpoint: endpoint.trim(), model: model.trim(), ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) });
+  const onLoadModels = async () => {
+    setChecking('models');
+    setCheck(null);
+    try {
+      const res = await listWorkspaceLlmModels(workspaceId, payload());
+      if (res.ok && res.models) {
+        setModels(res.models);
+        setCheck({ kind: 'models', ok: true, text: t('{{count}} models loaded. Pick one, or type a name.', { count: res.models.length }) });
+      } else {
+        setCheck({ kind: 'models', ok: false, text: res.error || t('Could not load the models. You can type the model name instead.') });
+      }
+    } catch (err) {
+      setCheck({ kind: 'models', ok: false, text: (err as Error).message });
+    } finally {
+      setChecking(null);
+    }
+  };
+  const onTest = async () => {
+    setChecking('test');
+    setCheck(null);
+    try {
+      const res = await testWorkspaceLlm(workspaceId, payload());
+      setCheck(res.ok
+        ? { kind: 'test', ok: true, text: t('Connected: the model answered in {{ms}} ms.', { ms: res.latencyMs }) }
+        : { kind: 'test', ok: false, text: res.error || t('The test failed.') });
+    } catch (err) {
+      setCheck({ kind: 'test', ok: false, text: (err as Error).message });
+    } finally {
+      setChecking(null);
+    }
+  };
 
   const onSave = async (e: FormEvent) => {
     e.preventDefault();
@@ -77,7 +116,7 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
   const onRemove = () =>
     onConfirm({
       title: t('Remove the AI provider?'),
-      message: t('Members will use their own keys, or the server default, until a new provider is set.'),
+      message: t('Projects in this workspace will use the server default, if there is one, until a new provider is set.'),
       confirmLabel: t('Remove'),
       onConfirm: async () => {
         const res = await removeWorkspaceLlm(workspaceId);
@@ -93,7 +132,7 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
         <p data-testid="ws-ai-readonly">
           {configured
             ? t('Your workspace admin has set an AI provider{{model}}. It is used for AI features in this workspace.', { model: status.model ? ` (${status.model})` : '' })
-            : t('No workspace AI provider is set. You can use your own key in Settings.')}
+            : t('No workspace AI provider is set. An admin can set one here.')}
         </p>
       </div>
     );
@@ -102,14 +141,16 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
   return (
     <form className="home-block" onSubmit={onSave} noValidate data-testid="ws-ai">
       <h2>{t('AI provider')}</h2>
-      <p>{t('Members who can edit use this provider for AI features in this workspace, instead of their own key. The key is stored encrypted and is never shown again.')}</p>
+      <p>{t('Members who can edit use this provider for AI features in this workspace and its projects, unless a project overrides it. The key is stored encrypted and is never shown again.')}</p>
       <div className="op-field">
         <label className="op-field-label" htmlFor="ws-ai-endpoint">{t('Endpoint')}</label>
         <input id="ws-ai-endpoint" className="op-input" autoComplete="off" placeholder="https://api.openai.com/v1" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />
       </div>
       <div className="op-field">
         <label className="op-field-label" htmlFor="ws-ai-model">{t('Model')}</label>
-        <input id="ws-ai-model" className="op-input" autoComplete="off" placeholder="gpt-4o-mini" value={model} onChange={(e) => setModel(e.target.value)} />
+        <input id="ws-ai-model" className="op-input" autoComplete="off" list="ws-ai-models" placeholder="gpt-4o-mini" value={model} onChange={(e) => setModel(e.target.value)} />
+        <datalist id="ws-ai-models" data-testid="ws-ai-model-list">{models.map((m) => <option key={m} value={m} />)}</datalist>
+        <span className="op-field-help">{t('Load the models the provider offers, or type a model or deployment name.')}</span>
       </div>
       <div className="op-field">
         <label className="op-field-label" htmlFor="ws-ai-key">{t('API key')}</label>
@@ -133,6 +174,19 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
         )}
         <FieldError message={error} />
       </div>
+      <div className="home-block-actions">
+        <Button variant="secondary" type="button" data-testid="ws-ai-load-models" onClick={onLoadModels} disabled={busy || checking !== null}>
+          {checking === 'models' ? t('Loading…') : t('Load models')}
+        </Button>
+        <Button variant="secondary" type="button" data-testid="ws-ai-test" onClick={onTest} disabled={busy || checking !== null || !model.trim()}>
+          {checking === 'test' ? t('Testing…') : t('Test')}
+        </Button>
+      </div>
+      {check && (
+        <p role="status" className={check.ok ? 'op-field-help' : 'op-field-error'} data-testid={`ws-ai-${check.kind}-result`} data-ok={check.ok ? 'true' : 'false'}>
+          {check.text}
+        </p>
+      )}
       <div className="home-block-actions">
         <Button type="submit" disabled={busy || (!configured && !apiKey.trim())}>{t('保存')}</Button>
         {configured && <Button variant="danger" type="button" onClick={onRemove} disabled={busy}>{t('Remove')}</Button>}

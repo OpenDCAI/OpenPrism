@@ -8,7 +8,7 @@ from django.utils import timezone
 from collab import tokens
 from common.testing import FakeLLM
 from integrations import llmconfig
-from integrations.models import LlmUsage, WorkspaceLlmConfig
+from integrations.models import LlmUsage, AiProfile
 from jobs.models import Job
 from projects import files
 from projects.models import Membership, Project
@@ -188,7 +188,7 @@ class WorkspaceLimitTests(LimitBase):
             self.assertIn('daily limit', res['error'])
         self.c.put(self.url, {'dailyLimit': 5}, format='json')
         self.c.put(self.url, {'model': 'm2'}, format='json')  # leaving it out keeps it
-        self.assertEqual(WorkspaceLlmConfig.objects.get().daily_limit, 5)
+        self.assertEqual(AiProfile.objects.get().daily_limit, 5)
         self.assertIsNone(self.c.put(self.url, {'dailyLimit': None}, format='json').data['dailyLimit'])
         editor = make_user('ed@example.com')
         Membership.objects.create(workspace=self.project.workspace, user=editor, role=Membership.EDITOR)

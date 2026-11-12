@@ -18,7 +18,7 @@ CURRENT = {'userID': 4242, 'username': 'ada', 'access': {'user': {'library': Tru
 class AuditBase(ApiBase):
     def setUp(self):
         super().setUp()
-        pub = mock.patch('integrations.llmconfig.assert_public_url')  # no DNS in tests; the guard has its own tests
+        pub = mock.patch('integrations.aiprofiles.assert_public_url')  # no DNS in tests; the guard has its own tests
         pub.start()
         self.addCleanup(pub.stop)
 

@@ -10,6 +10,8 @@ spec:
   template:
     metadata:
       labels: {{- include "openprism.labels" (dict "root" . "name" "api") | nindent 8 }}
+        openprism.io/data: "true"       # NetworkPolicy selectors (networkpolicies.yaml)
+        openprism.io/internet: "true"   # arXiv search runs inline in the api
       annotations: {{- include "openprism.configChecksum" . | nindent 8 }}
     spec:
       serviceAccountName: openprism-app

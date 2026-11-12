@@ -577,10 +577,10 @@ class WorkspaceKeyTests(ApiBase):
         self.assertEqual(self.used(browser), [(f'Bearer {KEY}', 'browser-model')])
 
     def test_removing_the_workspace_key_returns_to_the_browsers(self):
-        from integrations.models import WorkspaceLlmConfig
+        from integrations.models import AiProfile
         ws, browser = self.fake(), self.fake()
         self.set_workspace_key(ws)
-        WorkspaceLlmConfig.objects.all().delete()
+        AiProfile.objects.all().delete()
         self.c.post('/api/llm', {'messages': [], 'projectId': self.pid, 'llmConfig': self.browser_cfg(browser)}, format='json')
         self.assertEqual(ws.requests, [])
         self.assertEqual(len(browser.requests), 1)

@@ -70,6 +70,8 @@ import VersionsPanel from './VersionsPanel';
 import { parseCompileErrors } from './compileLog';
 import type { CompileError } from './compileLog';
 import AiCommandBar from './AiCommandBar';
+import ProjectAiSettings from './ProjectAiSettings';
+import { mainFileKey, pickInitialFile } from './mainFile';
 import InviteLinks from './InviteLinks';
 import CommentsPanel from './CommentsPanel';
 import type { PendingComment } from './CommentsPanel';
@@ -95,7 +97,6 @@ import {
 } from '@design';
 import type { IconName, MenuEntry, SegmentOption } from '@design';
 import './editor-shell.css';
-import AiKeysForm from './AiKeysForm';
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -332,7 +333,6 @@ function isRootDocument(text: string) {
   return /^[ \t]*\\documentclass\b/m.test(text);
 }
 
-const mainFileKey = (projectId: string) => `openprism-main-file:${projectId}`;
 
 // What fontspec prints under pdfLaTeX: "requires either XeTeX or\n(fontspec)   LuaTeX."
 const NEEDS_UNICODE_ENGINE = /requires either XeTeX or[\s\S]{0,60}LuaTeX/i;
@@ -1379,6 +1379,7 @@ export default function EditorPage() {
   const [projectName, setProjectName] = useState('');
   /** The project's workspace provider, when the user's AI requests will use it (see the AI settings notice). */
   const [workspaceProvider, setWorkspaceProvider] = useState<{ model: string } | null>(null);
+  const [projectWorkspaceId, setProjectWorkspaceId] = useState<string | null>(null);
   const [tree, setTree] = useState<{ path: string; type: string }[]>([]);
   const [fileOrder, setFileOrder] = useState<Record<string, string[]>>({});
   const [activePath, setActivePath] = useState<string>('');
@@ -1526,7 +1527,7 @@ export default function EditorPage() {
   const [collabStatus, setCollabStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   const [collabServer, setCollabServerState] = useState(() => getCollabServer() || (typeof window === 'undefined' ? '' : window.location.origin));
   // Others see this name on your caret: one you typed, else your account's name (guests have none of their own).
-  const { user: wsUser, guest: wsGuest } = useWorkspace();
+  const { user: wsUser, guest: wsGuest, setActive: setActiveWorkspace } = useWorkspace();
   const collabUserId = wsGuest ? null : wsUser.id;
   const [collabName, setCollabName] = useState(() => loadCollabName(collabUserId) || (wsGuest ? 'Guest' : wsUser.name) || 'Guest');
   const [collabToken] = useState(() => getCollabToken());
@@ -1618,6 +1619,7 @@ export default function EditorPage() {
           return;
         }
         setProjectName(current.name);
+        setProjectWorkspaceId(current.workspaceId);
         getWorkspaceLlm(current.workspaceId)
           .then((llm) => setWorkspaceProvider(llm.ok && llm.configured && llm.canUse ? { model: llm.model || '' } : null))
           .catch(() => setWorkspaceProvider(null));
@@ -1825,8 +1827,7 @@ export default function EditorPage() {
     setFileOrder(res.fileOrder || {});
     setCanWrite(res.canWrite !== false);
     if (!keepActive || !activePath || !res.items.find((item) => item.path === activePath)) {
-      const main = res.items.find((item) => item.path.endsWith('main.tex'))?.path;
-      const next = main || res.items.find((item) => item.type === 'file')?.path || '';
+      const next = pickInitialFile(res.items, projectId);
       if (next) {
         await openFile(next, fresh);
       }
@@ -4502,7 +4503,7 @@ export default function EditorPage() {
     { label: t('保存'), icon: 'save', kbd: 'Ctrl S', onSelect: () => void saveActiveFile() },
     { label: t('下载 PDF'), icon: 'download', disabled: !pdfUrl, onSelect: () => downloadPdf() },
     { label: t('Share…'), icon: 'share', onSelect: () => openRightTool('collab') },
-    { label: t('AI & search settings'), icon: 'settings', onSelect: () => setSettingsOpen(true) }
+    { label: t('Project AI settings'), icon: 'settings', onSelect: () => setSettingsOpen(true) }
   ];
 
   const compileMenuItems = (): MenuEntry[] => [
@@ -6267,8 +6268,8 @@ export default function EditorPage() {
       )}
       {settingsOpen && (
         <Modal
-          title={t('AI & search settings')}
-          description={t('Your own AI keys, used when the workspace provides none.')}
+          title={t('Project AI settings')}
+          description={t('The AI model, Search, Vision and MinerU for this project: inherited from the workspace, or overridden here.')}
           size="lg"
           closeLabel={t('关闭')}
           onClose={() => setSettingsOpen(false)}
@@ -6285,7 +6286,14 @@ export default function EditorPage() {
                 {t('This workspace provides the AI provider{{model}}. Your own key is not used for its projects.', { model: workspaceProvider.model ? ` (${workspaceProvider.model})` : '' })}
               </div>
             )}
-            <AiKeysForm onStatus={setStatus} />
+            {projectId && <ProjectAiSettings projectId={projectId} onStatus={setStatus} />}
+            {projectWorkspaceId && (
+              <div>
+                <Button variant="ghost" onClick={() => { setSettingsOpen(false); setActiveWorkspace(projectWorkspaceId); navigate('/projects?section=settings'); }}>
+                  {t('Open workspace settings')}
+                </Button>
+              </div>
+            )}
           </div>
         </Modal>
       )}

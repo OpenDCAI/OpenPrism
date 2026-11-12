@@ -92,7 +92,7 @@ jobs:
     if: >-
       github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') ||
       (github.event_name == 'pull_request' && (github.base_ref == 'main' || startsWith(github.base_ref, 'release/')))
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04   # not ubuntu-latest: it is 26.04 now and Playwright 1.55 does not support it (#155)
     timeout-minutes: 90
     steps:
       - name: Free disk space for the TeX image

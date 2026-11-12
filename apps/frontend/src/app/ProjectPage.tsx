@@ -3,6 +3,8 @@ import type { FormEvent, ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
+  checkProjectExport,
+  projectExportUrl,
   createProject,
   copyProject,
   deleteProject,
@@ -20,6 +22,7 @@ import {
 import type { ProjectMeta, TemplateMeta, TemplateCategory } from '../api/client';
 import TransferPanel from './TransferPanel';
 import WorkspaceAiBlock from './WorkspaceAiBlock';
+import WorkspaceAiProfiles from './WorkspaceAiProfiles';
 import WorkspaceStorageBlock from './WorkspaceStorageBlock';
 import {
   AppTopBar,
@@ -39,7 +42,6 @@ import {
 } from '@design';
 import type { BadgeTone, IconName, MenuEntry, SelectOption, Workspace, WorkspaceRole } from '@design';
 import './pages.css';
-import AiKeysForm from './AiKeysForm';
 
 type ViewFilter = 'all' | 'mine' | 'archived' | 'trash';
 type SortBy = 'updatedAt' | 'name' | 'createdAt';
@@ -440,6 +442,7 @@ function SettingsSection({
       </form>
 
       <WorkspaceAiBlock workspaceId={w.id} onStatus={onStatus} onConfirm={onConfirm} />
+      <WorkspaceAiProfiles workspaceId={w.id} kind={w.kind} onStatus={onStatus} />
 
       {admin && <WorkspaceStorageBlock workspaceId={w.id} onStatus={onStatus} />}
 
@@ -575,7 +578,6 @@ export default function ProjectPage() {
   const zipInputRef = useRef<HTMLInputElement | null>(null);
 
   // LLM settings modal state
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Template gallery (Templates section) filters
   const [galleryCat, setGalleryCat] = useState('all');
@@ -734,6 +736,28 @@ export default function ProjectPage() {
       await loadProjects();
     } catch (err) {
       setStatus(t('操作失败: {{error}}', { error: String(err) }));
+    }
+  };
+
+  /** Export the project as one zip: ask the server first (too large? rate limited?), then let the browser download it. */
+  const handleExport = async (id: string, name: string) => {
+    setStatus(t('Preparing {{project}} for export…', { project: name }));
+    try {
+      const check = await checkProjectExport(id);
+      if (!check.ok) {
+        setStatus(t('Could not export {{project}}: {{error}}', { project: name, error: check.error || '' }));
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = await projectExportUrl(id);
+      link.download = check.name || `${name}.zip`;
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatus(t('Exporting {{project}} ({{count}} files)', { project: name, count: check.files ?? 0 }));
+    } catch (err) {
+      setStatus(t('Could not export {{project}}: {{error}}', { project: name, error: (err as Error).message }));
     }
   };
 
@@ -966,11 +990,13 @@ export default function ProjectPage() {
         icon: 'arrow-left-right',
         onSelect: () => { setTransferSource({ id: project.id, name: project.name }); setTransferOpen(true); }
       },
-      ...moveItems,
       { type: 'sep' },
       project.archived
         ? { label: t('取消归档'), icon: 'rotate-ccw', onSelect: () => void handleArchive(project.id, false) }
         : { label: t('归档'), icon: 'archive', onSelect: () => void handleArchive(project.id, true) },
+      { label: t('Export project'), icon: 'download', onSelect: () => void handleExport(project.id, project.name) },
+      ...moveItems,
+      { type: 'sep' },
       { label: t('删除'), icon: 'trash', danger: true, onSelect: () => handleDelete(project.id, project.name) },
     ];
   };
@@ -1246,14 +1272,6 @@ export default function ProjectPage() {
             <CrumbSep />
             <span className="home-crumb">{sectionLabels[section]}</span>
           </>
-        }
-        actions={
-          <IconButton
-            icon="bot"
-            label={t('AI settings')}
-            tipPos="bottom-end"
-            onClick={() => setSettingsOpen(true)}
-          />
         }
       />
 
@@ -1600,20 +1618,6 @@ export default function ProjectPage() {
             </div>
           )}
         </section>
-      )}
-
-      {/* ── AI / LLM settings ── */}
-      {settingsOpen && (
-        <Modal
-          title={t('AI settings')}
-          description={t('Your own AI keys, used when the workspace provides none.')}
-          size="lg"
-          onClose={() => setSettingsOpen(false)}
-          closeLabel={t('Close')}
-          footer={<Button variant="primary" onClick={() => setSettingsOpen(false)}>{t('完成')}</Button>}
-        >
-          <AiKeysForm onStatus={setStatus} />
-        </Modal>
       )}
 
       {/* ── New workspace ── */}

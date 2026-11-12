@@ -34,6 +34,15 @@ SECRET_KEY = env('DJANGO_SECRET_KEY', 'test-only-secret' if TESTING else None, r
 # so a key is rotated by putting the new one in front. No default outside tests, like SECRET_KEY.
 CREDENTIAL_ENCRYPTION_KEY = env('CREDENTIAL_ENCRYPTION_KEY',
                                 'b3BlbnByaXNtLXRlc3Qta2V5LW5vdC1zZWNyZXQtMDE=' if TESTING else None, required=True)
+# Rotating DJANGO_SECRET_KEY: put the new value in DJANGO_SECRET_KEY and the old one here (comma-separated) so signed links,
+# tickets and URL tokens made with the old key still verify until they expire. Django uses these only to verify. The JWT
+# access and refresh tokens are signed with SECRET_KEY alone, so a rotation signs everyone out (README, "Secrets").
+SECRET_KEY_FALLBACKS = [k.strip() for k in (env('DJANGO_SECRET_KEY_FALLBACKS', '') or '').split(',') if k.strip()]
+if not (DEBUG or TESTING):
+    from common.secretcheck import problems as _secret_problems
+    _bad = _secret_problems(SECRET_KEY, CREDENTIAL_ENCRYPTION_KEY)
+    if _bad:   # a deployment with placeholder or weak secrets must not start (#117)
+        raise ImproperlyConfigured('Unfit secrets: ' + '; '.join(_bad))
 ZOTERO_API_BASE = env('ZOTERO_API_BASE', 'https://api.zotero.org').rstrip('/')
 if env_bool('DJANGO_BEHIND_TLS_PROXY', False):
     SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')  # the ingress terminates TLS
@@ -325,6 +334,9 @@ AI_EDIT_RATE_PER_MINUTE = int(env('AI_EDIT_RATE_PER_MINUTE', '1000' if TESTING e
 # and compiles (guests are counted per invite link).
 AI_RATE_PER_MINUTE = int(env('AI_RATE_PER_MINUTE', '1000' if TESTING else '30'))
 COMPILE_RATE_PER_MINUTE = int(env('COMPILE_RATE_PER_MINUTE', '1000' if TESTING else '30'))
+# Project export (#162): one zip per request, built on the API's scratch disk (512 Mi in Kubernetes), so the raw size is capped below it.
+EXPORT_RATE_PER_MINUTE = int(env('EXPORT_RATE_PER_MINUTE', '1000' if TESTING else '6'))
+EXPORT_MAX_BYTES = int(env('EXPORT_MAX_BYTES', str(400 * 1024 * 1024)))
 # Who may run AI jobs on the operator's key (OPENPRISM_LLM_* on the workers), i.e. with no workspace, saved or
 # browser key: all | verified (verified address) | staff | none. And how many such jobs per user per UTC day (0 = no limit).
 SERVER_LLM_KEY_USERS = env('SERVER_LLM_KEY_USERS', 'all').strip().lower()

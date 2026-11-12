@@ -2,17 +2,20 @@ import re
 
 from django.db import transaction
 from rest_framework.decorators import api_view
+from rest_framework.exceptions import PermissionDenied
 from rest_framework.response import Response
 
 from collab.views import flush_room, live_room
+from common import ratelimit
+from django.conf import settings
 from projects import files
 from projects.access import get_project
 from projects.models import Membership, ProjectFile
 from projects.workspaces import membership_for, require_admin
 from projects.paths import InvalidPath, safe_path
 
-from . import audit, bibtex, crypto, llmconfig, userkeys, zotero
-from .models import CredentialEvent, WorkspaceLlmConfig, ZoteroConnection
+from . import aiprofiles, audit, bibtex, crypto, llmconfig, provider, userkeys, zotero
+from .models import AiProfile, CredentialEvent, ZoteroConnection
 
 
 def _status(conn):
@@ -197,14 +200,14 @@ def _llm_status(config, membership):
             'updatedBy': (config.updated_by.name or config.updated_by.email) if config.updated_by else ''}
     if can_manage:
         from ai.usage import workspace_usage
-        body.update(lastFour=config.last_four, dailyLimit=config.daily_limit, usage=workspace_usage(config.workspace_id))
+        body.update(lastFour=config.last_four, dailyLimit=config.daily_limit, usage=workspace_usage(config.workspace_id, 'llm'))
     return body
 
 
 @api_view(['GET', 'PUT', 'DELETE'])
 def workspace_llm(request, pk):
     membership = membership_for(request.user, pk)
-    config = WorkspaceLlmConfig.objects.select_related('updated_by').filter(workspace_id=pk).first()
+    config = AiProfile.objects.select_related('updated_by').filter(workspace_id=pk, profile=AiProfile.LLM).first()
     if request.method == 'GET':
         return Response(_llm_status(config, membership))
     require_admin(request.user, pk)
@@ -218,6 +221,179 @@ def workspace_llm(request, pk):
     except llmconfig.LlmConfigError as exc:
         return Response({'ok': False, 'error': str(exc)})
     return Response(_llm_status(config, membership))
+
+
+def _ai_status(workspace, membership):
+    """Every profile of a workspace. Members see which exist and whether they can use them; owners and admins also see the
+    endpoint, model, last four characters and daily limit (never the key)."""
+    can_manage = membership.role in Membership.ADMIN_ROLES
+    rows = aiprofiles.status(workspace)
+    profiles = {}
+    for name, row in rows.items():
+        if row is None:
+            profiles[name] = {'configured': False}
+            continue
+        entry = {'configured': True, 'updatedAt': row['updatedAt']}
+        if can_manage:
+            from ai.usage import workspace_usage
+            entry.update(endpoint=row['endpoint'], model=row['model'], lastFour=row['lastFour'], dailyLimit=row['dailyLimit'],
+                         usage=workspace_usage(workspace.id, name))
+        elif name != aiprofiles.MINERU:
+            entry['model'] = row['model']
+        profiles[name] = entry
+    return {'ok': True, 'canManage': can_manage, 'canUse': membership.role in Membership.WRITE_ROLES, 'profiles': profiles}
+
+
+@api_view(['GET'])
+def workspace_ai(request, pk):
+    """All AI settings (AI model, Search, Vision, MinerU) of a workspace (#78)."""
+    membership = membership_for(request.user, pk)
+    return Response(_ai_status(membership.workspace, membership))
+
+
+@api_view(['PUT', 'DELETE'])
+def workspace_ai_profile(request, pk, profile):
+    membership = membership_for(request.user, pk)
+    require_admin(request.user, pk)
+    if profile not in aiprofiles.PROFILES:
+        return Response({'ok': False, 'error': 'Unknown AI setting.'}, status=404)
+    if request.method == 'DELETE':
+        aiprofiles.remove(membership.workspace, request.user, profile)
+        return Response(_ai_status(membership.workspace, membership))
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        extra = {'daily_limit': b['dailyLimit']} if 'dailyLimit' in b else {}
+        aiprofiles.save(membership.workspace, request.user, profile, b.get('endpoint'), b.get('model'), b.get('apiKey'), **extra)
+    except aiprofiles.LlmConfigError as exc:
+        return Response({'ok': False, 'error': str(exc)})
+    return Response(_ai_status(membership.workspace, membership))
+
+
+def _project_ai_access(request, pk):
+    """(project, membership, can_manage). Everyone in the workspace may read how the project is set up; owners and admins
+    of the workspace and the project's creator (with a write role) change overrides; guests have no access."""
+    project = get_project(request, pk)
+    if getattr(request.user, 'is_guest', False):
+        raise PermissionDenied('Only workspace members can see AI settings.')
+    membership = Membership.objects.get(workspace=project.workspace, user=request.user)
+    can_manage = membership.role in Membership.ADMIN_ROLES or (
+        project.created_by_id == request.user.id and membership.role in Membership.WRITE_ROLES)
+    return project, membership, can_manage
+
+
+def _project_ai_status(project, membership, can_manage):
+    """For every profile: where it comes from (project / workspace / server), whether this project overrides it, and, for
+    those who manage it, the override's endpoint, model, last four characters and limit. Never a key."""
+    own = aiprofiles.status(project)
+    effective = aiprofiles.effective(project, project.workspace)
+    can_use = membership.role in Membership.WRITE_ROLES
+    profiles = {}
+    for name in aiprofiles.PROFILES:
+        e, o = effective[name], own[name]
+        entry = {'source': e['source'] if e else 'server', 'viaLlm': bool(e and e['viaLlm']), 'overridden': o is not None}
+        if e and can_use and name != aiprofiles.MINERU:
+            entry['model'] = e['model']
+        if can_manage and o:
+            from ai.usage import project_usage
+            entry.update(endpoint=o['endpoint'], model=o['model'], lastFour=o['lastFour'], dailyLimit=o['dailyLimit'],
+                         usage=project_usage(project.id, name))
+        profiles[name] = entry
+    return {'ok': True, 'canManage': can_manage, 'canUse': can_use, 'profiles': profiles}
+
+
+@api_view(['GET'])
+def project_ai(request, pk):
+    """How a project gets its AI settings (#78): inherited from the workspace, overridden here, or the server's."""
+    project, membership, can_manage = _project_ai_access(request, pk)
+    return Response(_project_ai_status(project, membership, can_manage))
+
+
+@api_view(['PUT', 'DELETE'])
+def project_ai_profile(request, pk, profile):
+    """Override one profile for this project, or reset it to the workspace's."""
+    project, membership, can_manage = _project_ai_access(request, pk)
+    if not can_manage:
+        raise PermissionDenied('Only workspace owners and admins, or the project\'s creator, can change its AI settings.')
+    if profile not in aiprofiles.PROFILES:
+        return Response({'ok': False, 'error': 'Unknown AI setting.'}, status=404)
+    if request.method == 'DELETE':
+        aiprofiles.remove(project, request.user, profile)
+        return Response(_project_ai_status(project, membership, can_manage))
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        extra = {'daily_limit': b['dailyLimit']} if 'dailyLimit' in b else {}
+        aiprofiles.save(project, request.user, profile, b.get('endpoint'), b.get('model'), b.get('apiKey'), **extra)
+    except aiprofiles.LlmConfigError as exc:
+        return Response({'ok': False, 'error': str(exc)})
+    return Response(_project_ai_status(project, membership, can_manage))
+
+
+@api_view(['GET'])
+def project_credential_events(request, pk):
+    """Who set, rotated, changed or reset this project's own AI settings (never key material). Those who manage them."""
+    project, _, can_manage = _project_ai_access(request, pk)
+    if not can_manage:
+        raise PermissionDenied('Only workspace owners and admins, or the project\'s creator, can see this history.')
+    return Response(audit.page(CredentialEvent.objects.filter(project=project),
+                               request.query_params.get('before'), request.query_params.get('limit')))
+
+
+@api_view(['POST'])
+def project_ai_models(request, pk):
+    """Load models for a project's own override (same rules as the workspace form)."""
+    project, _, can_manage = _project_ai_access(request, pk)
+    if not can_manage:
+        raise PermissionDenied('Only workspace owners and admins, or the project\'s creator, can do this.')
+    ratelimit.enforce('ai', request.user, settings.AI_RATE_PER_MINUTE)
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        endpoint, key = provider.resolve(project, b.get('endpoint'), b.get('apiKey'), str(b.get('profile') or 'llm'))
+        return Response({'ok': True, 'models': provider.list_models(endpoint, key)})
+    except provider.ProviderError as exc:
+        return Response({'ok': False, 'error': str(exc)})
+
+
+@api_view(['POST'])
+def project_ai_test(request, pk):
+    project, _, can_manage = _project_ai_access(request, pk)
+    if not can_manage:
+        raise PermissionDenied('Only workspace owners and admins, or the project\'s creator, can do this.')
+    ratelimit.enforce('ai', request.user, settings.AI_RATE_PER_MINUTE)
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        endpoint, key = provider.resolve(project, b.get('endpoint'), b.get('apiKey'), str(b.get('profile') or 'llm'))
+        return Response({'ok': True, 'latencyMs': provider.chat_check(endpoint, key, b.get('model'))})
+    except provider.ProviderError as exc:
+        return Response({'ok': False, 'error': str(exc)})
+
+
+@api_view(['POST'])
+def workspace_llm_models(request, pk):
+    """Load the provider's model list for the settings form (#76). Admins only. The typed key (or, for an unchanged
+    endpoint, the stored one) is used for the call and never returned. Not counted against the daily limit."""
+    membership_for(request.user, pk)
+    require_admin(request.user, pk)
+    ratelimit.enforce('ai', request.user, settings.AI_RATE_PER_MINUTE)
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        endpoint, key = provider.resolve(pk, b.get('endpoint'), b.get('apiKey'), str(b.get('profile') or 'llm'))
+        return Response({'ok': True, 'models': provider.list_models(endpoint, key)})
+    except provider.ProviderError as exc:
+        return Response({'ok': False, 'error': str(exc)})
+
+
+@api_view(['POST'])
+def workspace_llm_test(request, pk):
+    """Send one tiny chat request to the chosen model (#76). Admins only; advice, not a gate on saving."""
+    membership_for(request.user, pk)
+    require_admin(request.user, pk)
+    ratelimit.enforce('ai', request.user, settings.AI_RATE_PER_MINUTE)
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        endpoint, key = provider.resolve(pk, b.get('endpoint'), b.get('apiKey'), str(b.get('profile') or 'llm'))
+        return Response({'ok': True, 'latencyMs': provider.chat_check(endpoint, key, b.get('model'))})
+    except provider.ProviderError as exc:
+        return Response({'ok': False, 'error': str(exc)})
 
 
 @api_view(['GET'])

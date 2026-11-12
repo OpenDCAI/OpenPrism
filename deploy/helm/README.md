@@ -76,6 +76,61 @@ workflow must never gain a `pull_request` trigger.
    events, node capacity and, per pod, container states, events and logs (also the previous run), and only then the
    release is rolled back (`helm rollback` if an earlier revision exists, else uninstalled). Run it by hand with
    `KUBECONFIG=... NAMESPACE=openprism deploy/diagnose.sh`.
+   The migrate Job runs with `restartPolicy: Never` and a `timeout 240` around its command, so each failed attempt stays
+   as its own pod with its logs (with `OnFailure` the Job controller deleted the single pod when its 900 s deadline passed,
+   which hid the error in the v0.1.5 deploy, #152); `diagnose.sh` prints the Job's status and events and every attempt's logs.
+   Get them later with `kubectl -n openprism logs -l app.kubernetes.io/name=migrate --tail=100`.
+   The rollback does not use `--wait` (#153): it re-creates the previous revision's migrate Job, and waiting for that Job
+   turned a failing database into a failed rollback too (v0.1.5: revisions 5 and 6 both `failed`, the API without ready
+   pods). Instead the step checks `rollout status` of every Deployment. A release left in `failed` is not a problem for
+   the next `helm upgrade`; `helm history openprism` shows the last `deployed` revision, and `helm rollback openprism <rev>`
+   returns to it by hand.
+
+## Sandboxed runtime and pids limit (#111)
+
+**Decision (2026-11-11): no sandboxed runtime is available on the cent cluster, so the chart supports one but leaves it
+off.** What was found (read-only, from the cluster host): single-node microk8s v1.36.2, cgroup v2, containerd with only
+`runc` (a `kata` stanza in `containerd-template.toml` but no `kata-runtime` or `runsc` binary), no `RuntimeClass` objects,
+no `--pod-max-pids` in the kubelet arguments. The node is a VMware guest with `/dev/kvm` and CPU virtualization flags, so
+Kata would run, and gVisor (`runsc`) needs no KVM at all. Neither is installed; installing one changes a shared node, so
+it is the cluster owner's decision (other tenants: jupyterhub, graderthan, iot-portal).
+
+The chart: `sandbox.runtimeClassName` (default empty) sets `runtimeClassName` on `worker-compile`, `worker-transfer` and
+`worker-ai`, the only pods that run untrusted input. Set it only after the RuntimeClass exists, or the pods stay Pending.
+Typical gVisor setup on microk8s (host steps, not done): install `runsc` and `containerd-shim-runsc-v1`, add a `runsc`
+runtime stanza to `containerd-template.toml`, restart microk8s, then
+`kubectl apply -f - <<< '{"apiVersion":"node.k8s.io/v1","kind":"RuntimeClass","metadata":{"name":"gvisor"},"handler":"runsc"}'`.
+Check before relying on it: gVisor's `runsc` does not support everything TeX Live and matplotlib do, so run a compile and a
+plot job under it first (a `dmesg` inside the pod shows gVisor's banner).
+
+**pids limit.** Kubernetes has no per-pod pids field; the limit is the kubelet's `--pod-max-pids` (or `podPidsLimit`),
+cluster-wide, in `/var/snap/microk8s/current/args/kubelet` (then `microk8s stop && microk8s start`). A value such as 1024
+stops a fork bomb inside a pod from exhausting the node while leaving the workers room (compile concurrency 2 plus TeX
+child processes). It is not set today. In-process limits remain: shell escape off, `RLIMIT_CPU/FSIZE/AS` on the children
+(`jobs/compile.py`, `ai/plot.py`; `RLIMIT_NPROC` cannot be used because it counts every process of the worker's uid).
+
+## Network policies (#112)
+
+The chart can ship NetworkPolicies (`templates/networkpolicies.yaml`, `networkPolicy.enabled`, **off by default**). **They do
+nothing on the cent cluster today:** it is a single-node microk8s whose CNI is flannel (`flanneld`, no calico/cilium pods),
+and flannel does not enforce NetworkPolicy. The API accepts the objects and ignores them, so do not read a green
+`kubectl get networkpolicy` as protection. Check what a cluster does before relying on it: `kubectl -n kube-system get
+pods | grep -iE 'calico|cilium|canal'` and `ls /var/snap/microk8s/current/args/cni-network/` (microk8s).
+
+When enabled (needs an enforcing CNI): default deny both ways; DNS to kube-dns; web accepts 8080 from
+`networkPolicy.webIngressCidrs` (Caddy reaches the NodePort from outside the pod network) and talks only to the api; pods
+labelled `openprism.io/data` reach Postgres, Redis and the object store **only at `networkPolicy.dataCidrs` on their
+configured ports** (required: they live outside the cluster); `openprism.io/internet` (api, worker-transfer, worker-ai)
+reaches public HTTPS only, never a private, link-local or metadata address; `openprism.io/smtp` (worker-ai) reaches ports
+587/465. **worker-compile has the data label only, so a document that fetches a URL cannot connect.** Pod labels come from
+the templates (`internet`/`smtp` flags under `workers.*`). Adding the labels changes the pod templates, so the next deploy
+restarts every Deployment once (rolling, as usual).
+
+To turn it on: get an enforcing CNI, set `networkPolicy.enabled: true` and `networkPolicy.dataCidrs` (the addresses of
+`storage.cent-su.org`), deploy, then check from a pod: `kubectl -n openprism exec deploy/worker-compile -- python -c
+"import socket;socket.create_connection(('example.com',443),5)"` must time out, the api `/readyz` must stay 200 and a
+compile must succeed. Kubelet probes come from the node and are allowed by Calico and Cilium; if a CNI blocks them, add
+the node address to the policies.
 
 **Runner disk (#69).** The images build on the shared cluster runner, one at a time, and each is removed from the runner
 once pushed (only this release's tag and dangling layers; other repositories' images are left alone). The first step of
@@ -114,7 +169,7 @@ helm upgrade --install openprism deploy/helm/openprism -n openprism \
 | Postgres, Redis, MinIO addresses | `postgres.*`, `redis.*`, `s3.*` values (the workflow fills them from the `*_HOST` / `*_PORT` secrets) |
 | `DATABASE_URL`, `S3_ACCESS_KEY_ID`, `S3_SECRET_ACCESS_KEY` | Secret `openprism-app-creds` (keys `db-password`, `s3-access-key`, `s3-secret-key`), created once by the bootstrap Job (issue #64). The chart only reads it; the password must be URL-safe (the bootstrap generates hex) |
 | `REDIS_URL` | built in `openprism-core` from `redis.*` and `secrets.REDIS_PASSWORD` (URL-encoded); the database index is `redis.db` (3) because the server is shared |
-| `DJANGO_SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY` | repo secrets, passed with `--set-file` into `openprism-core`. Never change the encryption key once users have stored keys |
+| `DJANGO_SECRET_KEY`, `CREDENTIAL_ENCRYPTION_KEY` | repo secrets, passed with `--set-file` into `openprism-core`. Never replace the encryption key outright once users have stored keys: rotate it by prepending (see *Secrets*) |
 | LLM / MinerU defaults | optional `secrets.OPENPRISM_*`; rendered into `openprism-ai`, read only by `worker-transfer` and `worker-ai` |
 | Everything else | `openprism-config` ConfigMap, from `host`, `s3`, `mail`, `config` |
 
@@ -134,6 +189,83 @@ helm upgrade --install openprism deploy/helm/openprism -n openprism \
   above each task's hard time limit (330 s / 1860 s / 960 s) or a rolling update kills a running job.
 - **Not included (decided for the shared cluster):** Ingress, NetworkPolicies, autoscaling, Postgres/Redis/MinIO.
   The checks that remain are GitHub issues labelled `v0.1.6` (`deploy`).
+
+## Upgrading to v0.1.7: AI settings are per workspace and per project (#78)
+
+What changes for people: **personal keys are no longer a separate layer.** A person's own AI keys are now the settings of their
+*personal workspace* and apply to projects there. In a **team** workspace only the team's settings apply (an owner or admin sets
+them under Settings, and a project can override each one in *Project AI settings*). Search, Vision and MinerU now exist at both
+levels, each with a daily limit, usage and a key history. The project-list "AI settings" icon is gone. Say this in the release
+notes: *people who used a personal key inside a team workspace must ask a workspace admin to set the team's AI settings.*
+
+What the upgrade does to data (migration `integrations/0007`, run by the `migrate` Job, idempotent, nothing decrypted or logged):
+every workspace provider becomes that workspace's AI-model setting with its daily limit; every person's saved keys are copied
+into their personal workspace (an existing workspace setting wins over a personal key for the same profile; people with no
+personal workspace are skipped). The old tables `integrations_workspacellmconfig` and `integrations_usercredential` stay, unread,
+for one release (#160 drops them). `0008` adds `project` and `profile` columns to the usage table and re-creates its unique
+constraint under the same name, and a `project` column to the credential events.
+
+Rolling deploy: the `migrate` Job runs before the new pods start and the old pods keep running until they are replaced. A key a
+person saves in that window through an *old* pod is written to the old table and is **not** copied; it is minutes at most, and a
+second run of `manage.py migrate` does not redo the copy, so ask anyone who saved a key during the upgrade to save it again (or
+run `python manage.py shell -c "import importlib;from django.apps import apps;importlib.import_module('integrations.migrations.0007_copy_keys_to_ai_profiles').copy(apps, None)"`,
+which copies only what is missing). `reencrypt_credentials` also rotates the old tables until they are dropped. Rollback to
+v0.1.6 is safe: the old tables are untouched, and settings made after the upgrade are simply not seen by the old code.
+
+Check after deploying: Settings shows the AI model, Search, Vision and MinerU; a project's *Project AI settings* shows each as
+inherited; `kubectl -n openprism exec deploy/api -- python manage.py shell -c "from integrations.models import AiProfile; print(AiProfile.objects.count())"`
+should equal the number of old workspace providers plus personal keys that had a personal workspace.
+
+## Secrets: what exists, how it is made, how to rotate it (#117)
+
+Nothing here holds a value; only where each one lives. **Placeholders are refused:** the deploy workflow runs
+`python3 apps/api/common/secretcheck.py` before Helm, and the application refuses to start (`ImproperlyConfigured`) when
+`DJANGO_DEBUG` is off and `DJANGO_SECRET_KEY` or any `CREDENTIAL_ENCRYPTION_KEY` is a shipped placeholder (`.env.sample`,
+compose, tests, CI values), `DJANGO_SECRET_KEY` is shorter than 32 characters or has no variety, or a key is not a valid
+Fernet key. Neither the script nor the error prints a value. A deploy that fails here means the repo secret needs
+replacing, not that the code is wrong.
+
+| Secret | Lives in | Made with | Used for |
+|---|---|---|---|
+| `DJANGO_SECRET_KEY` | repo secret -> `openprism-core` | `python3 -c "import secrets;print(secrets.token_urlsafe(64))"` | signs JWTs, signed links (verification, email change), 2FA tickets, URL tokens, admin sessions |
+| `DJANGO_SECRET_KEY_FALLBACKS` | repo secret (only while rotating) | the previous key(s), comma-separated | verifies values signed with the old key |
+| `CREDENTIAL_ENCRYPTION_KEY` | repo secret -> `openprism-core` | `python3 -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"` | encrypts users' and workspaces' AI keys, Zotero keys, TOTP secrets and recovery codes |
+| `REDIS_PASSWORD` | repo secret -> `openprism-core` (`REDIS_URL`) | set on the shared Redis by its owner | broker, cache, live editing |
+| `db-password` | Secret `openprism-app-creds` | generated by the bootstrap (hex) | the `openprism` Postgres role |
+| `s3-access-key`, `s3-secret-key` | Secret `openprism-app-creds` | the store's key pair (`OPENPRISM_S3_*`, else the store's root key) | project files, PDFs |
+| `OPENPRISM_LLM_*`, `OPENPRISM_MINERU_TOKEN` | repo secrets -> `openprism-ai` | issued by the provider | server-side AI defaults (workers only) |
+| `EMAIL_HOST_USER/PASSWORD`, `SOCIAL_*` | repo secrets -> `openprism-core` | issued by the mail / identity provider | outgoing mail, Google / ORCID sign-in |
+| `GHCR_*`, `KUBECONFIG_CENT_BASE64`, `POSTGRES_USER/PASSWORD`, `MINIO_ROOT_*` | repo secrets only | n/a | the workflow (image pull, deploy, first-time bootstrap); not in the cluster app |
+
+**Rotate `CREDENTIAL_ENCRYPTION_KEY`** (no downtime, nobody is signed out; also the response to a leaked key). Losing the key,
+or dropping it too early, makes stored keys unreadable, so the order matters:
+1. Make a new key. Set the repo secret to `NEW,OLD` (new first) and deploy. New writes use `NEW`; old values still open.
+2. On the cluster: `kubectl -n openprism exec deploy/api -- python manage.py reencrypt_credentials` is a dry run that counts
+   what is still on an older key; run it again with `--apply` to rewrite those values (Zotero keys, personal and workspace
+   AI keys, TOTP secrets and recovery codes). Run it once more: it must say `rewrote 0`. If it reports values it "cannot
+   decrypt", **stop and do not remove any key**: a key they were written with is missing from the list.
+3. Set the repo secret to `NEW` alone and deploy.
+After a *leak*, also ask people to replace their stored AI keys: re-encryption protects the database, not a key already
+read out of it.
+
+**Rotate `DJANGO_SECRET_KEY`:** set `DJANGO_SECRET_KEY` to the new value and `DJANGO_SECRET_KEY_FALLBACKS` to the old one,
+deploy. Signed links, tickets and URL tokens made before keep working (Django verifies with the fallbacks). **Everyone is
+signed out once:** the JWT access and refresh tokens are signed with `SECRET_KEY` alone, so they stop verifying and people
+sign in again (a deliberate side effect, and the point after a leak). After the longest lifetime of a signed link (email
+verification: 3 days) remove the fallback and deploy.
+
+**Rotate the database password or the S3 key pair:** the bootstrap does it (`deploy/bootstrap`): for S3 create the new key
+in the store and set `OPENPRISM_S3_ACCESS_KEY/SECRET_KEY`; then delete Secret `openprism-app-creds`, run the "Bootstrap
+hosted services" workflow, redeploy so every pod restarts with the new Secret. Expect errors from pods still holding the old
+value until the restart finishes. **Redis:** the Redis owner changes it, then update `REDIS_PASSWORD` and deploy.
+
+Tested: `integrations/test_rotation.py` runs the whole key rotation above against real Postgres (prepend, dry run, apply,
+second run is a no-op, drop the old key; three generations; dropping a key too early is caught and loses nothing; a TOTP
+secret still opens afterwards; no secret is printed) and signed values / URL tokens through a `DJANGO_SECRET_KEY` rotation;
+`common/test_secretcheck.py` covers the refusal of every shipped placeholder and the script's exit code. **Not tested on the
+cluster** (rotating production keys to prove it would be a real rotation); the first real rotation should follow the steps
+above with `reencrypt_credentials` in dry-run mode first. The JWT sign-out on a `DJANGO_SECRET_KEY` rotation is by design
+and not covered by a test.
 
 ## Security model
 
@@ -246,15 +378,34 @@ superadmin, so a locked-out installation is recoverable only by running `make_su
 
 The five built-in templates (`apps/api/builtin_templates/`) are part of the `api` image. The `migrate` Job runs `manage.py load_builtin_templates` right after `migrate` on every release, so a fresh database gets them and a changed built-in follows the release. It is idempotent and never changes user-uploaded templates. To reload by hand: `kubectl -n openprism exec deploy/api -- python manage.py load_builtin_templates`.
 
+## Verified on the cluster
+
+- **Read-only root filesystem for the TeX worker** (#113, 2026-11-11, `worker-compile` v0.1.5): the container runs with
+  `readOnlyRootFilesystem: true`, non-root uid 1000, all capabilities dropped; writing to `/` or `/etc` fails ("Read-only
+  file system") and `/tmp` (an `emptyDir`) is writable. A small document compiled to a PDF with `pdflatex`, `xelatex`,
+  `lualatex`, `latexmk -norc -pdf` and tectonic (offline bundle), each with the compile environment (`HOME` in `/tmp`,
+  shell escape off, `openout_any=p`, `openin_any=p` except lualatex). 25 MB of `/tmp` used. No chart change was needed.
+
+- **Through the live proxy chain, without credentials** (#115, 2026-11-11, https://openprism.cent-su.org via Caddy and the web nginx):
+  a websocket upgrade on `/api/collab` answers `101 Switching Protocols` (so Caddy and nginx pass upgrades to the api); a
+  150 MB request body reaches the api (it answers 404 for the made-up project, so neither proxy refused it) in about 21 s;
+  a 210 MB body gets `413` from Caddy (`max_size 200MB`); the arXiv event-stream endpoint without a token answers `401`
+  JSON. Caddy runs on a host outside the cluster, so its access log was not readable from here.
+
 ## Unverified
 
 The app is serving (`/api/health` through Caddy reports the deployed version; sign-in is required for the API). Not yet
 checked on the cluster, in rough order of risk:
 
-- **Live editing** (`/api/collab` websocket) through Caddy and the NodePort, large uploads (150 MB and above) and the
-  arXiv-import event stream; see `deploy/caddy/README.md`. Needs a browser session against the live site.
-- **Compiling LaTeX** in `worker-compile` with a read-only root filesystem: `pdflatex`, `xelatex`, `lualatex` and
-  `latexmk` inside the pod, caches under `/tmp`, and the compile hardening still holding.
+- **Needs a signed-in session or Caddy's host** (#115): live editing typed in two browsers, a real 150 MB upload that is
+  stored, the arXiv import progress stream arriving unbuffered, and that `?token=` never reaches Caddy's access log. For the
+  log, two requests carrying the sentinels `sentinel-token-check-1` (websocket) and `sentinel-token-check-2` (upload) were
+  sent on 2026-11-11 23:40 UTC: on the Caddy host, `grep -c sentinel-token-check <access log>` must print 0. See
+  `deploy/caddy/README.md`.
+- **Compile hardening inside the pod** (#113): the engines themselves are verified (below), but a hostile document that
+  tries `\write18`, absolute-path reads and reading the worker's `/proc/*/environ` has not been run against the live pod.
+  The same cases run in `jobs/tests.py` (`HostileDocumentTests`, `ScrubbedEnvironmentTests`) under `worker-tex`; run them
+  with `docker compose run --rm worker-tex python manage.py test jobs --noinput`.
 - **No NetworkPolicies** are installed: `worker-compile` has no network isolation (see the security model above).
 - **The app uses the object store's root S3 key** unless `OPENPRISM_S3_ACCESS_KEY` / `_SECRET_KEY` exist (see the
   bootstrap section); to change it, delete `openprism-app-creds`, add the secrets, re-run the bootstrap workflow and redeploy.
