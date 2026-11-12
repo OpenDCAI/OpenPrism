@@ -47,9 +47,14 @@ still holds every value.
 
 ## Cutover from the Helm workflow (#172), one window, owner on the cluster host
 
-Before: v0.1.7.1 is live through the old workflow; `release/v0.1.8` is tagged `v0.1.8` with `DEPLOY_WITH_ARGOCD` **unset**
-(so the tag deploys through Helm as usual and the images exist). Confirm `values-cent.yaml` against
-`kubectl -n openprism get cm openprism-config -o yaml` (database, Redis, S3 hosts and ports).
+The cutover changes **how** the cluster is deployed, not **what** runs: Argo adopts the running v0.1.7.1, and v0.1.8 is
+then the first release through a Deploy PR. Until then `apps/openprism.yaml` points at commit `c63a757` (the v0.1.8
+chart while its appVersion was still 0.1.7.1, so the images are v0.1.7.1's), not at a tag.
+
+Before: v0.1.7.1 is live through the old workflow; `release/v0.1.8` (VERSION 0.1.8) is merged to `main` **without a tag**
+(merging does not deploy), so `root.yaml` finds `deploy/argocd/apps/`. `values-cent.yaml` was checked on 2026-11-12:
+`helm get manifest openprism` and `helm template` with it differ only in sync waves, the pods' checksum annotations,
+and the migrate and PostSync Jobs (Secrets left out of the comparison).
 
 1. **Projects and controller:** `kubectl apply -f deploy/argocd/project.yaml -f deploy/argocd/root.yaml`. The root app
    creates `sealed-secrets` (and `openprism`, which has no automated sync yet). Wait for the controller, back up its key
@@ -61,12 +66,15 @@ Before: v0.1.7.1 is live through the old workflow; `release/v0.1.8` is tagged `v
 4. **Diff:** `argocd app diff openprism --core` (or the UI). Expected: labels and annotations (sync waves, the
    `argocd.argoproj.io/instance` label), the migrate Job under its new name, the PostSync Job. Anything else: stop.
 5. **Sync once by hand:** `argocd app sync openprism --core`. Migrations run (nothing to do), then the pods roll once.
-   Check `/api/health` (0.1.8), sign in, compile, an AI request, an export.
+   Check `/api/health` (still 0.1.7.1), sign in, compile, an AI request, an export.
 6. **Retire Helm's records** (not the resources): `kubectl -n openprism delete secret -l owner=helm,name=openprism`.
    **Never `helm uninstall`**: it would delete the running app.
 7. **Switch on:** set `syncPolicy.automated: {prune: false, selfHeal: true}` in `apps/openprism.yaml` (PR), and the
    repository variable `DEPLOY_WITH_ARGOCD=true` (Settings → Secrets and variables → Actions → Variables). From now on a
    tag opens a Deploy PR and the Helm job is skipped.
+8. **First release through Argo:** tag `v0.1.8` on `main`. The workflow builds the images and opens **Deploy v0.1.8**
+   (the commit becomes the tag); merge it. Argo syncs, the PostSync check passes, and *Wait for the Argo CD deploy* goes
+   green when `/api/health` reports 0.1.8.
 
 **Rollback during the window:** `argocd app delete openprism --cascade=false --core` (keeps every resource), then
 redeploy the previous tag with the old workflow (Actions → "Release - build images & deploy", `tag`, `build` off).

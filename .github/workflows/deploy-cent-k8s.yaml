@@ -155,7 +155,8 @@ jobs:
         run: |
           set -euo pipefail
           app=deploy/argocd/apps/openprism.yaml
-          sed -i -E "s|^(      targetRevision: )v[0-9][0-9.]*(  +# the release: .*)$|\1$TAG\2|" "$app"
+          # The current value is a tag, or before the first release through Argo a commit (the cutover).
+          sed -i -E "s|^(      targetRevision: )[^ ]+(  +# the release: .*)$|\1$TAG\2|" "$app"
           grep -q "targetRevision: $TAG " "$app" || { echo "::error::could not set the release in $app"; exit 1; }
           if git diff --quiet; then echo "main already deploys $TAG"; exit 0; fi
           branch="deploy/$TAG"
