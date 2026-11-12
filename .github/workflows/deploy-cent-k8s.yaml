@@ -136,11 +136,44 @@ jobs:
           docker image rm "$IMAGE_REF" 2>&1 || true
           docker image prune -f 2>&1 | tail -1 || true
 
+  # Argo CD path (#171), on once the repository variable DEPLOY_WITH_ARGOCD is "true" (the last cutover step,
+  # deploy/argocd/README.md): no cluster access from GitHub. The tag's images are built above; this opens a pull request
+  # that points the Application at the tag. Merging it is the deploy; Argo CD syncs, and the job below waits for it.
+  deploy-pr:
+    name: Open the Deploy pull request (Argo CD)
+    needs: [check, build]
+    if: ${{ !cancelled() && vars.DEPLOY_WITH_ARGOCD == 'true' && needs.check.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    runs-on: ubuntu-24.04
+    permissions: {contents: write, pull-requests: write}
+    env:
+      TAG: ${{ needs.check.outputs.tag }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with: {ref: main}
+      - name: Point the Application at the tag and open the pull request
+        run: |
+          set -euo pipefail
+          app=deploy/argocd/apps/openprism.yaml
+          # The current value is a tag, or before the first release through Argo a commit (the cutover).
+          sed -i -E "s|^(      targetRevision: )[^ ]+(  +# the release: .*)$|\1$TAG\2|" "$app"
+          grep -q "targetRevision: $TAG " "$app" || { echo "::error::could not set the release in $app"; exit 1; }
+          if git diff --quiet; then echo "main already deploys $TAG"; exit 0; fi
+          branch="deploy/$TAG"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git switch -c "$branch"
+          git commit -am "Deploy $TAG"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" --title "Deploy $TAG" \
+            --body "Merging this deploys $TAG to the cent cluster: Argo CD syncs the chart at the tag (migrations first, then the workloads; a failed migration stops the sync and the running version keeps serving). The \"Wait for the Argo CD deploy\" workflow checks the public URL afterwards."
+
   deploy:
     name: Deploy to the cluster
     needs: [check, build]
     # build is skipped on a redeploy; any other result than success or skipped stops the deploy.
-    if: ${{ !cancelled() && needs.check.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
+    # Not once Argo CD deploys (DEPLOY_WITH_ARGOCD): then the cluster pulls from git and this job must not push to it.
+    if: ${{ !cancelled() && vars.DEPLOY_WITH_ARGOCD != 'true' && needs.check.result == 'success' && (needs.build.result == 'success' || needs.build.result == 'skipped') }}
     runs-on: [self-hosted, linux, cent]
     env:
       VERSION: ${{ needs.check.outputs.version }}

@@ -13,6 +13,7 @@ kind: Deployment
 metadata:
   name: worker-{{ $name }}
   labels: {{- include "openprism.labels" (dict "root" $ "name" (printf "worker-%s" $name)) | nindent 4 }}
+  {{- with (include "openprism.wave" (dict "root" $ "wave" "1")) }}{{ . | nindent 2 }}{{ end }}
 spec:
   replicas: {{ $w.replicas }}
   strategy: {type: RollingUpdate, rollingUpdate: {maxUnavailable: 0, maxSurge: 1}}

@@ -1,0 +1,18 @@
+# App of apps (#167). Apply once by hand: kubectl apply -f deploy/argocd/project.yaml -f deploy/argocd/root.yaml
+# It watches deploy/argocd/apps/ on main, so adding, changing or pinning an Application is a pull request.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openprism-root
+  namespace: argocd
+spec:
+  project: openprism-platform
+  source:
+    repoURL: https://github.com/cent-ischool/OpenPrism.git
+    targetRevision: main
+    path: deploy/argocd/apps
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: argocd
+  syncPolicy:
+    automated: {prune: false, selfHeal: true}

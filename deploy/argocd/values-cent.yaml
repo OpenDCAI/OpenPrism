@@ -1,0 +1,18 @@
+# Values for the cent cluster under Argo CD (#167, #168). Not secret: addresses of the hosted services and switches.
+# Secrets live in deploy/argocd/secrets/ as SealedSecrets made by the "Seal secrets" workflow from the GitHub secrets.
+argocd:
+  enabled: true
+secrets:
+  create: false
+  revision: "0"          # bumped by the seal workflow so a re-seal rolls the pods
+# The hosted data services (the old workflow filled these from the POSTGRES_*, REDIS_*, MINIO_* repo secrets).
+# CONFIRM before cutover against the running release: kubectl -n openprism get cm openprism-config -o yaml
+postgres:
+  host: storage.cent-su.org
+  port: 5432
+redis:
+  host: storage.cent-su.org
+  port: 6379
+s3:
+  host: storage.cent-su.org
+  port: 9000

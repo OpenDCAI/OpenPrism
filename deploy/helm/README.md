@@ -59,6 +59,11 @@ deploy/bootstrap/bootstrap.sh            # namespace defaults to openprism; need
 
 ## Releasing (issue #66)
 
+**From v0.1.8 Argo CD deploys** (`deploy/argocd/README.md`): once the repository variable `DEPLOY_WITH_ARGOCD` is `true`,
+a tag still runs step 1 and builds the images below, but instead of the Helm deploy it opens a **Deploy vX.Y.Z** pull
+request, and merging it is the deploy. What follows describes the Helm workflow, which stays the path until the cutover
+and the fallback after it (unset the variable first).
+
 `.github/workflows/deploy-cent-k8s.yaml` follows graderthan's pattern: **a release is a `vX.Y.Z` tag**, never a plain
 push, and it runs on the cluster's self-hosted runner (`[self-hosted, linux, cent]`). The repository is public, so the
 workflow must never gain a `pull_request` trigger.
