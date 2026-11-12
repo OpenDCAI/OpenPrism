@@ -70,6 +70,7 @@ import VersionsPanel from './VersionsPanel';
 import { parseCompileErrors } from './compileLog';
 import type { CompileError } from './compileLog';
 import AiCommandBar from './AiCommandBar';
+import ProjectAiSettings from './ProjectAiSettings';
 import InviteLinks from './InviteLinks';
 import CommentsPanel from './CommentsPanel';
 import type { PendingComment } from './CommentsPanel';
@@ -4503,7 +4504,7 @@ export default function EditorPage() {
     { label: t('保存'), icon: 'save', kbd: 'Ctrl S', onSelect: () => void saveActiveFile() },
     { label: t('下载 PDF'), icon: 'download', disabled: !pdfUrl, onSelect: () => downloadPdf() },
     { label: t('Share…'), icon: 'share', onSelect: () => openRightTool('collab') },
-    { label: t('AI & search settings'), icon: 'settings', onSelect: () => setSettingsOpen(true) }
+    { label: t('Project AI settings'), icon: 'settings', onSelect: () => setSettingsOpen(true) }
   ];
 
   const compileMenuItems = (): MenuEntry[] => [
@@ -6268,8 +6269,8 @@ export default function EditorPage() {
       )}
       {settingsOpen && (
         <Modal
-          title={t('AI & search settings')}
-          description={t('AI, search, vision and MinerU settings belong to the workspace.')}
+          title={t('Project AI settings')}
+          description={t('The AI model, Search, Vision and MinerU for this project: inherited from the workspace, or overridden here.')}
           size="lg"
           closeLabel={t('关闭')}
           onClose={() => setSettingsOpen(false)}
@@ -6286,12 +6287,10 @@ export default function EditorPage() {
                 {t('This workspace provides the AI provider{{model}}. Your own key is not used for its projects.', { model: workspaceProvider.model ? ` (${workspaceProvider.model})` : '' })}
               </div>
             )}
-            <p data-testid="editor-ai-settings-note">
-              {t('The AI model, Search, Vision and MinerU are set for the whole workspace, by its owners and admins. Your own keys live in your personal workspace.')}
-            </p>
+            {projectId && <ProjectAiSettings projectId={projectId} onStatus={setStatus} />}
             {projectWorkspaceId && (
               <div>
-                <Button variant="primary" onClick={() => { setSettingsOpen(false); setActiveWorkspace(projectWorkspaceId); navigate('/projects?section=settings'); }}>
+                <Button variant="ghost" onClick={() => { setSettingsOpen(false); setActiveWorkspace(projectWorkspaceId); navigate('/projects?section=settings'); }}>
                   {t('Open workspace settings')}
                 </Button>
               </div>

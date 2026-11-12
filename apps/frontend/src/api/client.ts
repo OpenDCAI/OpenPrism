@@ -1232,6 +1232,42 @@ export function removeWorkspaceAiProfile(workspaceId: string, profile: AiProfile
   return request<WorkspaceAiStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/ai/${profile}`, { method: 'DELETE' });
 }
 
+/** How a project gets one AI setting (#78): its own override, the workspace's, or the server's. */
+export interface ProjectAiProfileStatus {
+  source: 'project' | 'workspace' | 'server';
+  /** Search / Vision following the AI model because they are unset. */
+  viaLlm: boolean;
+  overridden: boolean;
+  model?: string;
+  /** Only for those who can change overrides. */
+  endpoint?: string;
+  lastFour?: string;
+  dailyLimit?: number | null;
+}
+export interface ProjectAiStatus {
+  ok: boolean;
+  error?: string;
+  canManage?: boolean;
+  canUse?: boolean;
+  profiles: Record<AiProfileName, ProjectAiProfileStatus>;
+}
+export function getProjectAi(projectId: string) {
+  return request<ProjectAiStatus>(`/api/projects/${encodeURIComponent(projectId)}/ai`);
+}
+export function saveProjectAiProfile(projectId: string, profile: AiProfileName, payload: { endpoint?: string; model?: string; apiKey?: string; dailyLimit?: number | null }) {
+  return request<ProjectAiStatus>(`/api/projects/${encodeURIComponent(projectId)}/ai/${profile}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+/** Reset: the project goes back to the workspace's setting. */
+export function removeProjectAiProfile(projectId: string, profile: AiProfileName) {
+  return request<ProjectAiStatus>(`/api/projects/${encodeURIComponent(projectId)}/ai/${profile}`, { method: 'DELETE' });
+}
+export function listProjectAiModels(projectId: string, payload: ProviderCheckPayload) {
+  return request<{ ok: boolean; models?: string[]; error?: string }>(`/api/projects/${encodeURIComponent(projectId)}/ai/models`, { method: 'POST', body: JSON.stringify(payload) });
+}
+export function testProjectAi(projectId: string, payload: ProviderCheckPayload) {
+  return request<{ ok: boolean; latencyMs?: number; error?: string }>(`/api/projects/${encodeURIComponent(projectId)}/ai/test`, { method: 'POST', body: JSON.stringify(payload) });
+}
+
 export interface ProviderCheckPayload { endpoint?: string; model?: string; apiKey?: string; profile?: AiProfileName }
 /** Ask the server for the provider's model list (#76). An empty key with an unchanged endpoint uses the stored key. */
 export function listWorkspaceLlmModels(workspaceId: string, payload: ProviderCheckPayload) {
