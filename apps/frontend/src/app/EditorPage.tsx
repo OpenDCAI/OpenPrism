@@ -71,6 +71,7 @@ import { parseCompileErrors } from './compileLog';
 import type { CompileError } from './compileLog';
 import AiCommandBar from './AiCommandBar';
 import ProjectAiSettings from './ProjectAiSettings';
+import { mainFileKey, pickInitialFile } from './mainFile';
 import InviteLinks from './InviteLinks';
 import CommentsPanel from './CommentsPanel';
 import type { PendingComment } from './CommentsPanel';
@@ -332,7 +333,6 @@ function isRootDocument(text: string) {
   return /^[ \t]*\\documentclass\b/m.test(text);
 }
 
-const mainFileKey = (projectId: string) => `openprism-main-file:${projectId}`;
 
 // What fontspec prints under pdfLaTeX: "requires either XeTeX or\n(fontspec)   LuaTeX."
 const NEEDS_UNICODE_ENGINE = /requires either XeTeX or[\s\S]{0,60}LuaTeX/i;
@@ -1827,8 +1827,7 @@ export default function EditorPage() {
     setFileOrder(res.fileOrder || {});
     setCanWrite(res.canWrite !== false);
     if (!keepActive || !activePath || !res.items.find((item) => item.path === activePath)) {
-      const main = res.items.find((item) => item.path.endsWith('main.tex'))?.path;
-      const next = main || res.items.find((item) => item.type === 'file')?.path || '';
+      const next = pickInitialFile(res.items, projectId);
       if (next) {
         await openFile(next, fresh);
       }
