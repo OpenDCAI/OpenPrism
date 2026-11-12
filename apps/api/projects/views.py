@@ -6,9 +6,11 @@ import zipfile
 from datetime import timezone as dt_timezone
 
 from django.conf import settings
+from asgiref.sync import sync_to_async
 from django.db import transaction
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
+from django.utils.http import content_disposition_header
 from rest_framework.decorators import api_view, authentication_classes, parser_classes, permission_classes
 from rest_framework.exceptions import NotFound, ParseError, PermissionDenied
 from rest_framework.parsers import JSONParser
@@ -25,6 +27,7 @@ from templates_app import service as templates
 from templates_app.models import Template
 
 from . import direct_uploads
+from . import export as pexport
 from . import files as pfiles
 from .tasks import import_arxiv
 from .access import UrlTokenAuthentication, get_project, user_projects
@@ -284,6 +287,46 @@ def blob(request, pk):
         # User-supplied SVG/HTML/unknown must not run script in our origin. (Not applied to PDFs and
         # rasters: Chrome refuses to render a PDF served with a sandbox CSP.)
         resp['Content-Security-Policy'] = 'sandbox'
+    resp['X-Content-Type-Options'] = 'nosniff'
+    return resp
+
+
+async def _file_chunks(f, chunk=1024 * 1024):
+    """Read a temporary file in chunks off the event loop, then close (and so delete) it."""
+    try:
+        while True:
+            data = await sync_to_async(f.read, thread_sensitive=False)(chunk)
+            if not data:
+                break
+            yield data
+    finally:
+        f.close()
+
+
+@api_view(['GET'])
+@authentication_classes([UrlTokenAuthentication])
+@permission_classes([IsUserOrGuest])
+def export(request, pk):
+    """The project as one zip (#162). Anyone who can read the project may export it. `?check=1` answers JSON ({ok, files,
+    bytes} or {ok: false, error}) without building anything, so the UI can say what is wrong before a download starts;
+    the download itself takes a project URL token in `?token=` (a browser navigation cannot send a header)."""
+    project = get_project(request, pk)
+    files, total = pexport.survey(project)
+    too_large = total > settings.EXPORT_MAX_BYTES
+    if request.query_params.get('check'):
+        if too_large:
+            return Response({'ok': False, 'error': f'This project is too large to export as one file ({total // (1024 * 1024)} MB; '
+                                                   f'the limit is {settings.EXPORT_MAX_BYTES // (1024 * 1024)} MB).'})
+        return Response({'ok': True, 'files': files, 'bytes': total, 'name': pexport.archive_name(project)})
+    ratelimit.enforce('export', request.user, settings.EXPORT_RATE_PER_MINUTE)
+    try:
+        tmp, size = pexport.build(project, settings.EXPORT_MAX_BYTES)
+    except pexport.ExportTooLarge as exc:
+        return Response({'ok': False, 'error': str(exc)}, status=413)
+    resp = StreamingHttpResponse(_file_chunks(tmp), content_type='application/zip')
+    resp['Content-Length'] = str(size)
+    resp['Content-Disposition'] = content_disposition_header(True, pexport.archive_name(project))
+    resp['Cache-Control'] = 'no-store'
     resp['X-Content-Type-Options'] = 'nosniff'
     return resp
 

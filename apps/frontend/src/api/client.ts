@@ -760,6 +760,19 @@ export function blobUrl(projectId: string, path: string) {
   return `/api/projects/${projectId}/blob?${params.toString()}`;
 }
 
+/** What exporting a project would hold, or why it cannot be exported (#162). Nothing is built. */
+export function checkProjectExport(projectId: string) {
+  return request<{ ok: boolean; files?: number; bytes?: number; name?: string; error?: string }>(`/api/projects/${encodeURIComponent(projectId)}/export?check=1`);
+}
+/**
+ * The address that downloads the project as one zip. A browser navigation cannot send an Authorization header, so it
+ * carries the project's short-lived URL token (never the access token).
+ */
+export async function projectExportUrl(projectId: string) {
+  const token = await ensureUrlToken(projectId);
+  return `/api/projects/${encodeURIComponent(projectId)}/export?token=${encodeURIComponent(token)}`;
+}
+
 // ─── Accounts ───
 
 export interface Account {

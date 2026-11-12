@@ -1102,5 +1102,9 @@
   "the {{profile}} API key": "{{profile}} API 密钥",
   "Projects in this workspace will use the server default, if there is one, until a new provider is set.": "在设置新的服务商之前，此工作区的项目将使用服务器默认值（如有）。",
   "No workspace AI provider is set. An admin can set one here.": "工作区未设置 AI 服务商。管理员可以在此处设置。",
-  "Members who can edit use this provider for AI features in this workspace and its projects, unless a project overrides it. The key is stored encrypted and is never shown again.": "有编辑权限的成员在此工作区及其项目中使用此服务商提供 AI 功能，除非项目另行覆盖。密钥已加密存储，不会再次显示。"
+  "Members who can edit use this provider for AI features in this workspace and its projects, unless a project overrides it. The key is stored encrypted and is never shown again.": "有编辑权限的成员在此工作区及其项目中使用此服务商提供 AI 功能，除非项目另行覆盖。密钥已加密存储，不会再次显示。",
+  "Export project": "导出项目",
+  "Preparing {{project}} for export…": "正在准备导出 {{project}}…",
+  "Could not export {{project}}: {{error}}": "无法导出 {{project}}：{{error}}",
+  "Exporting {{project}} ({{count}} files)": "正在导出 {{project}}（{{count}} 个文件）"
 }
