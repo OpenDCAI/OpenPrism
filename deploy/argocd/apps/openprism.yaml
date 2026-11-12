@@ -45,8 +45,11 @@ spec:
   destination:
     server: https://kubernetes.default.svc
     namespace: openprism
-  # Automated sync is switched on as the last step of the cutover (deploy/argocd/README.md); until then sync by hand.
+  # Switched on at the end of the cutover (2026-11-12, #172): every change on main that affects this app deploys.
   syncPolicy:
+    automated:
+      prune: false      # never delete a resource just because it left the chart; do that by hand
+      selfHeal: true    # undo changes made on the cluster that git does not have
     syncOptions:
       - ServerSideApply=true
       - RespectIgnoreDifferences=true
