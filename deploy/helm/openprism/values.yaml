@@ -1,6 +1,11 @@
 # OpenPrism on the cent cluster. The deploy workflow overrides image.tag and the secrets; everything else is set here
 # or in an extra values file (-f). Postgres, Redis and MinIO are the cluster's hosted services: set where they live.
 
+# Deployed by Argo CD (deploy/argocd): the migrate Job becomes a Sync hook, workloads get sync waves, and a PostSync
+# Job checks the API reports this chart's version. false = plain Helm (the old deploy workflow and local renders).
+argocd:
+  enabled: false
+
 image:
   registry: ghcr.io/cent-ischool/openprism   # images are <registry>/{api,web,worker-tex,worker-ai}:<tag>
   tag: ""                                    # empty = "v" + the chart's appVersion (= apps/api/VERSION at the release tag)

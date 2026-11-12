@@ -1,0 +1,52 @@
+{{- if .Values.argocd.enabled }}
+# Argo CD PostSync hook (#169): the sync only counts as done when the API answers /readyz and reports this chart's
+# version, so a sync that "succeeded" while old pods still answer, or a broken dependency, shows as failed in Argo.
+# Nothing rolls back automatically: the previous pods keep serving and a person decides.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: postsync-check
+  labels: {{- include "openprism.labels" (dict "root" . "name" "postsync-check") | nindent 4 }}
+  annotations:
+    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+spec:
+  backoffLimit: 0
+  activeDeadlineSeconds: 300
+  template:
+    metadata:
+      labels: {{- include "openprism.labels" (dict "root" . "name" "postsync-check") | nindent 8 }}
+    spec:
+      serviceAccountName: openprism-app
+      {{- include "openprism.imagePullSecrets" . | nindent 6 }}
+      restartPolicy: Never
+      securityContext: {runAsNonRoot: true, runAsUser: 1000, runAsGroup: 1000, seccompProfile: {type: RuntimeDefault}}
+      containers:
+        - name: check
+          image: {{ include "openprism.image" (dict "root" . "name" "api") }}
+          env:
+            - {name: EXPECTED_VERSION, value: {{ .Chart.AppVersion | quote }}}
+          command:
+            - python
+            - -c
+            - |
+              import json, os, sys, time, urllib.request
+              want = os.environ["EXPECTED_VERSION"]
+              last = ""
+              for _ in range(40):   # about 2 minutes for the rollout to settle
+                  try:
+                      ready = json.load(urllib.request.urlopen("http://api:8000/readyz", timeout=5))
+                      health = json.load(urllib.request.urlopen("http://api:8000/healthz", timeout=5))
+                      if ready.get("ok") and health.get("version") == want:
+                          print(f"api ready and serving {want}")
+                          sys.exit(0)
+                      last = f"ready={ready.get('ok')} version={health.get('version')}"
+                  except Exception as exc:
+                      last = f"{type(exc).__name__}: {exc}"
+                  time.sleep(3)
+              print(f"api did not become ready on {want}: {last}")
+              sys.exit(1)
+          securityContext:
+            {{- include "openprism.locked" . | nindent 12 }}
+          resources: {requests: {cpu: 20m, memory: 64Mi}, limits: {memory: 128Mi}}
+{{- end }}

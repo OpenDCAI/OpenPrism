@@ -4,7 +4,17 @@
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: {{ printf "migrate-%s-r%d" (.Values.image.tag | toString | replace "." "-" | lower | trunc 12) .Release.Revision }}
+  {{- if .Values.argocd.enabled }}
+  # Under Argo CD a Sync hook: re-created on every sync (BeforeHookCreation keeps the last run's pods and logs until the
+  # next one), in wave 0, after the settings and before the workloads. .Release.Revision is always 1 under Argo.
+  name: migrate
+  annotations:
+    argocd.argoproj.io/hook: Sync
+    argocd.argoproj.io/hook-delete-policy: BeforeHookCreation
+    argocd.argoproj.io/sync-wave: "0"
+  {{- else }}
+  name: {{ printf "migrate-%s-r%d" (.Values.image.tag | default (printf "v%s" .Chart.AppVersion) | toString | replace "." "-" | lower | trunc 12) .Release.Revision }}
+  {{- end }}
   labels: {{- include "openprism.labels" (dict "root" . "name" "migrate") | nindent 4 }}
 spec:
   # restartPolicy Never: every failed attempt stays as its own pod with its logs. With OnFailure the container restarts in

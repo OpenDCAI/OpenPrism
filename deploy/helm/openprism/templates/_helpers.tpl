@@ -71,3 +71,11 @@ checksum/secrets: {{ include (print .Template.BasePath "/secret.yaml") . | sha25
 checksum/secrets: {{ .Values.secrets.revision | toString | quote }}
 {{- end }}
 {{- end }}
+
+{{/* Argo CD sync order (argocd.enabled): settings first (-1), then the migrate hook (0), then the workloads (1), so a
+failed migration stops the sync before any Deployment changes. Nothing under plain Helm. */}}
+{{- define "openprism.wave" -}}
+{{- if .root.Values.argocd.enabled }}
+annotations: {argocd.argoproj.io/sync-wave: {{ .wave | quote }}}
+{{- end }}
+{{- end }}

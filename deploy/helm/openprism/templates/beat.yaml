@@ -5,6 +5,7 @@ kind: Deployment
 metadata:
   name: beat
   labels: {{- include "openprism.labels" (dict "root" . "name" "beat") | nindent 4 }}
+  {{- with (include "openprism.wave" (dict "root" . "wave" "1")) }}{{ . | nindent 2 }}{{ end }}
 spec:
   replicas: 1
   strategy: {type: Recreate}
