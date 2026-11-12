@@ -30,13 +30,14 @@ def models_url(chat_endpoint):
     return re.sub(r'/chat/completions/?$', '/models', chat_endpoint, flags=re.I)
 
 
-def resolve(workspace, endpoint, api_key, profile=AiProfile.LLM):
-    """(chat endpoint, key) to call with, for one profile (llm, search or vision). A typed key wins. With no key the
-    stored one of the same profile is used only when the endpoint is unchanged (or not given): changing the endpoint
-    needs the key typed again, so the stored key cannot be sent elsewhere."""
+def resolve(owner, endpoint, api_key, profile=AiProfile.LLM):
+    """(chat endpoint, key) to call with, for one profile (llm, search or vision) of a workspace or a project. A typed key
+    wins. With no key the stored one of the same profile and owner is used only when the endpoint is unchanged (or not
+    given): changing the endpoint needs the key typed again, so the stored key cannot be sent elsewhere. A project that
+    has no override of its own never borrows the workspace's key here: type one, or test the workspace's settings."""
     if profile not in (AiProfile.LLM, AiProfile.SEARCH, AiProfile.VISION):
         raise ProviderError('This setting has no model list or test.')
-    config = AiProfile.objects.filter(workspace=workspace, profile=profile).first()
+    config = aiprofiles.get(owner, profile)
     try:
         typed = aiprofiles.clean_endpoint(endpoint)
     except aiprofiles.LlmConfigError as exc:

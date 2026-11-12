@@ -92,7 +92,7 @@ test('editors only see whether each setting exists; the old personal AI settings
   await expect(page.getByRole('button', { name: 'AI settings' })).toHaveCount(0);
 });
 
-test('the personal workspace says its keys are yours; the editor dialog points at workspace settings', async ({ page }) => {
+test('the personal workspace says its keys are yours; the project dialog links to workspace settings', async ({ page }) => {
   const session = await newAccount('profiles-personal');
   const id = await newProject(session, 'Paper', { 'main.tex': '\\documentclass{article}\\begin{document}x\\end{document}' });
   await signIn(page, session);
@@ -102,8 +102,8 @@ test('the personal workspace says its keys are yours; the editor dialog points a
   await page.goto(`/editor/${id}`);
   await page.waitForSelector('.cm-editor');
   await page.getByRole('button', { name: 'Paper', exact: true }).click();
-  await page.getByRole('menuitem', { name: 'AI & search settings' }).click();
-  await expect(page.getByTestId('editor-ai-settings-note')).toContainText('set for the whole workspace');
+  await page.getByRole('menuitem', { name: 'Project AI settings' }).click();
+  await expect(page.getByTestId('project-ai')).toBeVisible();
   await page.getByRole('dialog').getByRole('button', { name: 'Open workspace settings' }).click();
   await expect(page).toHaveURL(/section=settings/);
   await expect(page.getByTestId('ws-ai')).toBeVisible();

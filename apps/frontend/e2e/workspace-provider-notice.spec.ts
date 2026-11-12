@@ -6,7 +6,7 @@ import { inviteMember, newAccount, newProject, newWorkspace, setActiveWorkspace,
 
 async function openSettings(page: import('@playwright/test').Page) {
   await page.getByRole('button', { name: 'Lab paper' }).click();
-  await page.getByRole('menuitem', { name: 'AI & search settings' }).click();
+  await page.getByRole('menuitem', { name: 'Project AI settings' }).click();
   await expect(page.getByRole('dialog')).toBeVisible();
 }
 

@@ -225,3 +225,135 @@ class ApiTests(Base):
         ev = list(CredentialEvent.objects.order_by('created_at').values_list('kind', 'action', 'detail'))
         self.assertEqual([(k, a) for k, a, _ in ev], [('ai_profile', 'set'), ('ai_profile', 'removed')])
         self.assertEqual(ev[0][2]['profile'], 'search')
+
+
+class ProjectApiTests(Base):
+    """Project overrides (#158): inherited by default, overridden per profile, reset to the workspace's."""
+
+    def url(self, suffix=''):
+        return f'/api/projects/{self.pid}/ai{suffix}'
+
+    def member(self, email, role):
+        user = make_user(email)
+        Membership.objects.create(workspace=self.ws, user=user, role=role)
+        return client_for(user)
+
+    def put(self, profile, client=None, **body):
+        return (client or self.c).put(self.url(f'/{profile}'), body, format='json')
+
+    def set_workspace(self, profile='llm', model='ws-model', key=K['workspace']):
+        aiprofiles.save(self.ws, self.user, profile, 'https://api.openai.com/v1', model, key)
+
+    def test_a_new_project_inherits_everything_the_workspace_has(self):
+        self.set_workspace('llm')
+        self.set_workspace('mineru', model=None, key=K['mineru'])
+        body = self.c.get(self.url()).json()
+        p = body['profiles']
+        self.assertEqual((p['llm']['source'], p['llm']['overridden']), ('workspace', False))
+        self.assertEqual((p['search']['source'], p['search']['viaLlm']), ('workspace', True))   # follows the AI model
+        self.assertEqual(p['mineru']['source'], 'workspace')
+        self.assertEqual(self.new_project() and True, True)                                      # no per-project setup
+        # a profile nobody set: the server's
+        self.assertEqual(self.c.get(self.url()).json()['profiles']['vision']['viaLlm'], True)
+        AiProfile.objects.all().delete()
+        self.assertEqual(self.c.get(self.url()).json()['profiles']['llm']['source'], 'server')
+
+    def test_overriding_one_profile_changes_only_that_one_and_reset_restores_it(self):
+        self.set_workspace('llm')
+        self.set_workspace('search', model='ws-search')
+        res = self.put('search', endpoint='https://api.anthropic.com/v1', model='proj-search', apiKey=K['project']).json()
+        s = res['profiles']
+        self.assertEqual((s['search']['source'], s['search']['overridden'], s['search']['lastFour']), ('project', True, '1111'))
+        self.assertEqual((s['llm']['source'], s['llm']['overridden']), ('workspace', False))      # the rest stays inherited
+        self.assertEqual(AiProfile.objects.filter(project=self.project).count(), 1)
+        reset = self.c.delete(self.url('/search')).json()['profiles']
+        self.assertEqual((reset['search']['source'], reset['search']['overridden']), ('workspace', False))
+        self.assertEqual(AiProfile.objects.filter(project=self.project).count(), 0)
+        self.assertEqual(AiProfile.objects.filter(workspace=self.ws).count(), 2)                  # the workspace is untouched
+
+    def test_who_can_change_overrides(self):
+        self.set_workspace('llm')
+        editor, viewer = self.member('editor@example.com', 'editor'), self.member('viewer@example.com', 'viewer')
+        admin = self.member('admin@example.com', 'admin')
+        for c in (editor, viewer):
+            self.assertEqual(self.put('llm', c, apiKey='sk-x', model='m').status_code, 403)
+            self.assertEqual(c.delete(self.url('/llm')).status_code, 403)
+            self.assertEqual(c.post(self.url('/models'), {}, format='json').status_code, 403)
+        body = editor.get(self.url()).json()
+        self.assertTrue(body['canUse'] and not body['canManage'])
+        self.assertFalse(viewer.get(self.url()).json()['canUse'])
+        self.assertTrue(self.put('llm', admin, endpoint='https://api.openai.com/v1', model='by-admin', apiKey=K['project']).json()['ok'])
+        # the project's creator, if an editor, may manage their own project
+        mine = Project.objects.create(workspace=self.ws, name='Theirs', created_by=Membership.objects.get(workspace=self.ws, user__email='editor@example.com').user)
+        res = editor.put(f'/api/projects/{mine.id}/ai/llm', {'endpoint': 'https://api.openai.com/v1', 'model': 'm', 'apiKey': K['other']}, format='json')
+        self.assertTrue(res.json()['ok'])
+        self.assertEqual(client_for(make_user('out@example.com')).get(self.url()).status_code, 404)
+        self.assertEqual(APIClient().get(self.url()).status_code, 401)
+        self.assertEqual(self.put('nope', apiKey='x').status_code, 404)
+
+    def test_members_never_see_an_override_endpoint_or_any_key_material(self):
+        self.put('llm', endpoint='https://api.openai.com/v1', model='proj-model', apiKey=K['project'])
+        editor = self.member('editor@example.com', 'editor')
+        text = editor.get(self.url()).content.decode()
+        self.assertNotIn(K['project'], text)
+        self.assertNotIn('1111', text)                       # not even the last four
+        self.assertNotIn('api.openai.com', text)
+        self.assertIn('proj-model', text)                    # members using the project may see which model
+        for body in (self.c.get(self.url()).content.decode(), self.put('llm', model='m2').content.decode()):
+            self.assertNotIn(K['project'], body)
+
+    def test_guests_have_no_access(self):
+        from collab import tokens
+        token, _ = tokens.create_invite(self.project, self.user, 'editor')
+        guest = APIClient()
+        guest.credentials(HTTP_AUTHORIZATION=f'Bearer {token}')
+        self.assertEqual(guest.get(self.url()).status_code, 403)
+        self.assertEqual(guest.put(self.url('/llm'), {'apiKey': 'x'}, format='json').status_code, 403)
+
+    def test_deleting_a_project_removes_its_overrides_and_a_copy_does_not_carry_them(self):
+        self.put('llm', endpoint='https://api.openai.com/v1', model='m', apiKey=K['project'])
+        self.assertEqual(AiProfile.objects.filter(project=self.project).count(), 1)
+        other = Project.objects.create(workspace=self.ws, name='Other', created_by=self.user)
+        self.assertEqual(AiProfile.objects.filter(project=other).count(), 0)
+        self.project.delete()
+        self.assertEqual(AiProfile.objects.filter(project_id=self.pid).count(), 0)
+
+    def test_project_models_and_test_use_the_overrides_own_key_and_never_the_workspaces(self):
+        ws_fake, proj_fake = FakeLLM([{'content': 'ok'}], models=['a']), FakeLLM([{'content': 'ok'}], models=['p1', 'p2'])
+        self.addCleanup(ws_fake.close)
+        self.addCleanup(proj_fake.close)
+        with mock.patch('integrations.provider.assert_public_url'):
+            aiprofiles.save(self.ws, self.user, 'llm', ws_fake.url, 'ws', K['workspace'])
+            # no override yet: nothing stored for the project, so it must be typed (the workspace key is not borrowed)
+            self.assertFalse(self.c.post(self.url('/models'), {'endpoint': proj_fake.url}, format='json').json()['ok'])
+            self.assertEqual((ws_fake.requests, proj_fake.requests), ([], []))
+            res = self.c.post(self.url('/models'), {'endpoint': proj_fake.url, 'apiKey': K['project']}, format='json').json()
+            self.assertEqual(res['models'], ['p1', 'p2'])
+            self.assertEqual(proj_fake.requests[0]['auth'], f"Bearer {K['project']}")
+            self.assertTrue(self.c.post(self.url('/test'), {'endpoint': proj_fake.url, 'apiKey': K['project'], 'model': 'p1'}, format='json').json()['ok'])
+            self.assertEqual(ws_fake.requests, [])
+
+
+@override_settings(LLM_ALLOW_PRIVATE_ENDPOINTS=True)
+class ProjectOverrideRequestTests(Base):
+    """An override really is what a project's AI request uses (end to end through the job), and only that project's."""
+
+    def setUp(self):
+        super().setUp()
+        sync = lambda job_id, secrets=None: ai_tasks.run_ai_job.run(job_id, secrets)
+        p = mock.patch('ai.views.run_ai_job.delay', side_effect=sync)
+        p.start()
+        self.addCleanup(p.stop)
+
+    def test_the_override_serves_only_its_own_project(self):
+        ws_fake, proj_fake = self.fake(), self.fake()
+        aiprofiles.save(self.ws, self.user, 'llm', ws_fake.url, 'ws', K['workspace'])
+        second = Project.objects.get(pk=self.new_project('Second'))
+        aiprofiles.save(self.project, self.user, 'llm', proj_fake.url, 'proj', K['project'])
+        for pid in (self.pid, str(second.id)):
+            self.c.post('/api/llm', {'messages': [], 'projectId': pid}, format='json')
+        self.assertEqual((len(proj_fake.requests), len(ws_fake.requests)), (1, 1))
+        self.assertEqual(proj_fake.requests[0]['body']['model'], 'proj')
+        self.assertEqual(ws_fake.requests[0]['body']['model'], 'ws')
+        sources = list(Job.objects.order_by('created_at').values_list('params__keySource', flat=True))
+        self.assertEqual(sources, ['project', 'workspace'])

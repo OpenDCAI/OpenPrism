@@ -1086,5 +1086,16 @@
   "MinerU is set per workspace or project. Without a token the server default is used, if there is one.": "MinerU 按工作区或项目设置。未设置令牌时使用服务器默认值（如有）。",
   "Open workspace settings": "打开工作区设置",
   "AI, search, vision and MinerU settings belong to the workspace.": "AI、搜索、视觉和 MinerU 设置属于工作区。",
-  "The AI model, Search, Vision and MinerU are set for the whole workspace, by its owners and admins. Your own keys live in your personal workspace.": "AI 模型、搜索、视觉和 MinerU 由所有者和管理员为整个工作区设置。你自己的密钥保存在个人工作区中。"
+  "The AI model, Search, Vision and MinerU are set for the whole workspace, by its owners and admins. Your own keys live in your personal workspace.": "AI 模型、搜索、视觉和 MinerU 由所有者和管理员为整个工作区设置。你自己的密钥保存在个人工作区中。",
+  "Set for this project": "已为此项目设置",
+  "Inherited from the workspace (AI model)": "继承自工作区（AI 模型）",
+  "Inherited from the workspace": "继承自工作区",
+  "Override for this project": "为此项目覆盖",
+  "Reset to workspace": "重置为工作区设置",
+  "{{name}} saved for this project": "{{name}}已为此项目保存",
+  "{{name}} reset to the workspace": "{{name}}已重置为工作区设置",
+  "Each setting follows the workspace unless you override it here. Overriding one leaves the others inherited.": "每项设置默认跟随工作区，除非你在此处覆盖。覆盖其中一项不会影响其他项。",
+  "These settings come from the workspace unless the project overrides them. Workspace owners and admins can change them.": "这些设置来自工作区，除非项目另行覆盖。工作区所有者和管理员可以更改它们。",
+  "Project AI settings": "项目 AI 设置",
+  "The AI model, Search, Vision and MinerU for this project: inherited from the workspace, or overridden here.": "此项目的 AI 模型、搜索、视觉和 MinerU：继承自工作区，或在此处覆盖。"
 }
