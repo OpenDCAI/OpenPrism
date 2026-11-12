@@ -1,0 +1,37 @@
+# The OpenPrism release (#167). targetRevision is the release tag: a "Deploy vX.Y.Z" pull request changes it, and
+# merging that pull request is the deploy. The chart, its values and the image tag (v + appVersion) all come from that tag.
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: openprism
+  namespace: argocd
+  annotations:
+    argocd.argoproj.io/sync-wave: "1"     # after the Sealed Secrets controller (wave 0 in the root app)
+spec:
+  project: openprism
+  sources:
+    - repoURL: https://github.com/cent-ischool/OpenPrism.git
+      targetRevision: v0.1.8
+      path: deploy/helm/openprism
+      helm:
+        releaseName: openprism            # keeps the resource names and labels of the Helm release it replaces
+        valueFiles:
+          - $repo/deploy/argocd/values-cent.yaml
+    - repoURL: https://github.com/cent-ischool/OpenPrism.git
+      targetRevision: v0.1.8
+      ref: repo
+    - repoURL: https://github.com/cent-ischool/OpenPrism.git    # the SealedSecrets for this namespace
+      targetRevision: v0.1.8
+      path: deploy/argocd/secrets
+  destination:
+    server: https://kubernetes.default.svc
+    namespace: openprism
+  # Automated sync is switched on as the last step of the cutover (deploy/argocd/README.md); until then sync by hand.
+  syncPolicy:
+    syncOptions:
+      - ServerSideApply=true
+      - RespectIgnoreDifferences=true
+  ignoreDifferences:
+    - group: batch
+      kind: Job
+      jsonPointers: [/spec/selector, /spec/template/metadata/labels]

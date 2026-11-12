@@ -47,9 +47,34 @@ jobs:
           # The API's probes reach the pod by IP: they must send a Host that DJANGO_ALLOWED_HOSTS accepts (#74).
           [ "$(grep -c 'name: Host, value: api' /tmp/render.yaml)" -eq 3 ]
           grep -qE 'DJANGO_ALLOWED_HOSTS: "[^"]*,api"' /tmp/render.yaml
-          # Required inputs are enforced: no image tag and no secrets must fail, not render a broken release.
-          ! helm template openprism "$chart" -f "$chart/ci/test-values.yaml" --set image.tag= >/dev/null 2>&1
+          # Required secrets are enforced when the chart renders them: missing ones fail, not render a broken release.
           ! helm template openprism "$chart" -f "$chart/ci/test-values.yaml" --set secrets.DJANGO_SECRET_KEY= >/dev/null 2>&1
+          # No image tag: the images are the chart's own release (v + appVersion = apps/api/VERSION at the tag).
+          helm template openprism "$chart" -f "$chart/ci/test-values.yaml" --set image.tag= \
+            | grep -q "openprism/api:v$(tr -d '[:space:]' < apps/api/VERSION)$"
+      - name: Render the chart as Argo CD does (deploy/argocd)
+        run: |
+          set -euo pipefail
+          chart=deploy/helm/openprism
+          # Argo renders with `helm template` and the cent values only: no secrets in values, Secrets come sealed.
+          helm template openprism "$chart" -f deploy/argocd/values-cent.yaml -n openprism > /tmp/argo.yaml
+          ! grep -qE '^kind: Secret$' /tmp/argo.yaml                       # no plaintext Secret is rendered
+          grep -q 'argocd.argoproj.io/hook: Sync' /tmp/argo.yaml            # migrations are a Sync hook
+          grep -q 'argocd.argoproj.io/hook: PostSync' /tmp/argo.yaml        # and the version check runs after
+          [ "$(grep -c 'argocd.argoproj.io/sync-wave: "1"' /tmp/argo.yaml)" -eq 6 ]   # every Deployment after migrations
+          grep -q "openprism/api:v$(tr -d '[:space:]' < apps/api/VERSION)$" /tmp/argo.yaml
+          # The Argo manifests are well-formed and stay inside their projects.
+          python3 - <<'PY'
+          import glob, yaml
+          for f in sorted(glob.glob('deploy/argocd/**/*.yaml', recursive=True)):
+              for d in yaml.safe_load_all(open(f)):
+                  if d and d.get('kind') == 'Application':
+                      assert d['metadata']['namespace'] == 'argocd', f
+                      assert d['spec']['project'] in ('openprism', 'openprism-platform'), f
+                      if d['spec']['project'] == 'openprism':
+                          assert d['spec']['destination']['namespace'] == 'openprism', f
+              print('ok', f)
+          PY
       - name: Validate the Caddy config
         run: |
           docker run --rm -v "$PWD/deploy/caddy:/c:ro" caddy:2-alpine \
