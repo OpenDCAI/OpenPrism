@@ -11,7 +11,7 @@ from django.db.models import F, Sum
 from django.utils import timezone
 from rest_framework.exceptions import APIException, PermissionDenied
 
-from integrations.models import LlmUsage, WorkspaceLlmConfig
+from integrations.models import AiProfile, LlmUsage
 
 OWN_KEY_HINT = 'Add your own key in Settings.'
 
@@ -34,24 +34,22 @@ def _seconds_to_midnight():
     return max(1, int((midnight - now).total_seconds()))
 
 
-def resolve(request, workspace, public, secrets):
-    """(public, secrets, source): the workspace's provider replaces the browser's whole config (endpoint, model and key
-    belong together) when it has one and the user may use it; else the request's config if it carries a key (API
-    clients); else the user's saved key for `public['profile']` (llm, search, vision; the UI's way) with its own
-    endpoint and model; else the worker's OPENPRISM_LLM_* defaults, and then nothing of the request's config is kept
-    (the worker never sends its key to a request's endpoint either)."""
-    from integrations import userkeys
-    from integrations.llmconfig import workspace_llm_for
+def resolve(request, workspace, public, secrets, project=None):
+    """(public, secrets, source): the project's own setting for `public['profile']` (llm, search, vision; blank = llm),
+    else the workspace's, replace the browser's whole config (endpoint, model and key belong together) when the user
+    may use them; else the request's config if it carries a key (API clients); else the worker's OPENPRISM_LLM_*
+    defaults, and then nothing of the request's config is kept (the worker never sends its key to a request's endpoint
+    either). Search and Vision follow the AI model when unset. Personal keys are not a layer (#78): they are the
+    settings of the person's personal workspace."""
+    from integrations import aiprofiles
     public = dict(public)
-    profile = public.pop('profile', '')
-    found = workspace_llm_for(workspace, request.user)
+    profile = public.pop('profile', '') or aiprofiles.LLM
+    profile = profile if profile in aiprofiles.PROFILES else aiprofiles.LLM
+    found = aiprofiles.usable(request.user, project, workspace, profile)
     if found:
-        return found[0], found[1], LlmUsage.WORKSPACE
+        return found[0], {'apiKey': found[1]}, LlmUsage.PROJECT if found[2] == 'project' else LlmUsage.WORKSPACE
     if secrets.get('apiKey'):
         return public, secrets, LlmUsage.BROWSER
-    saved = userkeys.resolve(request.user, profile)
-    if saved:
-        return saved[0], {'apiKey': saved[1]}, LlmUsage.USER
     return {}, {'apiKey': ''}, LlmUsage.SERVER
 
 
@@ -96,7 +94,8 @@ def charge(request, source, workspace):
         _unbump(user.id, workspace_id, source)
         raise LimitReached(f"You have used today's AI requests on the server's key. {OWN_KEY_HINT}", _seconds_to_midnight())
     if source == LlmUsage.WORKSPACE:
-        limit = WorkspaceLlmConfig.objects.filter(workspace_id=workspace_id).values_list('daily_limit', flat=True).first()
+        limit = AiProfile.objects.filter(workspace_id=workspace_id, profile=AiProfile.LLM) \
+            .values_list('daily_limit', flat=True).first()
         if limit and _count(workspace_id=workspace_id, source=LlmUsage.WORKSPACE) > limit:
             _unbump(user.id, workspace_id, source)
             raise LimitReached("This workspace's daily AI limit is used up.", _seconds_to_midnight())

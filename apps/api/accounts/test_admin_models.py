@@ -12,7 +12,7 @@ from django.utils import timezone
 from allauth.account.models import EmailAddress
 from allauth.mfa.models import Authenticator
 from collab.models import CollabDoc, CollabInvite
-from integrations.models import CredentialEvent, LlmUsage, UserCredential, WorkspaceLlmConfig, ZoteroConnection
+from integrations.models import AiProfile, CredentialEvent, LlmUsage, UserCredential, WorkspaceLlmConfig, ZoteroConnection
 from jobs.models import Job
 from projects.models import Membership, Project, ProjectFile, Workspace, WorkspaceInvite
 from templates_app.models import Template
@@ -22,7 +22,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from versions.models import ProjectVersion
 
 User = get_user_model()
-SECRETS = ['ZOTERO-CIPHER-SECRET', 'USERKEY-CIPHER-SECRET', 'WSKEY-CIPHER-SECRET', 'JOBPARAM-SECRET', 'JOBRESULT-SECRET',
+SECRETS = ['ZOTERO-CIPHER-SECRET', 'USERKEY-CIPHER-SECRET', 'WSKEY-CIPHER-SECRET', 'AIPROFILE-CIPHER-SECRET', 'PROJPROFILE-CIPHER-SECRET', 'JOBPARAM-SECRET', 'JOBRESULT-SECRET',
            'JOBLOG-SECRET', 'TOKENHASH-SECRET', 'L4ZZ', 'EVENTDETAIL-SECRET', 'FILE-CONTENT-SECRET', 'MANIFEST-SECRET', 'PLATFORMTOKEN-SECRET']
 
 
@@ -43,6 +43,8 @@ class AdminModelTests(TestCase):
         ZoteroConnection.objects.create(user=self.ann, zotero_user_id=1, api_key_encrypted=b'ZOTERO-CIPHER-SECRET', last_four='L4ZZ')
         UserCredential.objects.create(user=self.ann, profile='llm', api_key_encrypted=b'USERKEY-CIPHER-SECRET', last_four='L4ZZ')
         WorkspaceLlmConfig.objects.create(workspace=ws, api_key_encrypted=b'WSKEY-CIPHER-SECRET', last_four='L4ZZ')
+        AiProfile.objects.create(workspace=ws, profile='llm', api_key_encrypted=b'AIPROFILE-CIPHER-SECRET', last_four='L4ZZ')
+        AiProfile.objects.create(project=project, profile='search', api_key_encrypted=b'PROJPROFILE-CIPHER-SECRET', last_four='L4ZZ')
         CredentialEvent.objects.create(actor=self.ann, actor_name='Ann', workspace=ws, kind='workspace_llm', action='set',
                                        last_four='L4ZZ', detail={'model': 'EVENTDETAIL-SECRET'})
         LlmUsage.objects.create(day=timezone.now().date(), user=self.ann, workspace=ws, source='server', count=3)
@@ -82,7 +84,7 @@ class AdminModelTests(TestCase):
             self.assertEqual(self.leaks(res), [], url)
 
     def test_models_that_hold_credentials_or_file_contents_are_not_registered(self):
-        for model in (ZoteroConnection, UserCredential, WorkspaceLlmConfig, ProjectFile, CollabDoc, OutstandingToken,
+        for model in (ZoteroConnection, UserCredential, WorkspaceLlmConfig, AiProfile, ProjectFile, CollabDoc, OutstandingToken,
                       Authenticator, EmailAddress, BlacklistedToken):
             self.assertFalse(admin.site.is_registered(model), model.__name__)
 

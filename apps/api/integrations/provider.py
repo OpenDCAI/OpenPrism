@@ -14,7 +14,7 @@ from ai.llm import DEFAULT_ENDPOINT, normalize_chat_endpoint
 from ai.ssrf import BlockedEndpoint, assert_public_url
 
 from . import crypto, llmconfig
-from .models import WorkspaceLlmConfig
+from .models import AiProfile
 
 TIMEOUT = 15          # seconds; these are quick helpers, unlike a real AI job
 MAX_MODELS = 500
@@ -33,7 +33,7 @@ def models_url(chat_endpoint):
 def resolve(workspace, endpoint, api_key):
     """(chat endpoint, key) to call with. A typed key wins. With no key the stored one is used only when the endpoint is
     unchanged (or not given): changing the endpoint needs the key typed again, so the stored key cannot be sent elsewhere."""
-    config = WorkspaceLlmConfig.objects.filter(workspace=workspace).first()
+    config = AiProfile.objects.filter(workspace=workspace, profile=AiProfile.LLM).first()
     try:
         typed = llmconfig.clean_endpoint(endpoint)
     except llmconfig.LlmConfigError as exc:

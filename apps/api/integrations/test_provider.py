@@ -9,7 +9,7 @@ from jobs.models import Job
 from projects.models import Membership
 from projects.test_api import ApiBase, client_for, make_user
 
-from .models import CredentialEvent, LlmUsage, WorkspaceLlmConfig
+from .models import CredentialEvent, LlmUsage, AiProfile
 
 KEY, OTHER_KEY = 'sk-PROVIDER-SECRET-1111', 'sk-OTHER-SECRET-2222'
 
@@ -19,7 +19,7 @@ class ProviderFormTests(ApiBase):
         super().setUp()
         self.ws = self.c.post('/api/workspaces', {'name': 'Lab'}, format='json').data['workspace']['id']
         self.base = f'/api/workspaces/{self.ws}/llm'
-        for name in ('integrations.llmconfig.assert_public_url', 'integrations.provider.assert_public_url'):
+        for name in ('integrations.aiprofiles.assert_public_url', 'integrations.provider.assert_public_url'):
             p = mock.patch(name)   # the fake provider listens on localhost; the guard has its own test below
             p.start()
             self.addCleanup(p.stop)
@@ -139,7 +139,7 @@ class ProviderFormTests(ApiBase):
         responses = [self.post('models', endpoint=f.url, apiKey=KEY).content, self.post('test', endpoint=f.url, apiKey=KEY, model='m').content]
         for body in responses:
             self.assertNotIn(KEY.encode(), body)
-        self.assertEqual(WorkspaceLlmConfig.objects.count(), 0)    # trying a provider does not save it
+        self.assertEqual(AiProfile.objects.count(), 0)    # trying a provider does not save it
         self.assertEqual(CredentialEvent.objects.count(), 0)
         self.assertEqual(LlmUsage.objects.count(), 0)              # test calls do not use the daily limit
         self.assertEqual(Job.objects.count(), 0)

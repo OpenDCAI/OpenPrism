@@ -11,8 +11,7 @@ from rest_framework.decorators import api_view, parser_classes
 from rest_framework.response import Response
 
 from ai import usage
-from integrations import userkeys
-from integrations.models import UserCredential
+from integrations import aiprofiles
 from ai.views import limit_rate, split_llm_config
 from common import secrets as job_secrets
 from common.uploads import PathMultiPartParser
@@ -65,7 +64,7 @@ def _create_job(request, mode, b):
         memberships__user=request.user, memberships__role__in=Membership.WRITE_ROLES).order_by('created_at').first()
     if workspace is None:
         return None, bad('You do not have a workspace you can write to.', 403)
-    public, secrets, key_source = usage.resolve(request, workspace, *split_llm_config(b.get('llmConfig')))
+    public, secrets, key_source = usage.resolve(request, workspace, *split_llm_config(b.get('llmConfig')), project=source)
     usage.charge(request, key_source, workspace)
     params = {
         'mode': mode, 'sourceProjectId': str(source.id) if source else '', 'sourceMainFile': b.get('sourceMainFile') or '',
@@ -75,8 +74,8 @@ def _create_job(request, mode, b):
     if mode == 'mineru':
         mineru_cfg = mineru.public_part(b.get('mineruConfig'))
         secrets['mineruToken'] = str((b.get('mineruConfig') or {}).get('token') or '').strip()
-        saved = None if secrets['mineruToken'] else userkeys.resolve(request.user, UserCredential.MINERU)
-        if saved:  # the user's saved MinerU token, with the API base saved alongside it (or the server's)
+        saved = None if secrets['mineruToken'] else aiprofiles.usable(request.user, source, workspace, aiprofiles.MINERU)
+        if saved:  # the project's or workspace's MinerU token, with the API base saved alongside it (or the server's)
             secrets['mineruToken'] = saved[1]
             mineru_cfg['apiBase'] = saved[0].get('endpoint', '')
         params['mineruConfig'] = mineru_cfg

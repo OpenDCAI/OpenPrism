@@ -14,7 +14,7 @@ from projects.models import Membership, Project
 from projects.test_api import ApiBase, client_for, make_user
 
 from . import llmconfig
-from .models import CredentialEvent, UserCredential
+from .models import AiProfile, CredentialEvent
 
 KEY, KEY2, SEARCH_KEY, MINERU, WS_KEY = 'sk-USER-SECRET-1111', 'sk-USER-SECRET-2222', 'sk-SEARCH-SECRET-3333', \
     'mineru-SECRET-4444', 'sk-WS-SECRET-5555'
@@ -40,7 +40,7 @@ class UserKeyTests(ApiBase):
 
     def assert_no_secret_persisted(self):
         with connection.cursor() as cur:
-            cur.execute("SELECT encode(api_key_encrypted, 'escape') FROM integrations_usercredential")
+            cur.execute("SELECT encode(api_key_encrypted, 'escape') FROM integrations_aiprofile")
             stored = json.dumps(cur.fetchall())
         jobs = json.dumps([[j.params, j.result, j.progress_log, j.error] for j in Job.objects.all()])
         events = json.dumps(list(CredentialEvent.objects.values_list('detail', 'last_four')))
@@ -61,8 +61,9 @@ class UserKeyTests(ApiBase):
         self.assertEqual(self.c.put(f'{URL}/nope', {}, format='json').status_code, 404)
         self.assertIsNone(self.c.delete(f'{URL}/llm').json()['profiles']['llm'])
         actions = list(CredentialEvent.objects.order_by('created_at').values_list('kind', 'action', 'detail'))
-        self.assertEqual([a[:2] for a in actions], [('user_llm', 'set'), ('user_llm', 'updated'), ('user_llm', 'rotated'), ('user_llm', 'removed')])
-        self.assertEqual(actions[1][2], {'profile': 'llm', 'model': 'm2'})
+        # A person's keys are the settings of their personal workspace (#78), so the history is that workspace's.
+        self.assertEqual([a[:2] for a in actions], [('workspace_llm', 'set'), ('workspace_llm', 'updated'), ('workspace_llm', 'rotated'), ('workspace_llm', 'removed')])
+        self.assertEqual(actions[1][2], {'model': 'm2'})
         self.assert_no_secret_persisted()
         for res in (self.c.get(URL), self.c.get('/api/integrations/credential-events')):
             self.assertNotIn(KEY2, res.content.decode())
@@ -75,14 +76,15 @@ class UserKeyTests(ApiBase):
     def test_requests_use_the_saved_key_with_its_own_endpoint_and_profiles_fall_back_to_llm(self):
         main, search, attacker = self.fake(), self.fake(), self.fake()
         self.put('llm', endpoint=main.url, model='main-model', apiKey=KEY)
-        body = {'messages': [], 'llmConfig': {'profile': 'vision', 'endpoint': attacker.url}}
+        pid = self.new_project()   # in the personal workspace, where these keys apply
+        body = {'messages': [], 'projectId': pid, 'llmConfig': {'profile': 'vision', 'endpoint': attacker.url}}
         self.assertTrue(self.c.post('/api/llm', body, format='json').data['ok'])  # vision unset: the llm profile
         self.put('search', endpoint=search.url, model='search-model', apiKey=SEARCH_KEY)
-        self.c.post('/api/llm', {'messages': [], 'llmConfig': {'profile': 'search'}}, format='json')
+        self.c.post('/api/llm', {'messages': [], 'projectId': pid, 'llmConfig': {'profile': 'search'}}, format='json')
         self.assertEqual(attacker.requests, [])  # the saved key goes only with the saved endpoint
         self.assertEqual([(r['auth'], r['body']['model']) for r in main.requests], [(f'Bearer {KEY}', 'main-model')])
         self.assertEqual([(r['auth'], r['body']['model']) for r in search.requests], [(f'Bearer {SEARCH_KEY}', 'search-model')])
-        self.assertEqual(set(Job.objects.values_list('params__keySource', flat=True)), {'user'})
+        self.assertEqual(set(Job.objects.values_list('params__keySource', flat=True)), {'workspace'})
         self.assertEqual(self.delay.call_args.args[1], {'apiKey': SEARCH_KEY})  # only as a task argument
         self.assert_no_secret_persisted()
 
@@ -90,7 +92,7 @@ class UserKeyTests(ApiBase):
         mine, ws, own = self.fake(), self.fake(), self.fake()
         self.put('llm', endpoint=mine.url, apiKey=KEY)
         pid = self.new_project()
-        with mock.patch('integrations.llmconfig.assert_public_url'):
+        with mock.patch('integrations.aiprofiles.assert_public_url'):
             llmconfig.save(Project.objects.get(pk=pid).workspace, self.user, ws.url, 'ws', WS_KEY)
         self.c.post('/api/llm', {'messages': [], 'projectId': pid, 'llmConfig': {'profile': 'llm'}}, format='json')
         self.c.post('/api/llm', {'messages': [], 'llmConfig': {'endpoint': own.url, 'apiKey': KEY2}}, format='json')
@@ -126,4 +128,4 @@ class UserKeyTests(ApiBase):
         self.put('mineru', apiKey=MINERU)
         res = self.c.delete('/api/auth/me', {'password': 'correct-horse-battery'}, format='json')
         self.assertEqual(res.status_code, 200, res.content)
-        self.assertFalse(UserCredential.objects.exists())
+        self.assertFalse(AiProfile.objects.exists())
