@@ -13,7 +13,7 @@ from django.conf import settings
 from ai.llm import DEFAULT_ENDPOINT, normalize_chat_endpoint
 from ai.ssrf import BlockedEndpoint, assert_public_url
 
-from . import crypto, llmconfig
+from . import aiprofiles, crypto
 from .models import AiProfile
 
 TIMEOUT = 15          # seconds; these are quick helpers, unlike a real AI job
@@ -30,13 +30,16 @@ def models_url(chat_endpoint):
     return re.sub(r'/chat/completions/?$', '/models', chat_endpoint, flags=re.I)
 
 
-def resolve(workspace, endpoint, api_key):
-    """(chat endpoint, key) to call with. A typed key wins. With no key the stored one is used only when the endpoint is
-    unchanged (or not given): changing the endpoint needs the key typed again, so the stored key cannot be sent elsewhere."""
-    config = AiProfile.objects.filter(workspace=workspace, profile=AiProfile.LLM).first()
+def resolve(workspace, endpoint, api_key, profile=AiProfile.LLM):
+    """(chat endpoint, key) to call with, for one profile (llm, search or vision). A typed key wins. With no key the
+    stored one of the same profile is used only when the endpoint is unchanged (or not given): changing the endpoint
+    needs the key typed again, so the stored key cannot be sent elsewhere."""
+    if profile not in (AiProfile.LLM, AiProfile.SEARCH, AiProfile.VISION):
+        raise ProviderError('This setting has no model list or test.')
+    config = AiProfile.objects.filter(workspace=workspace, profile=profile).first()
     try:
-        typed = llmconfig.clean_endpoint(endpoint)
-    except llmconfig.LlmConfigError as exc:
+        typed = aiprofiles.clean_endpoint(endpoint)
+    except aiprofiles.LlmConfigError as exc:
         raise ProviderError(str(exc)) from None
     url = typed or (config.endpoint if config and config.endpoint else '') or DEFAULT_ENDPOINT
     key = str(api_key or '').strip()

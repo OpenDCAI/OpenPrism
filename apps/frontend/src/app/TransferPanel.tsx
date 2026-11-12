@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
+import { Link } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
   transferStart,
@@ -18,7 +19,6 @@ import type {
 } from '../api/client';
 import { Badge, Button, Icon, SegmentedControl, Select } from '@design';
 import type { BadgeTone, SelectOption } from '@design';
-import AiKeysForm from './AiKeysForm';
 import { renderPdfPages } from './pageImages';
 
 interface TransferPanelProps {
@@ -317,7 +317,10 @@ export default function TransferPanel({ projectId, onJobUpdate }: TransferPanelP
 
       {/* MinerU API config — shown only in MinerU mode */}
       {transferMode === 'mineru' && (
-        <AiKeysForm profiles={['mineru']} />
+        <p className="muted" data-testid="transfer-mineru-note">
+          {t('MinerU is set per workspace or project. Without a token the server default is used, if there is one.')}{' '}
+          <Link to="/projects?section=settings">{t('Open workspace settings')}</Link>
+        </p>
       )}
 
       {/* LLM Config — managed in header settings */}

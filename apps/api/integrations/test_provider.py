@@ -83,6 +83,21 @@ class ProviderFormTests(ApiBase):
         self.assertIn('404', res['error'])
         self.assertTrue(self.post('test', endpoint=f.url, apiKey=KEY, model='my-deployment').json()['ok'])  # still testable
 
+    def test_search_and_vision_use_their_own_stored_key_and_never_the_ai_models(self):
+        main, search = self.fake(), self.fake()
+        self.save_provider(main)
+        self.c.put(f'/api/workspaces/{self.ws}/ai/search', {'endpoint': search.url, 'model': 's', 'apiKey': OTHER_KEY}, format='json')
+        self.assertTrue(self.post('models', profile='search').json()['ok'])
+        self.assertEqual((len(search.requests), search.requests[0]['auth']), (1, f'Bearer {OTHER_KEY}'))
+        self.assertEqual(main.requests, [])
+        # vision has nothing stored: it does not borrow the AI model's key
+        res = self.post('models', profile='vision').json()
+        self.assertFalse(res['ok'])
+        self.assertEqual(main.requests, [])
+        # MinerU has neither a list nor a test
+        self.assertFalse(self.post('test', profile='mineru', model='m').json()['ok'])
+        self.assertFalse(self.post('models', profile='nope').json()['ok'])
+
     # --- test -----------------------------------------------------------------------------------------------------
 
     def test_a_working_provider_reports_latency_and_gets_one_tiny_request(self):

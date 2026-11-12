@@ -95,7 +95,6 @@ import {
 } from '@design';
 import type { IconName, MenuEntry, SegmentOption } from '@design';
 import './editor-shell.css';
-import AiKeysForm from './AiKeysForm';
 
 GlobalWorkerOptions.workerSrc = pdfWorker;
 
@@ -1379,6 +1378,7 @@ export default function EditorPage() {
   const [projectName, setProjectName] = useState('');
   /** The project's workspace provider, when the user's AI requests will use it (see the AI settings notice). */
   const [workspaceProvider, setWorkspaceProvider] = useState<{ model: string } | null>(null);
+  const [projectWorkspaceId, setProjectWorkspaceId] = useState<string | null>(null);
   const [tree, setTree] = useState<{ path: string; type: string }[]>([]);
   const [fileOrder, setFileOrder] = useState<Record<string, string[]>>({});
   const [activePath, setActivePath] = useState<string>('');
@@ -1526,7 +1526,7 @@ export default function EditorPage() {
   const [collabStatus, setCollabStatus] = useState<'disconnected' | 'connecting' | 'connected'>('disconnected');
   const [collabServer, setCollabServerState] = useState(() => getCollabServer() || (typeof window === 'undefined' ? '' : window.location.origin));
   // Others see this name on your caret: one you typed, else your account's name (guests have none of their own).
-  const { user: wsUser, guest: wsGuest } = useWorkspace();
+  const { user: wsUser, guest: wsGuest, setActive: setActiveWorkspace } = useWorkspace();
   const collabUserId = wsGuest ? null : wsUser.id;
   const [collabName, setCollabName] = useState(() => loadCollabName(collabUserId) || (wsGuest ? 'Guest' : wsUser.name) || 'Guest');
   const [collabToken] = useState(() => getCollabToken());
@@ -1618,6 +1618,7 @@ export default function EditorPage() {
           return;
         }
         setProjectName(current.name);
+        setProjectWorkspaceId(current.workspaceId);
         getWorkspaceLlm(current.workspaceId)
           .then((llm) => setWorkspaceProvider(llm.ok && llm.configured && llm.canUse ? { model: llm.model || '' } : null))
           .catch(() => setWorkspaceProvider(null));
@@ -6268,7 +6269,7 @@ export default function EditorPage() {
       {settingsOpen && (
         <Modal
           title={t('AI & search settings')}
-          description={t('Your own AI keys, used when the workspace provides none.')}
+          description={t('AI, search, vision and MinerU settings belong to the workspace.')}
           size="lg"
           closeLabel={t('关闭')}
           onClose={() => setSettingsOpen(false)}
@@ -6285,7 +6286,16 @@ export default function EditorPage() {
                 {t('This workspace provides the AI provider{{model}}. Your own key is not used for its projects.', { model: workspaceProvider.model ? ` (${workspaceProvider.model})` : '' })}
               </div>
             )}
-            <AiKeysForm onStatus={setStatus} />
+            <p data-testid="editor-ai-settings-note">
+              {t('The AI model, Search, Vision and MinerU are set for the whole workspace, by its owners and admins. Your own keys live in your personal workspace.')}
+            </p>
+            {projectWorkspaceId && (
+              <div>
+                <Button variant="primary" onClick={() => { setSettingsOpen(false); setActiveWorkspace(projectWorkspaceId); navigate('/projects?section=settings'); }}>
+                  {t('Open workspace settings')}
+                </Button>
+              </div>
+            )}
           </div>
         </Modal>
       )}
