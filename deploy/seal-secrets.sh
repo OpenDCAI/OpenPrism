@@ -59,6 +59,7 @@ seal ghcr-login-secret generic ghcr-login-secret --type=kubernetes.io/dockerconf
 
 # A re-seal must roll the pods: the chart's checksum/secrets annotation follows this value under Argo (#168).
 rev="$(date -u +%Y%m%d%H%M%S)"
-sed -i -E "s/^  revision: \".*\"( .*)?$/  revision: \"$rev\"\1/" deploy/argocd/values-cent.yaml
-grep -q "revision: \"$rev\"" deploy/argocd/values-cent.yaml || { echo "::error::could not bump secrets.revision"; exit 1; }
+app=deploy/argocd/apps/openprism.yaml   # secrets.revision is in the Application's valuesObject
+sed -i -E "s/^( +)revision: \"[^\"]*\"(.*)$/\1revision: \"$rev\"\2/" "$app"
+[ "$(grep -cE "^ +revision: \"$rev\"" "$app")" -eq 1 ] || { echo "::error::could not bump secrets.revision in $app"; exit 1; }
 echo "secrets.revision = $rev"

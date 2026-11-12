@@ -56,8 +56,11 @@ jobs:
         run: |
           set -euo pipefail
           chart=deploy/helm/openprism
-          # Argo renders with `helm template` and the cent values only: no secrets in values, Secrets come sealed.
-          helm template openprism "$chart" -f deploy/argocd/values-cent.yaml -n openprism > /tmp/argo.yaml
+          # Argo renders with `helm template` and the Application's own valuesObject (deploy/argocd/apps/openprism.yaml):
+          # no secrets in values, Secrets come sealed.
+          python3 -c "import json, yaml; a = yaml.safe_load(open('deploy/argocd/apps/openprism.yaml')); \
+            print(json.dumps(a['spec']['sources'][0]['helm']['valuesObject']))" > /tmp/argo-values.json
+          helm template openprism "$chart" -f /tmp/argo-values.json -n openprism > /tmp/argo.yaml
           ! grep -qE '^kind: Secret$' /tmp/argo.yaml                       # no plaintext Secret is rendered
           grep -q 'argocd.argoproj.io/hook: Sync' /tmp/argo.yaml            # migrations are a Sync hook
           grep -q 'argocd.argoproj.io/hook: PostSync' /tmp/argo.yaml        # and the version check runs after
@@ -73,6 +76,9 @@ jobs:
                       assert d['spec']['project'] in ('openprism', 'openprism-platform'), f
                       if d['spec']['project'] == 'openprism':
                           assert d['spec']['destination']['namespace'] == 'openprism', f
+                      # Argo CD 3 refuses a $ref values file from another revision of the same repository (#167).
+                      for s in d['spec'].get('sources', []):
+                          assert 'ref' not in s, f'{f}: no $ref sources, put values in valuesObject'
               print('ok', f)
           PY
       - name: Validate the Caddy config

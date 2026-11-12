@@ -30,7 +30,7 @@ spec:
   description: Cluster add-ons OpenPrism needs (Sealed Secrets controller)
   sourceRepos:
     - https://github.com/cent-ischool/OpenPrism.git
-    - https://bitnami-labs.github.io/sealed-secrets
+    - https://bitnami.github.io/sealed-secrets
   destinations:
     - server: https://kubernetes.default.svc
       namespace: kube-system
