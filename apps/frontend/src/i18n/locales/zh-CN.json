@@ -1060,5 +1060,13 @@
   "On": "开",
   "Off": "关",
   "Password and code": "密码和验证码",
-  "Passkey": "通行密钥"
+  "Passkey": "通行密钥",
+  "{{count}} models loaded. Pick one, or type a name.": "已加载 {{count}} 个模型。请选择一个，或直接输入名称。",
+  "Could not load the models. You can type the model name instead.": "无法加载模型列表。你可以直接输入模型名称。",
+  "Connected: the model answered in {{ms}} ms.": "连接成功：模型在 {{ms}} 毫秒内作出响应。",
+  "The test failed.": "测试失败。",
+  "Load the models the provider offers, or type a model or deployment name.": "加载服务商提供的模型，或直接输入模型或部署名称。",
+  "Load models": "加载模型",
+  "Testing…": "测试中…",
+  "Test": "测试"
 }

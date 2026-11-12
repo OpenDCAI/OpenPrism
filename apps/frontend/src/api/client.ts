@@ -1204,6 +1204,21 @@ export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: stri
     body: JSON.stringify(payload)
   });
 }
+export interface ProviderCheckPayload { endpoint?: string; model?: string; apiKey?: string }
+/** Ask the server for the provider's model list (#76). An empty key with an unchanged endpoint uses the stored key. */
+export function listWorkspaceLlmModels(workspaceId: string, payload: ProviderCheckPayload) {
+  return request<{ ok: boolean; models?: string[]; error?: string }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm/models`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
+/** Send one tiny chat request to the chosen model (#76). Advice only; saving never depends on it. */
+export function testWorkspaceLlm(workspaceId: string, payload: ProviderCheckPayload) {
+  return request<{ ok: boolean; latencyMs?: number; error?: string }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm/test`, {
+    method: 'POST',
+    body: JSON.stringify(payload)
+  });
+}
 export function removeWorkspaceLlm(workspaceId: string) {
   return request<WorkspaceLlmStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm`, { method: 'DELETE' });
 }

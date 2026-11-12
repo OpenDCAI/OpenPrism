@@ -7,11 +7,28 @@ from http.server import BaseHTTPRequestHandler, HTTPServer
 class FakeLLM:
     """A tiny OpenAI-compatible server. `replies` are popped per request; each request is recorded."""
 
-    def __init__(self, replies):
-        self.replies, self.requests = list(replies), []
+    def __init__(self, replies, models=None):
+        # `models`: list of ids served at GET .../models, or a (status, text) tuple for an error; None = 404 (no list).
+        self.replies, self.requests, self.models = list(replies), [], models
         outer = self
 
         class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                outer.requests.append({'path': self.path, 'auth': self.headers.get('Authorization'), 'body': None})
+                if outer.models is None or not self.path.endswith('/models'):
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                if isinstance(outer.models, tuple):
+                    self.send_response(outer.models[0])
+                    self.end_headers()
+                    self.wfile.write(outer.models[1].encode())
+                    return
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'object': 'list', 'data': [{'id': m} for m in outer.models]}).encode())
+
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 outer.requests.append({'path': self.path, 'auth': self.headers.get('Authorization'), 'body': body})
