@@ -153,9 +153,9 @@ Everything is environment variables in `.env` (see `.env.sample` for the full li
 - `OPENPRISM_MINERU_*`: PDF-to-Markdown for template transfer.
 - `CREDENTIAL_ENCRYPTION_KEY`: encrypts stored Zotero API keys (comma-separated Fernet keys; the first encrypts). Generate one with `python -c "from cryptography.fernet import Fernet;print(Fernet.generate_key().decode())"`. Keep it: without it stored keys are unreadable.
 
-### Workspace AI provider
+### AI settings: workspace defaults, project overrides
 
-Owners and admins can set an AI provider for a whole workspace under **Settings → AI provider** (endpoint, model, API key). Members who can edit then use it for AI features in that workspace's projects instead of their own key. The key is stored encrypted on the server (see `CREDENTIAL_ENCRYPTION_KEY`) and is never shown again, only its last four characters to admins. Order of precedence: workspace provider, then the key in your browser settings, then the server default.
+Four settings control AI: the **AI model** (assistant, agent, plots), **Search**, **Vision** and **MinerU** (template transfer). Owners and admins set them for a whole workspace under **Settings** (endpoint, model, API key, daily limit; **Load models** lists what the provider offers and **Test** sends one tiny request to check it). Every project uses its workspace's settings. A project can **override** any one of them, and **Reset to workspace** goes back, in the editor under the project name → **Project AI settings** (workspace owners and admins, and the project's creator, can change them; everyone else sees where each comes from). Search and Vision use the AI model when not set. Order of precedence: the project's setting, then the workspace's, then the server default (`OPENPRISM_LLM_*`). Your *personal* workspace's settings are your own keys: they apply to the projects there, and a team workspace does not use anyone's personal key. Keys are stored encrypted on the server (see `CREDENTIAL_ENCRYPTION_KEY`) and never shown again, only their last four characters to those who manage them. A daily limit on a setting stops its requests when reached, without using another key; usage and a history of who changed what are shown next to it.
 
 ### Version history
 

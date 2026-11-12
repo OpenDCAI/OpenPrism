@@ -190,6 +190,32 @@ helm upgrade --install openprism deploy/helm/openprism -n openprism \
 - **Not included (decided for the shared cluster):** Ingress, NetworkPolicies, autoscaling, Postgres/Redis/MinIO.
   The checks that remain are GitHub issues labelled `v0.1.6` (`deploy`).
 
+## Upgrading to v0.1.7: AI settings are per workspace and per project (#78)
+
+What changes for people: **personal keys are no longer a separate layer.** A person's own AI keys are now the settings of their
+*personal workspace* and apply to projects there. In a **team** workspace only the team's settings apply (an owner or admin sets
+them under Settings, and a project can override each one in *Project AI settings*). Search, Vision and MinerU now exist at both
+levels, each with a daily limit, usage and a key history. The project-list "AI settings" icon is gone. Say this in the release
+notes: *people who used a personal key inside a team workspace must ask a workspace admin to set the team's AI settings.*
+
+What the upgrade does to data (migration `integrations/0007`, run by the `migrate` Job, idempotent, nothing decrypted or logged):
+every workspace provider becomes that workspace's AI-model setting with its daily limit; every person's saved keys are copied
+into their personal workspace (an existing workspace setting wins over a personal key for the same profile; people with no
+personal workspace are skipped). The old tables `integrations_workspacellmconfig` and `integrations_usercredential` stay, unread,
+for one release (#160 drops them). `0008` adds `project` and `profile` columns to the usage table and re-creates its unique
+constraint under the same name, and a `project` column to the credential events.
+
+Rolling deploy: the `migrate` Job runs before the new pods start and the old pods keep running until they are replaced. A key a
+person saves in that window through an *old* pod is written to the old table and is **not** copied; it is minutes at most, and a
+second run of `manage.py migrate` does not redo the copy, so ask anyone who saved a key during the upgrade to save it again (or
+run `python manage.py shell -c "import importlib;from django.apps import apps;importlib.import_module('integrations.migrations.0007_copy_keys_to_ai_profiles').copy(apps, None)"`,
+which copies only what is missing). `reencrypt_credentials` also rotates the old tables until they are dropped. Rollback to
+v0.1.6 is safe: the old tables are untouched, and settings made after the upgrade are simply not seen by the old code.
+
+Check after deploying: Settings shows the AI model, Search, Vision and MinerU; a project's *Project AI settings* shows each as
+inherited; `kubectl -n openprism exec deploy/api -- python manage.py shell -c "from integrations.models import AiProfile; print(AiProfile.objects.count())"`
+should equal the number of old workspace providers plus personal keys that had a personal workspace.
+
 ## Secrets: what exists, how it is made, how to rotate it (#117)
 
 Nothing here holds a value; only where each one lives. **Placeholders are refused:** the deploy workflow runs
