@@ -13,7 +13,7 @@ from projects.models import Workspace
 from projects.test_api import make_user
 
 from . import crypto
-from .models import UserCredential, WorkspaceLlmConfig, ZoteroConnection
+from .models import AiProfile, UserCredential, WorkspaceLlmConfig, ZoteroConnection
 
 OLD = base64.urlsafe_b64encode(b'o' * 32).decode()
 NEW = base64.urlsafe_b64encode(b'n' * 32).decode()
@@ -43,6 +43,8 @@ class EncryptionKeyRotationTests(TestCase):
                                           last_four='CRET')
             WorkspaceLlmConfig.objects.create(workspace=self.ws, api_key_encrypted=crypto.encrypt('ws-SECRET'),
                                               last_four='CRET')
+            AiProfile.objects.create(workspace=self.ws, profile='search', api_key_encrypted=crypto.encrypt('profile-SECRET'),
+                                     last_four='CRET')
             mfa_secret = crypto.encrypt('TOTPSECRET').decode()
             Authenticator.objects.create(user=self.user, type=Authenticator.Type.TOTP, data={'secret': mfa_secret})
             Authenticator.objects.create(user=self.user, type=Authenticator.Type.RECOVERY_CODES,
@@ -53,12 +55,13 @@ class EncryptionKeyRotationTests(TestCase):
         return [crypto.decrypt(ZoteroConnection.objects.get().api_key_encrypted),
                 crypto.decrypt(UserCredential.objects.get().api_key_encrypted),
                 crypto.decrypt(WorkspaceLlmConfig.objects.get().api_key_encrypted),
+                crypto.decrypt(AiProfile.objects.get().api_key_encrypted),
                 crypto.decrypt(Authenticator.objects.get(type='totp').data['secret'].encode()),
                 crypto.decrypt(Authenticator.objects.get(type='recovery_codes').data['seed'].encode())]
 
     def test_full_rotation_prepend_reencrypt_drop_old_key(self):
         self.seed_under(OLD)
-        expected = ['zot-SECRET', 'user-SECRET', 'ws-SECRET', 'TOTPSECRET', 'SEED']
+        expected = ['zot-SECRET', 'user-SECRET', 'ws-SECRET', 'profile-SECRET', 'TOTPSECRET', 'SEED']
 
         # Step 1: the new key goes in front. Old values still open; nothing is rewritten yet.
         with override_settings(CREDENTIAL_ENCRYPTION_KEY=f'{NEW},{OLD}'):
@@ -67,11 +70,11 @@ class EncryptionKeyRotationTests(TestCase):
 
             # Dry run reports and writes nothing.
             before = bytes(ZoteroConnection.objects.get().api_key_encrypted)
-            self.assertIn('would rewrite 6', run())
+            self.assertIn('would rewrite 7', run())
             self.assertEqual(bytes(ZoteroConnection.objects.get().api_key_encrypted), before)
 
             # Step 2: re-encrypt.
-            self.assertIn('rewrote 6', run('--apply'))
+            self.assertIn('rewrote 7', run('--apply'))
             self.assertEqual(self.plaintexts(), expected)
             self.assertTrue(crypto.is_current(bytes(ZoteroConnection.objects.get().api_key_encrypted)))
             # A second run finds nothing to do.
@@ -96,7 +99,7 @@ class EncryptionKeyRotationTests(TestCase):
         with override_settings(CREDENTIAL_ENCRYPTION_KEY=f'{NEW},{OLD}'):
             run('--apply')
         with override_settings(CREDENTIAL_ENCRYPTION_KEY=f'{THIRD},{NEW}'):
-            self.assertIn('rewrote 6', run('--apply'))
+            self.assertIn('rewrote 7', run('--apply'))
         with override_settings(CREDENTIAL_ENCRYPTION_KEY=THIRD):
             self.assertEqual(self.plaintexts()[0], 'zot-SECRET')
 
@@ -104,7 +107,7 @@ class EncryptionKeyRotationTests(TestCase):
         self.seed_under(OLD)
         with override_settings(CREDENTIAL_ENCRYPTION_KEY=f'{NEW},{OLD}'):
             text = run('--apply')
-        for s in ('zot-SECRET', 'user-SECRET', 'ws-SECRET', 'TOTPSECRET', 'SEED', 'code1'):
+        for s in ('zot-SECRET', 'user-SECRET', 'ws-SECRET', 'profile-SECRET', 'TOTPSECRET', 'SEED', 'code1'):
             self.assertNotIn(s, text)
 
     def test_a_rotated_totp_secret_still_verifies_a_code(self):

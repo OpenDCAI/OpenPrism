@@ -13,8 +13,8 @@ from projects.models import Membership, ProjectFile
 from projects.workspaces import membership_for, require_admin
 from projects.paths import InvalidPath, safe_path
 
-from . import audit, bibtex, crypto, llmconfig, provider, userkeys, zotero
-from .models import CredentialEvent, WorkspaceLlmConfig, ZoteroConnection
+from . import aiprofiles, audit, bibtex, crypto, llmconfig, provider, userkeys, zotero
+from .models import AiProfile, CredentialEvent, ZoteroConnection
 
 
 def _status(conn):
@@ -206,7 +206,7 @@ def _llm_status(config, membership):
 @api_view(['GET', 'PUT', 'DELETE'])
 def workspace_llm(request, pk):
     membership = membership_for(request.user, pk)
-    config = WorkspaceLlmConfig.objects.select_related('updated_by').filter(workspace_id=pk).first()
+    config = AiProfile.objects.select_related('updated_by').filter(workspace_id=pk, profile=AiProfile.LLM).first()
     if request.method == 'GET':
         return Response(_llm_status(config, membership))
     require_admin(request.user, pk)
@@ -220,6 +220,50 @@ def workspace_llm(request, pk):
     except llmconfig.LlmConfigError as exc:
         return Response({'ok': False, 'error': str(exc)})
     return Response(_llm_status(config, membership))
+
+
+def _ai_status(workspace, membership):
+    """Every profile of a workspace. Members see which exist and whether they can use them; owners and admins also see the
+    endpoint, model, last four characters and daily limit (never the key)."""
+    can_manage = membership.role in Membership.ADMIN_ROLES
+    rows = aiprofiles.status(workspace)
+    profiles = {}
+    for name, row in rows.items():
+        if row is None:
+            profiles[name] = {'configured': False}
+            continue
+        entry = {'configured': True, 'updatedAt': row['updatedAt']}
+        if can_manage:
+            entry.update(endpoint=row['endpoint'], model=row['model'], lastFour=row['lastFour'], dailyLimit=row['dailyLimit'])
+        elif name != aiprofiles.MINERU:
+            entry['model'] = row['model']
+        profiles[name] = entry
+    return {'ok': True, 'canManage': can_manage, 'canUse': membership.role in Membership.WRITE_ROLES, 'profiles': profiles}
+
+
+@api_view(['GET'])
+def workspace_ai(request, pk):
+    """All AI settings (AI model, Search, Vision, MinerU) of a workspace (#78)."""
+    membership = membership_for(request.user, pk)
+    return Response(_ai_status(membership.workspace, membership))
+
+
+@api_view(['PUT', 'DELETE'])
+def workspace_ai_profile(request, pk, profile):
+    membership = membership_for(request.user, pk)
+    require_admin(request.user, pk)
+    if profile not in aiprofiles.PROFILES:
+        return Response({'ok': False, 'error': 'Unknown AI setting.'}, status=404)
+    if request.method == 'DELETE':
+        aiprofiles.remove(membership.workspace, request.user, profile)
+        return Response(_ai_status(membership.workspace, membership))
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        extra = {'daily_limit': b['dailyLimit']} if 'dailyLimit' in b else {}
+        aiprofiles.save(membership.workspace, request.user, profile, b.get('endpoint'), b.get('model'), b.get('apiKey'), **extra)
+    except aiprofiles.LlmConfigError as exc:
+        return Response({'ok': False, 'error': str(exc)})
+    return Response(_ai_status(membership.workspace, membership))
 
 
 @api_view(['POST'])

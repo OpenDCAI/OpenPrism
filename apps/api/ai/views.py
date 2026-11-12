@@ -77,7 +77,7 @@ def llm_endpoint(request):
     if b.get('model') and 'model' not in public:
         public['model'] = str(b['model'])
     project = get_project(request, b['projectId']) if b.get('projectId') else None
-    paid = usage.resolve(request, project.workspace if project else None, public, secrets)
+    paid = usage.resolve(request, project.workspace if project else None, public, secrets, project=project)
     return run_job(request, Job.LLM, {'messages': b.get('messages') or []}, paid, project)
 
 
@@ -139,7 +139,7 @@ def agent_run(request):
             job_id = uuid.UUID(str(b['jobId'])) if b.get('jobId') else None
         except ValueError:
             return Response({'ok': False, 'error': 'jobId must be a UUID.'})
-    paid = usage.resolve(request, project.workspace if project else None, public, secrets)
+    paid = usage.resolve(request, project.workspace if project else None, public, secrets, project=project)
     params = {k: b.get(k) for k in ('task', 'prompt', 'selection', 'content', 'mode', 'activePath', 'compileLog',
                                     'interaction', 'history', 'editContext')}
     params['lang'] = get_lang(request.headers.get('x-lang'))
@@ -166,7 +166,7 @@ def vision_latex(request):
         from projects.models import Membership
         save = Membership.objects.filter(workspace_id=project.workspace_id, user=request.user,
                                          role__in=Membership.WRITE_ROLES).exists()
-    paid = usage.resolve(request, project.workspace if project else None, public, secrets)
+    paid = usage.resolve(request, project.workspace if project else None, public, secrets, project=project)
     usage.charge(request, paid[2], project.workspace if project else None)  # before storing the upload
     job_id = uuid.uuid4()
     key = f'jobs/{job_id}/input'
@@ -193,7 +193,7 @@ def plot_from_table(request):
         asset_path = safe_path(f'assets/plots/{name}')
     except InvalidPath:
         return Response({'ok': False, 'error': 'Invalid filename.'})
-    paid = usage.resolve(request, project.workspace, *split_llm_config(b.get('llmConfig')))
+    paid = usage.resolve(request, project.workspace, *split_llm_config(b.get('llmConfig')), project=project)
     try:
         retries = min(5, max(0, int(b.get('retries', 2))))
     except (TypeError, ValueError):

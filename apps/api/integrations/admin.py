@@ -1,7 +1,7 @@
 """Usage and credential history in the Django admin (v0.1.1, #81).
 
 NOT registered, on purpose, because their rows hold encrypted keys: `ZoteroConnection`, `UserCredential` and
-`WorkspaceLlmConfig`. Do not add them, and do not show `api_key_encrypted` or `last_four` anywhere. The event log below
+`WorkspaceLlmConfig` and `AiProfile`. Do not add them, and do not show `api_key_encrypted` or `last_four` anywhere. The event log below
 leaves `last_four` and `detail` out for the same reason."""
 from django.contrib import admin
 

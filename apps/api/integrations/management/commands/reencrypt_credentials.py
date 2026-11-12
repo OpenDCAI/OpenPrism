@@ -15,10 +15,12 @@ from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 
 from integrations import crypto
-from integrations.models import UserCredential, WorkspaceLlmConfig, ZoteroConnection
+from integrations.models import AiProfile, UserCredential, WorkspaceLlmConfig, ZoteroConnection
 
-BINARY_MODELS = [(ZoteroConnection, 'Zotero keys'), (UserCredential, 'personal AI keys'),
-                 (WorkspaceLlmConfig, 'workspace AI keys')]
+# UserCredential and WorkspaceLlmConfig are no longer read (their rows were copied into AiProfile by migration 0007) but
+# still hold ciphertext until the tables are dropped, so they are rotated too.
+BINARY_MODELS = [(ZoteroConnection, 'Zotero keys'), (AiProfile, 'AI keys'), (UserCredential, 'old personal AI keys'),
+                 (WorkspaceLlmConfig, 'old workspace AI keys')]
 
 
 def _text_rotate(value):
