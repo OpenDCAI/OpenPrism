@@ -3,6 +3,8 @@ import type { FormEvent, ReactNode } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import {
+  checkProjectExport,
+  projectExportUrl,
   createProject,
   copyProject,
   deleteProject,
@@ -737,6 +739,28 @@ export default function ProjectPage() {
     }
   };
 
+  /** Export the project as one zip: ask the server first (too large? rate limited?), then let the browser download it. */
+  const handleExport = async (id: string, name: string) => {
+    setStatus(t('Preparing {{project}} for export…', { project: name }));
+    try {
+      const check = await checkProjectExport(id);
+      if (!check.ok) {
+        setStatus(t('Could not export {{project}}: {{error}}', { project: name, error: check.error || '' }));
+        return;
+      }
+      const link = document.createElement('a');
+      link.href = await projectExportUrl(id);
+      link.download = check.name || `${name}.zip`;
+      link.rel = 'noopener';
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatus(t('Exporting {{project}} ({{count}} files)', { project: name, count: check.files ?? 0 }));
+    } catch (err) {
+      setStatus(t('Could not export {{project}}: {{error}}', { project: name, error: (err as Error).message }));
+    }
+  };
+
   const handleTrash = async (id: string, trashed: boolean) => {
     try {
       await trashProject(id, trashed);
@@ -966,11 +990,13 @@ export default function ProjectPage() {
         icon: 'arrow-left-right',
         onSelect: () => { setTransferSource({ id: project.id, name: project.name }); setTransferOpen(true); }
       },
-      ...moveItems,
       { type: 'sep' },
       project.archived
         ? { label: t('取消归档'), icon: 'rotate-ccw', onSelect: () => void handleArchive(project.id, false) }
         : { label: t('归档'), icon: 'archive', onSelect: () => void handleArchive(project.id, true) },
+      { label: t('Export project'), icon: 'download', onSelect: () => void handleExport(project.id, project.name) },
+      ...moveItems,
+      { type: 'sep' },
       { label: t('删除'), icon: 'trash', danger: true, onSelect: () => handleDelete(project.id, project.name) },
     ];
   };

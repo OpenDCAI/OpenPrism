@@ -334,6 +334,9 @@ AI_EDIT_RATE_PER_MINUTE = int(env('AI_EDIT_RATE_PER_MINUTE', '1000' if TESTING e
 # and compiles (guests are counted per invite link).
 AI_RATE_PER_MINUTE = int(env('AI_RATE_PER_MINUTE', '1000' if TESTING else '30'))
 COMPILE_RATE_PER_MINUTE = int(env('COMPILE_RATE_PER_MINUTE', '1000' if TESTING else '30'))
+# Project export (#162): one zip per request, built on the API's scratch disk (512 Mi in Kubernetes), so the raw size is capped below it.
+EXPORT_RATE_PER_MINUTE = int(env('EXPORT_RATE_PER_MINUTE', '1000' if TESTING else '6'))
+EXPORT_MAX_BYTES = int(env('EXPORT_MAX_BYTES', str(400 * 1024 * 1024)))
 # Who may run AI jobs on the operator's key (OPENPRISM_LLM_* on the workers), i.e. with no workspace, saved or
 # browser key: all | verified (verified address) | staff | none. And how many such jobs per user per UTC day (0 = no limit).
 SERVER_LLM_KEY_USERS = env('SERVER_LLM_KEY_USERS', 'all').strip().lower()
