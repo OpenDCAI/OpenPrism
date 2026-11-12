@@ -275,7 +275,7 @@ def workspace_llm_models(request, pk):
     ratelimit.enforce('ai', request.user, settings.AI_RATE_PER_MINUTE)
     b = request.data if isinstance(request.data, dict) else {}
     try:
-        endpoint, key = provider.resolve(pk, b.get('endpoint'), b.get('apiKey'))
+        endpoint, key = provider.resolve(pk, b.get('endpoint'), b.get('apiKey'), str(b.get('profile') or 'llm'))
         return Response({'ok': True, 'models': provider.list_models(endpoint, key)})
     except provider.ProviderError as exc:
         return Response({'ok': False, 'error': str(exc)})
@@ -289,7 +289,7 @@ def workspace_llm_test(request, pk):
     ratelimit.enforce('ai', request.user, settings.AI_RATE_PER_MINUTE)
     b = request.data if isinstance(request.data, dict) else {}
     try:
-        endpoint, key = provider.resolve(pk, b.get('endpoint'), b.get('apiKey'))
+        endpoint, key = provider.resolve(pk, b.get('endpoint'), b.get('apiKey'), str(b.get('profile') or 'llm'))
         return Response({'ok': True, 'latencyMs': provider.chat_check(endpoint, key, b.get('model'))})
     except provider.ProviderError as exc:
         return Response({'ok': False, 'error': str(exc)})

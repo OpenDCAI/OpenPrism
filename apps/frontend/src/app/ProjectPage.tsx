@@ -20,6 +20,7 @@ import {
 import type { ProjectMeta, TemplateMeta, TemplateCategory } from '../api/client';
 import TransferPanel from './TransferPanel';
 import WorkspaceAiBlock from './WorkspaceAiBlock';
+import WorkspaceAiProfiles from './WorkspaceAiProfiles';
 import WorkspaceStorageBlock from './WorkspaceStorageBlock';
 import {
   AppTopBar,
@@ -39,7 +40,6 @@ import {
 } from '@design';
 import type { BadgeTone, IconName, MenuEntry, SelectOption, Workspace, WorkspaceRole } from '@design';
 import './pages.css';
-import AiKeysForm from './AiKeysForm';
 
 type ViewFilter = 'all' | 'mine' | 'archived' | 'trash';
 type SortBy = 'updatedAt' | 'name' | 'createdAt';
@@ -440,6 +440,7 @@ function SettingsSection({
       </form>
 
       <WorkspaceAiBlock workspaceId={w.id} onStatus={onStatus} onConfirm={onConfirm} />
+      <WorkspaceAiProfiles workspaceId={w.id} kind={w.kind} onStatus={onStatus} />
 
       {admin && <WorkspaceStorageBlock workspaceId={w.id} onStatus={onStatus} />}
 
@@ -575,7 +576,6 @@ export default function ProjectPage() {
   const zipInputRef = useRef<HTMLInputElement | null>(null);
 
   // LLM settings modal state
-  const [settingsOpen, setSettingsOpen] = useState(false);
 
   // Template gallery (Templates section) filters
   const [galleryCat, setGalleryCat] = useState('all');
@@ -1247,14 +1247,6 @@ export default function ProjectPage() {
             <span className="home-crumb">{sectionLabels[section]}</span>
           </>
         }
-        actions={
-          <IconButton
-            icon="bot"
-            label={t('AI settings')}
-            tipPos="bottom-end"
-            onClick={() => setSettingsOpen(true)}
-          />
-        }
       />
 
       <div className="home-body">
@@ -1600,20 +1592,6 @@ export default function ProjectPage() {
             </div>
           )}
         </section>
-      )}
-
-      {/* ── AI / LLM settings ── */}
-      {settingsOpen && (
-        <Modal
-          title={t('AI settings')}
-          description={t('Your own AI keys, used when the workspace provides none.')}
-          size="lg"
-          onClose={() => setSettingsOpen(false)}
-          closeLabel={t('Close')}
-          footer={<Button variant="primary" onClick={() => setSettingsOpen(false)}>{t('完成')}</Button>}
-        >
-          <AiKeysForm onStatus={setStatus} />
-        </Modal>
       )}
 
       {/* ── New workspace ── */}

@@ -1204,7 +1204,35 @@ export function saveWorkspaceLlm(workspaceId: string, payload: { endpoint?: stri
     body: JSON.stringify(payload)
   });
 }
-export interface ProviderCheckPayload { endpoint?: string; model?: string; apiKey?: string }
+export type AiProfileName = 'llm' | 'search' | 'vision' | 'mineru';
+export interface AiProfileStatus {
+  configured: boolean;
+  updatedAt?: string;
+  /** Owners and admins also get these (never the key). Other members only see `model`. */
+  endpoint?: string;
+  model?: string;
+  lastFour?: string;
+  dailyLimit?: number | null;
+}
+export interface WorkspaceAiStatus {
+  ok: boolean;
+  error?: string;
+  canManage?: boolean;
+  canUse?: boolean;
+  profiles: Record<AiProfileName, AiProfileStatus>;
+}
+/** All AI settings of a workspace: AI model, Search, Vision and MinerU (#78). */
+export function getWorkspaceAi(workspaceId: string) {
+  return request<WorkspaceAiStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/ai`);
+}
+export function saveWorkspaceAiProfile(workspaceId: string, profile: AiProfileName, payload: { endpoint?: string; model?: string; apiKey?: string; dailyLimit?: number | null }) {
+  return request<WorkspaceAiStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/ai/${profile}`, { method: 'PUT', body: JSON.stringify(payload) });
+}
+export function removeWorkspaceAiProfile(workspaceId: string, profile: AiProfileName) {
+  return request<WorkspaceAiStatus>(`/api/workspaces/${encodeURIComponent(workspaceId)}/ai/${profile}`, { method: 'DELETE' });
+}
+
+export interface ProviderCheckPayload { endpoint?: string; model?: string; apiKey?: string; profile?: AiProfileName }
 /** Ask the server for the provider's model list (#76). An empty key with an unchanged endpoint uses the stored key. */
 export function listWorkspaceLlmModels(workspaceId: string, payload: ProviderCheckPayload) {
   return request<{ ok: boolean; models?: string[]; error?: string }>(`/api/workspaces/${encodeURIComponent(workspaceId)}/llm/models`, {
