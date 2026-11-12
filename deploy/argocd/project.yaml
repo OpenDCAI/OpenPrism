@@ -1,0 +1,42 @@
+# AppProject for the OpenPrism app (#167). Apply once by hand (kubectl apply -f), like root.yaml.
+# Only this repository, only namespace openprism, no cluster-scoped kinds: an Application in this project cannot deploy
+# anywhere else even if a manifest in the repo asks it to.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: openprism
+  namespace: argocd
+spec:
+  description: OpenPrism application tier on the cent cluster
+  sourceRepos:
+    - https://github.com/cent-ischool/OpenPrism.git
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: openprism
+  clusterResourceWhitelist: []          # nothing cluster-scoped
+  namespaceResourceBlacklist:
+    - {group: "", kind: ResourceQuota}
+    - {group: "", kind: LimitRange}
+  orphanedResources:
+    warn: true                          # report resources in the namespace that git does not describe
+---
+# Cluster add-ons this repo depends on (Sealed Secrets). Kept apart so the app project stays namespace-bound.
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: openprism-platform
+  namespace: argocd
+spec:
+  description: Cluster add-ons OpenPrism needs (Sealed Secrets controller)
+  sourceRepos:
+    - https://github.com/cent-ischool/OpenPrism.git
+    - https://bitnami-labs.github.io/sealed-secrets
+  destinations:
+    - server: https://kubernetes.default.svc
+      namespace: kube-system
+    - server: https://kubernetes.default.svc
+      namespace: argocd
+  clusterResourceWhitelist:
+    - {group: apiextensions.k8s.io, kind: CustomResourceDefinition}
+    - {group: rbac.authorization.k8s.io, kind: ClusterRole}
+    - {group: rbac.authorization.k8s.io, kind: ClusterRoleBinding}
