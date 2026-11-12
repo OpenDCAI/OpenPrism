@@ -4,10 +4,10 @@ from .models import CredentialEvent
 PAGE = 50
 
 
-def record(kind, action, actor, workspace=None, owner=None, last_four='', detail=None):
+def record(kind, action, actor, workspace=None, owner=None, last_four='', detail=None, project=None):
     return CredentialEvent.objects.create(
         kind=kind, action=action, actor=actor, actor_name=(actor.name or actor.email) if actor else '',
-        workspace=workspace, owner=owner, last_four=last_four or '', detail=detail or {})
+        workspace=workspace, project=project, owner=owner, last_four=last_four or '', detail=detail or {})
 
 
 def event_json(e):

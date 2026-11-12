@@ -357,3 +357,110 @@ class ProjectOverrideRequestTests(Base):
         self.assertEqual(ws_fake.requests[0]['body']['model'], 'ws')
         sources = list(Job.objects.order_by('created_at').values_list('params__keySource', flat=True))
         self.assertEqual(sources, ['project', 'workspace'])
+
+
+@override_settings(LLM_ALLOW_PRIVATE_ENDPOINTS=True)
+class LimitTests(Base):
+    """A daily limit per setting at each level (#159): reaching it is a 429 with no fallback to another key."""
+
+    def setUp(self):
+        super().setUp()
+        sync = lambda job_id, secrets=None: ai_tasks.run_ai_job.run(job_id, secrets)
+        p = mock.patch('ai.views.run_ai_job.delay', side_effect=sync)
+        p.start()
+        self.addCleanup(p.stop)
+        self.second = Project.objects.get(pk=self.new_project('Second'))
+
+    def ask(self, project=None, profile='llm'):
+        return self.c.post('/api/llm', {'messages': [], 'projectId': str(project.id if project else self.pid),
+                                        'llmConfig': {'profile': profile}}, format='json')
+
+    def test_a_project_limit_stops_that_project_only_and_never_falls_back_to_the_workspace(self):
+        ws_fake, proj_fake = self.fake(), self.fake()
+        aiprofiles.save(self.ws, self.user, 'llm', ws_fake.url, 'ws', K['workspace'])
+        aiprofiles.save(self.project, self.user, 'llm', proj_fake.url, 'proj', K['project'], daily_limit=2)
+        self.assertEqual([self.ask().status_code for _ in range(2)], [200, 200])
+        res = self.ask()
+        self.assertEqual(res.status_code, 429)
+        self.assertIn('project', res.json()['error'])
+        self.assertIn('Retry-After', res)
+        self.assertEqual((len(proj_fake.requests), len(ws_fake.requests)), (2, 0))      # the workspace key was not used instead
+        self.assertEqual(self.ask(self.second).status_code, 200)                         # another project is unaffected
+        self.assertEqual(len(ws_fake.requests), 1)
+        self.assertEqual(Job.objects.count(), 3)                                        # the refused request created nothing
+
+    def test_a_workspace_limit_counts_every_project_and_leaves_overrides_alone(self):
+        ws_fake, proj_fake = self.fake(), self.fake()
+        aiprofiles.save(self.ws, self.user, 'llm', ws_fake.url, 'ws', K['workspace'], daily_limit=2)
+        aiprofiles.save(self.project, self.user, 'llm', proj_fake.url, 'proj', K['project'])
+        self.assertEqual([self.ask(self.second).status_code for _ in range(2)], [200, 200])
+        self.assertEqual(self.ask(self.second).status_code, 429)
+        self.assertEqual(self.ask().status_code, 200)                                    # the override has no limit of its own
+
+    def test_each_setting_has_its_own_limit_and_a_follower_counts_against_the_ai_model(self):
+        main, search = self.fake(), self.fake()
+        aiprofiles.save(self.ws, self.user, 'llm', main.url, 'main', K['workspace'], daily_limit=2)
+        aiprofiles.save(self.ws, self.user, 'search', search.url, 'search', K['other'], daily_limit=1)
+        self.assertEqual(self.ask(profile='search').status_code, 200)
+        self.assertEqual(self.ask(profile='search').status_code, 429)                    # search used its one
+        self.assertEqual([self.ask(profile='llm').status_code for _ in range(1)], [200])  # the AI model has its own count
+        self.assertEqual(self.ask(profile='vision').status_code, 200)                    # vision follows the AI model: 2nd of 2
+        self.assertEqual(self.ask(profile='vision').status_code, 429)
+        self.assertEqual(self.ask(profile='llm').status_code, 429)
+
+    def test_usage_is_counted_per_level_and_setting(self):
+        from ai import usage
+        f = self.fake()
+        aiprofiles.save(self.ws, self.user, 'llm', f.url, 'ws', K['workspace'])
+        aiprofiles.save(self.project, self.user, 'search', f.url, 'p', K['project'])
+        self.ask(profile='search')
+        self.ask(profile='llm')
+        self.ask(profile='llm', project=self.second)
+        self.assertEqual(usage.project_usage(self.pid)['today'], 1)
+        self.assertEqual(usage.project_usage(self.pid, 'search')['today'], 1)
+        self.assertEqual(usage.workspace_usage(self.ws.id, 'llm')['today'], 2)
+        self.assertEqual(usage.workspace_usage(self.ws.id, 'search')['today'], 0)
+        # shown to those who manage, with the limit
+        body = self.c.get(f'/api/projects/{self.pid}/ai').json()['profiles']['search']
+        self.assertEqual(body['usage']['today'], 1)
+        wbody = self.c.get(f'/api/workspaces/{self.ws.id}/ai').json()['profiles']['llm']
+        self.assertEqual(wbody['usage']['today'], 2)
+
+    def test_a_limit_can_be_set_changed_and_cleared_through_the_api_and_is_validated(self):
+        url = f'/api/projects/{self.pid}/ai/llm'
+        ok = self.c.put(url, {'endpoint': 'https://api.openai.com/v1', 'model': 'm', 'apiKey': K['project'], 'dailyLimit': 5}, format='json').json()
+        self.assertEqual(ok['profiles']['llm']['dailyLimit'], 5)
+        self.assertIsNone(self.c.put(url, {'dailyLimit': None}, format='json').json()['profiles']['llm']['dailyLimit'])
+        for bad in (0, -1, 'x', 100001, True):
+            self.assertFalse(self.c.put(url, {'dailyLimit': bad}, format='json').json()['ok'], bad)
+
+
+class ProjectHistoryTests(Base):
+    def url(self):
+        return f'/api/projects/{self.pid}/credential-events'
+
+    def test_changes_are_recorded_for_the_project_without_secrets_and_visible_to_managers_only(self):
+        put = lambda **b: self.c.put(f'/api/projects/{self.pid}/ai/search', b, format='json')
+        put(endpoint='https://api.openai.com/v1', model='m1', apiKey=K['project'])
+        put(model='m2')
+        put(endpoint='https://api.openai.com/v1', apiKey=K['other'], model='m2')
+        self.c.delete(f'/api/projects/{self.pid}/ai/search')
+        events = self.c.get(self.url()).json()['events']
+        self.assertEqual([(e['action'], e['kind']) for e in events][::-1],
+                         [('set', 'ai_profile'), ('updated', 'ai_profile'), ('rotated', 'ai_profile'), ('removed', 'ai_profile')])
+        self.assertEqual(events[-1]['detail']['profile'], 'search')
+        self.assertEqual(events[-1]['detail']['projectId'], self.pid)
+        self.assertEqual(events[-1]['actor']['id'], str(self.user.id))
+        text = json.dumps(events)
+        for secret in (K['project'], K['other']):
+            self.assertNotIn(secret, text)
+        self.assertEqual(CredentialEvent.objects.filter(project=self.project).count(), 4)
+        editor = make_user('editor@example.com')
+        Membership.objects.create(workspace=self.ws, user=editor, role='editor')
+        self.assertEqual(client_for(editor).get(self.url()).status_code, 403)
+        self.assertEqual(client_for(make_user('out@example.com')).get(self.url()).status_code, 404)
+
+    def test_workspace_admins_also_see_project_changes_in_the_workspace_history(self):
+        self.c.put(f'/api/projects/{self.pid}/ai/llm', {'endpoint': 'https://api.openai.com/v1', 'model': 'm', 'apiKey': K['project']}, format='json')
+        events = self.c.get(f'/api/workspaces/{self.ws.id}/credential-events').json()['events']
+        self.assertTrue(any(e['detail'].get('projectId') == self.pid for e in events))

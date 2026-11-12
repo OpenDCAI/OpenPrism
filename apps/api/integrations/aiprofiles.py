@@ -82,7 +82,8 @@ def _event(owner, profile, action, user, row=None, detail=None):
         kind = CredentialEvent.WORKSPACE_LLM       # the history the workspace block has always shown
     else:
         kind, detail['profile'] = CredentialEvent.AI_PROFILE, profile
-    audit.record(kind, action, user, workspace=workspace, last_four=row.last_four if row else '', detail=detail)
+    audit.record(kind, action, user, workspace=workspace, project=owner if isinstance(owner, Project) else None,
+                 last_four=row.last_four if row else '', detail=detail)
 
 
 def _detail(changed):
@@ -140,6 +141,7 @@ def remove(owner, user, profile):
         audit.record(CredentialEvent.WORKSPACE_LLM if (profile == LLM and not isinstance(owner, Project))
                      else CredentialEvent.AI_PROFILE, CredentialEvent.REMOVED, user,
                      workspace=owner.workspace if isinstance(owner, Project) else owner,
+                     project=owner if isinstance(owner, Project) else None,
                      detail={} if (profile == LLM and not isinstance(owner, Project))
                      else {'profile': profile, **({'projectId': str(owner.id)} if isinstance(owner, Project) else {})})
     return True
@@ -151,20 +153,29 @@ def may_use(user, workspace):
         and Membership.objects.filter(workspace=workspace, user=user, role__in=Membership.WRITE_ROLES).exists()
 
 
-def usable(user, project, workspace, profile):
-    """({endpoint, model}, key, level) for the profile a request should use, or None. Order: the project's own row, the
-    workspace's row, then for Search / Vision the AI model the same way. level is 'project' or 'workspace'."""
-    if not may_use(user, workspace):
-        return None
+def serving_row(project, workspace, profile):
+    """(row, level) of the setting that serves `profile` for a request: the project's own row, the workspace's row, then
+    for Search / Vision the AI model the same way. level is 'project' or 'workspace'. None when nothing is set."""
     for p in (profile, FALLBACK.get(profile)):
         if not p:
             continue
         for level, owner in (('project', project), ('workspace', workspace)):
             row = owner is not None and get(owner, p)
             if row:
-                public = {k: v for k, v in (('endpoint', row.endpoint), ('model', row.model)) if v}
-                return public, crypto.decrypt(row.api_key_encrypted), level
+                return row, level
     return None
+
+
+def usable(user, project, workspace, profile):
+    """({endpoint, model}, key, level) for the profile a request should use, or None (see serving_row)."""
+    if not may_use(user, workspace):
+        return None
+    served = serving_row(project, workspace, profile)
+    if served is None:
+        return None
+    row, level = served
+    public = {k: v for k, v in (('endpoint', row.endpoint), ('model', row.model)) if v}
+    return public, crypto.decrypt(row.api_key_encrypted), level
 
 
 def effective(project, workspace):

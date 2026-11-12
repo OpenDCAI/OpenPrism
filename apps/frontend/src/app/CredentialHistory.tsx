@@ -27,7 +27,8 @@ export function describeEvent(t: TFunction, e: CredentialEvent) {
   const what = e.kind === 'zotero' ? t('the Zotero key')
     : e.kind === 'user_mineru' ? t('the MinerU token')
       : e.kind === 'user_llm' ? (profile && profile !== 'llm' ? t('the {{profile}} AI key', { profile }) : t('the AI key'))
-        : t('the API key');
+        : e.kind === 'ai_profile' ? (profile === 'mineru' ? t('the MinerU token') : t('the {{profile}} API key', { profile }))
+          : t('the API key');
   if (e.action === 'set') return t('{{who}} set {{what}}', { who, what }) + last;
   if (e.action === 'rotated') return t('{{who}} replaced {{what}}', { who, what }) + last;
   if (e.action === 'removed') return e.kind === 'workspace_llm' ? t('{{who}} removed the provider', { who }) : t('{{who}} removed {{what}}', { who, what });

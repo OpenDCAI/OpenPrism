@@ -50,7 +50,7 @@ def run_job(request, job_type, params, paid, project=None, job_id=None, charged=
     unless the view already did (`charged`)."""
     public, secrets, source = paid
     if not charged:
-        usage.charge(request, source, project.workspace if project else None)
+        usage.charge(request, source, project.workspace if project else None, paid=paid)
     params = {**params, 'llmConfig': public, 'keySource': source}
     job = Job.objects.create(id=job_id or uuid.uuid4(), type=job_type, user=request.user, project=project, params=params)
     run_ai_job.delay(str(job.id), secrets)
@@ -167,7 +167,7 @@ def vision_latex(request):
         save = Membership.objects.filter(workspace_id=project.workspace_id, user=request.user,
                                          role__in=Membership.WRITE_ROLES).exists()
     paid = usage.resolve(request, project.workspace if project else None, public, secrets, project=project)
-    usage.charge(request, paid[2], project.workspace if project else None)  # before storing the upload
+    usage.charge(request, paid[2], project.workspace if project else None, paid=paid)  # before storing the upload
     job_id = uuid.uuid4()
     key = f'jobs/{job_id}/input'
     storage.put_bytes(key, image.read(), image.content_type or 'image/png')

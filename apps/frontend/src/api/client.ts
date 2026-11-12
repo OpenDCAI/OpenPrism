@@ -1213,6 +1213,8 @@ export interface AiProfileStatus {
   model?: string;
   lastFour?: string;
   dailyLimit?: number | null;
+  /** AI requests paid by this setting: today (UTC) and in the last 30 days. Owners and admins only. */
+  usage?: { today: number; last30Days: number };
 }
 export interface WorkspaceAiStatus {
   ok: boolean;
@@ -1243,6 +1245,7 @@ export interface ProjectAiProfileStatus {
   endpoint?: string;
   lastFour?: string;
   dailyLimit?: number | null;
+  usage?: { today: number; last30Days: number };
 }
 export interface ProjectAiStatus {
   ok: boolean;
@@ -1260,6 +1263,10 @@ export function saveProjectAiProfile(projectId: string, profile: AiProfileName, 
 /** Reset: the project goes back to the workspace's setting. */
 export function removeProjectAiProfile(projectId: string, profile: AiProfileName) {
   return request<ProjectAiStatus>(`/api/projects/${encodeURIComponent(projectId)}/ai/${profile}`, { method: 'DELETE' });
+}
+export function projectCredentialEvents(projectId: string, before?: string) {
+  const q = before ? `?before=${encodeURIComponent(before)}` : '';
+  return request<CredentialEventPage>(`/api/projects/${encodeURIComponent(projectId)}/credential-events${q}`);
 }
 export function listProjectAiModels(projectId: string, payload: ProviderCheckPayload) {
   return request<{ ok: boolean; models?: string[]; error?: string }>(`/api/projects/${encodeURIComponent(projectId)}/ai/models`, { method: 'POST', body: JSON.stringify(payload) });
@@ -1310,7 +1317,7 @@ export function removeAiKey(profile: AiKeyProfile) {
 export interface CredentialEvent {
   id: string;
   createdAt: string;
-  kind: 'workspace_llm' | 'zotero' | 'user_llm' | 'user_mineru';
+  kind: 'workspace_llm' | 'zotero' | 'user_llm' | 'user_mineru' | 'ai_profile';
   action: 'set' | 'rotated' | 'updated' | 'removed';
   /** the key's last four characters after the change ('' when removed) */
   lastFour: string;

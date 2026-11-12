@@ -116,7 +116,7 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
   const onRemove = () =>
     onConfirm({
       title: t('Remove the AI provider?'),
-      message: t('Members will use their own keys, or the server default, until a new provider is set.'),
+      message: t('Projects in this workspace will use the server default, if there is one, until a new provider is set.'),
       confirmLabel: t('Remove'),
       onConfirm: async () => {
         const res = await removeWorkspaceLlm(workspaceId);
@@ -132,7 +132,7 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
         <p data-testid="ws-ai-readonly">
           {configured
             ? t('Your workspace admin has set an AI provider{{model}}. It is used for AI features in this workspace.', { model: status.model ? ` (${status.model})` : '' })
-            : t('No workspace AI provider is set. You can use your own key in Settings.')}
+            : t('No workspace AI provider is set. An admin can set one here.')}
         </p>
       </div>
     );
@@ -141,7 +141,7 @@ export default function WorkspaceAiBlock({ workspaceId, onStatus, onConfirm }: P
   return (
     <form className="home-block" onSubmit={onSave} noValidate data-testid="ws-ai">
       <h2>{t('AI provider')}</h2>
-      <p>{t('Members who can edit use this provider for AI features in this workspace, instead of their own key. The key is stored encrypted and is never shown again.')}</p>
+      <p>{t('Members who can edit use this provider for AI features in this workspace and its projects, unless a project overrides it. The key is stored encrypted and is never shown again.')}</p>
       <div className="op-field">
         <label className="op-field-label" htmlFor="ws-ai-endpoint">{t('Endpoint')}</label>
         <input id="ws-ai-endpoint" className="op-input" autoComplete="off" placeholder="https://api.openai.com/v1" value={endpoint} onChange={(e) => setEndpoint(e.target.value)} />

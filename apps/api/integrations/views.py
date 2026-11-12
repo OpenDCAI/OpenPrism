@@ -200,7 +200,7 @@ def _llm_status(config, membership):
             'updatedBy': (config.updated_by.name or config.updated_by.email) if config.updated_by else ''}
     if can_manage:
         from ai.usage import workspace_usage
-        body.update(lastFour=config.last_four, dailyLimit=config.daily_limit, usage=workspace_usage(config.workspace_id))
+        body.update(lastFour=config.last_four, dailyLimit=config.daily_limit, usage=workspace_usage(config.workspace_id, 'llm'))
     return body
 
 
@@ -235,7 +235,9 @@ def _ai_status(workspace, membership):
             continue
         entry = {'configured': True, 'updatedAt': row['updatedAt']}
         if can_manage:
-            entry.update(endpoint=row['endpoint'], model=row['model'], lastFour=row['lastFour'], dailyLimit=row['dailyLimit'])
+            from ai.usage import workspace_usage
+            entry.update(endpoint=row['endpoint'], model=row['model'], lastFour=row['lastFour'], dailyLimit=row['dailyLimit'],
+                         usage=workspace_usage(workspace.id, name))
         elif name != aiprofiles.MINERU:
             entry['model'] = row['model']
         profiles[name] = entry
@@ -292,7 +294,9 @@ def _project_ai_status(project, membership, can_manage):
         if e and can_use and name != aiprofiles.MINERU:
             entry['model'] = e['model']
         if can_manage and o:
-            entry.update(endpoint=o['endpoint'], model=o['model'], lastFour=o['lastFour'], dailyLimit=o['dailyLimit'])
+            from ai.usage import project_usage
+            entry.update(endpoint=o['endpoint'], model=o['model'], lastFour=o['lastFour'], dailyLimit=o['dailyLimit'],
+                         usage=project_usage(project.id, name))
         profiles[name] = entry
     return {'ok': True, 'canManage': can_manage, 'canUse': can_use, 'profiles': profiles}
 
@@ -322,6 +326,16 @@ def project_ai_profile(request, pk, profile):
     except aiprofiles.LlmConfigError as exc:
         return Response({'ok': False, 'error': str(exc)})
     return Response(_project_ai_status(project, membership, can_manage))
+
+
+@api_view(['GET'])
+def project_credential_events(request, pk):
+    """Who set, rotated, changed or reset this project's own AI settings (never key material). Those who manage them."""
+    project, _, can_manage = _project_ai_access(request, pk)
+    if not can_manage:
+        raise PermissionDenied('Only workspace owners and admins, or the project\'s creator, can see this history.')
+    return Response(audit.page(CredentialEvent.objects.filter(project=project),
+                               request.query_params.get('before'), request.query_params.get('limit')))
 
 
 @api_view(['POST'])

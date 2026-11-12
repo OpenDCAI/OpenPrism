@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next';
 import type { AiProfileName, AiProfileStatus } from '../api/client';
 import { Button, FieldError } from '@design';
 
-export interface ProfilePayload { endpoint?: string; model?: string; apiKey?: string }
+export interface ProfilePayload { endpoint?: string; model?: string; apiKey?: string; dailyLimit?: number | null }
 export type CheckPayload = ProfilePayload & { profile: AiProfileName };
 
 interface Props {
@@ -36,6 +36,7 @@ export default function AiProfileForm({ profile, saved, testId, idPrefix, title,
   const [endpoint, setEndpoint] = useState(saved.endpoint || '');
   const [model, setModel] = useState(saved.model || '');
   const [apiKey, setApiKey] = useState('');
+  const [limit, setLimit] = useState(saved.dailyLimit ? String(saved.dailyLimit) : '');
   const [replacing, setReplacing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -47,6 +48,7 @@ export default function AiProfileForm({ profile, saved, testId, idPrefix, title,
     setEndpoint(saved.endpoint || '');
     setModel(saved.model || '');
     setApiKey('');
+    setLimit(saved.dailyLimit ? String(saved.dailyLimit) : '');
     setReplacing(false);
     setModels([]);
     setCheck(null);
@@ -85,10 +87,18 @@ export default function AiProfileForm({ profile, saved, testId, idPrefix, title,
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
+    const lim = limit.trim();
+    if (lim && !/^\d+$/.test(lim)) {
+      setError(t('The daily limit must be a whole number, or empty for no limit.'));
+      return;
+    }
     setBusy(true);
     setError(null);
     try {
-      const res = await onSave({ endpoint, ...(mineru ? {} : { model }), ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}) });
+      const res = await onSave({
+        endpoint, ...(mineru ? {} : { model }), ...(apiKey.trim() ? { apiKey: apiKey.trim() } : {}),
+        ...(configured || lim ? { dailyLimit: lim ? Number(lim) : null } : {})
+      });
       if (!res.ok) setError(res.error || t('Could not save the setting.'));
     } catch (err) {
       setError((err as Error).message);
@@ -137,6 +147,16 @@ export default function AiProfileForm({ profile, saved, testId, idPrefix, title,
         )}
         {endpointChanged && <span className="op-field-help">{t('Enter the key again to use it with a different endpoint.')}</span>}
         <FieldError message={error} />
+      </div>
+      <div className="op-field">
+        <label className="op-field-label" htmlFor={id('limit')}>{t('Daily limit')}</label>
+        <input id={id('limit')} className="op-input" inputMode="numeric" autoComplete="off" placeholder={t('No limit')} value={limit} onChange={(e) => setLimit(e.target.value)} />
+        <span className="op-field-help">{t('AI requests per day (UTC) paid by this setting. Reaching it stops the requests; no other key is used instead. Empty: no limit.')}</span>
+        {configured && saved.usage && (
+          <span className="op-field-help" data-testid={`${testId}-usage`}>
+            {t('{{today}} requests today, {{month}} in the last 30 days', { today: saved.usage.today, month: saved.usage.last30Days })}
+          </span>
+        )}
       </div>
       {!mineru && (
         <div className="home-block-actions">

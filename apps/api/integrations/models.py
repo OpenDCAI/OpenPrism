@@ -38,12 +38,16 @@ class LlmUsage(models.Model):
     day = models.DateField()
     user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.CASCADE, related_name='+')
     workspace = models.ForeignKey('projects.Workspace', null=True, on_delete=models.CASCADE, related_name='+')
+    # Set for jobs paid by a project's own setting (source `project`), so a project's daily limit and usage can be counted.
+    project = models.ForeignKey('projects.Project', null=True, blank=True, on_delete=models.CASCADE, related_name='+')
+    # Which AI setting paid (llm, search, vision, mineru); blank for server / browser keys and rows from before #78.
+    profile = models.CharField(max_length=10, blank=True, default='', db_default='')
     source = models.CharField(max_length=10, choices=SOURCES)
     count = models.PositiveIntegerField(default=0, db_default=0)
 
     class Meta:
-        constraints = [models.UniqueConstraint(fields=['day', 'user', 'workspace', 'source'], nulls_distinct=False,
-                                               name='llm_usage_unique_row')]
+        constraints = [models.UniqueConstraint(fields=['day', 'user', 'workspace', 'project', 'profile', 'source'],
+                                               nulls_distinct=False, name='llm_usage_unique_row')]
         indexes = [models.Index(fields=['workspace', 'day'])]
 
 
@@ -61,6 +65,8 @@ class CredentialEvent(models.Model):
     actor = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.SET_NULL, related_name='+')
     actor_name = models.CharField(max_length=300, blank=True)  # kept after the actor's account is deleted
     workspace = models.ForeignKey('projects.Workspace', null=True, blank=True, on_delete=models.CASCADE, related_name='+')
+    # A change to a project's own AI setting also names the project (kept as detail.projectId if the project is deleted).
+    project = models.ForeignKey('projects.Project', null=True, blank=True, on_delete=models.SET_NULL, related_name='+')
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.CASCADE, related_name='+')
     kind = models.CharField(max_length=20, choices=KINDS)
     action = models.CharField(max_length=10, choices=ACTIONS)
@@ -68,7 +74,8 @@ class CredentialEvent(models.Model):
     detail = models.JSONField(default=dict, blank=True)  # non-secret fields that changed, e.g. {"model": "gpt-4o"}
 
     class Meta:
-        indexes = [models.Index(fields=['workspace', '-created_at']), models.Index(fields=['owner', '-created_at'])]
+        indexes = [models.Index(fields=['workspace', '-created_at']), models.Index(fields=['owner', '-created_at']),
+                   models.Index(fields=['project', '-created_at'])]
 
 
 class UserCredential(models.Model):

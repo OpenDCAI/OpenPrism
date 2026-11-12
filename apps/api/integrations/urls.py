@@ -19,6 +19,7 @@ urlpatterns = [
     path('integrations/zotero/bibtex', views.zotero_bibtex),
     path('projects/<uuid:pk>/zotero/add', views.zotero_add),
     path('projects/<uuid:pk>/ai', views.project_ai),
+    path('projects/<uuid:pk>/credential-events', views.project_credential_events),
     path('projects/<uuid:pk>/ai/models', views.project_ai_models),
     path('projects/<uuid:pk>/ai/test', views.project_ai_test),
     path('projects/<uuid:pk>/ai/<str:profile>', views.project_ai_profile),

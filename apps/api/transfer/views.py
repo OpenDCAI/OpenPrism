@@ -64,8 +64,9 @@ def _create_job(request, mode, b):
         memberships__user=request.user, memberships__role__in=Membership.WRITE_ROLES).order_by('created_at').first()
     if workspace is None:
         return None, bad('You do not have a workspace you can write to.', 403)
-    public, secrets, key_source = usage.resolve(request, workspace, *split_llm_config(b.get('llmConfig')), project=source)
-    usage.charge(request, key_source, workspace)
+    paid = usage.resolve(request, workspace, *split_llm_config(b.get('llmConfig')), project=source)
+    public, secrets, key_source = paid
+    usage.charge(request, key_source, workspace, paid=paid)
     params = {
         'mode': mode, 'sourceProjectId': str(source.id) if source else '', 'sourceMainFile': b.get('sourceMainFile') or '',
         'targetMainFile': b['targetMainFile'], 'engine': b.get('engine') or 'pdflatex',
