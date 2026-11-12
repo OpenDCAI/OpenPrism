@@ -1,5 +1,8 @@
-# The OpenPrism release (#167). targetRevision is the release tag: a "Deploy vX.Y.Z" pull request changes it, and
-# merging that pull request is the deploy. The chart, its values and the image tag (v + appVersion) all come from that tag.
+# The OpenPrism release (#167). Two kinds of input, on purpose:
+# - the chart (and so the code: image tag = v + appVersion) comes from the release TAG in the first source. A
+#   "Deploy vX.Y.Z" pull request changes that one line, and merging it is the deploy;
+# - the cluster's configuration (values-cent.yaml) and the SealedSecrets come from MAIN, so rotating a secret is a merged
+#   "Re-seal secrets" pull request and needs no release.
 apiVersion: argoproj.io/v1alpha1
 kind: Application
 metadata:
@@ -11,17 +14,17 @@ spec:
   project: openprism
   sources:
     - repoURL: https://github.com/cent-ischool/OpenPrism.git
-      targetRevision: v0.1.8
+      targetRevision: v0.1.8              # the release: the Deploy pull request changes this line only
       path: deploy/helm/openprism
       helm:
         releaseName: openprism            # keeps the resource names and labels of the Helm release it replaces
         valueFiles:
           - $repo/deploy/argocd/values-cent.yaml
     - repoURL: https://github.com/cent-ischool/OpenPrism.git
-      targetRevision: v0.1.8
+      targetRevision: main                # values-cent.yaml
       ref: repo
     - repoURL: https://github.com/cent-ischool/OpenPrism.git    # the SealedSecrets for this namespace
-      targetRevision: v0.1.8
+      targetRevision: main
       path: deploy/argocd/secrets
   destination:
     server: https://kubernetes.default.svc
