@@ -1,6 +1,8 @@
 # The OpenPrism release (#167). Two kinds of input, on purpose:
 # - the chart (and so the code: image tag = v + appVersion) comes from the release TAG in the first source. A
-#   "Deploy vX.Y.Z" pull request changes that one line, and merging it is the deploy;
+#   "Deploy vX.Y.Z" pull request changes that one line, and merging it is the deploy. Until the first such release it
+#   is the commit of the v0.1.8 chart while it still said 0.1.7.1, so the cutover adopts the running release without
+#   changing its version (deploy/argocd/README.md);
 # - the cluster's configuration (values-cent.yaml) and the SealedSecrets come from MAIN, so rotating a secret is a merged
 #   "Re-seal secrets" pull request and needs no release.
 apiVersion: argoproj.io/v1alpha1
@@ -14,7 +16,7 @@ spec:
   project: openprism
   sources:
     - repoURL: https://github.com/cent-ischool/OpenPrism.git
-      targetRevision: v0.1.8              # the release: the Deploy pull request changes this line only
+      targetRevision: c63a757c81c5d82535783bfc90eac4d9c0d332db  # the release: the Deploy pull request changes this line only
       path: deploy/helm/openprism
       helm:
         releaseName: openprism            # keeps the resource names and labels of the Helm release it replaces

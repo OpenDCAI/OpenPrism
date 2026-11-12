@@ -18,8 +18,12 @@ jobs:
       - name: Wait until the public URL serves the deployed release
         run: |
           set -euo pipefail
-          tag="$(sed -nE 's|^      targetRevision: (v[0-9][0-9.]*)  +# the release: .*$|\1|p' deploy/argocd/apps/openprism.yaml)"
-          [ -n "$tag" ] || { echo "::error::no release tag in deploy/argocd/apps/openprism.yaml"; exit 1; }
+          rev="$(sed -nE 's|^      targetRevision: ([^ ]+)  +# the release: .*$|\1|p' deploy/argocd/apps/openprism.yaml)"
+          [ -n "$rev" ] || { echo "::error::no release line in deploy/argocd/apps/openprism.yaml"; exit 1; }
+          # Before the first release through Argo the line is a commit (the cutover adopts the running release): no
+          # version to wait for.
+          if ! [[ "$rev" =~ ^v[0-9][0-9.]*$ ]]; then echo "::notice::$rev is not a release tag; nothing to wait for"; exit 0; fi
+          tag="$rev"
           echo "waiting for $tag"
           # Argo CD polls git every ~3 minutes, then runs migrations and rolls the pods: allow about 20 minutes.
           SMOKE_ATTEMPTS=24 SMOKE_DELAY=10 bash deploy/smoke-release.sh https://openprism.cent-su.org "${tag#v}"
