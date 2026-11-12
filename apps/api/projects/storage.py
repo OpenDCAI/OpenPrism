@@ -1,4 +1,6 @@
-"""Thin boto3 wrapper around the Garage bucket."""
+"""Thin boto3 wrapper around the object store (Garage in compose, MinIO on the cent cluster)."""
+import base64
+import hashlib
 from functools import lru_cache
 
 import boto3
@@ -6,15 +8,28 @@ from botocore.config import Config
 from django.conf import settings
 
 
+def _add_content_md5(params, **_):
+    """DeleteObjects must carry Content-MD5 for MinIO (and the S3 spec). botocore 1.36+ sends a CRC32 checksum instead,
+    which MinIO refuses with MissingContentMD5 (#164: it failed the v0.1.7 deploy and every bulk delete)."""
+    body = params.get('body') or b''
+    if isinstance(body, str):
+        body = body.encode()
+    params['headers']['Content-MD5'] = base64.b64encode(hashlib.md5(body, usedforsecurity=False).digest()).decode()
+
+
 def _client(endpoint):
-    return boto3.client(
+    client = boto3.client(
         's3',
         endpoint_url=endpoint,
         region_name=settings.S3_REGION,
         aws_access_key_id=settings.S3_ACCESS_KEY_ID,
         aws_secret_access_key=settings.S3_SECRET_ACCESS_KEY,
-        config=Config(s3={'addressing_style': 'path'}, signature_version='s3v4'),
+        # Only send/check the new flexible checksums where S3 requires them: MinIO and Garage do not all support them.
+        config=Config(s3={'addressing_style': 'path'}, signature_version='s3v4',
+                      request_checksum_calculation='when_required', response_checksum_validation='when_required'),
     )
+    client.meta.events.register('before-call.s3.DeleteObjects', _add_content_md5)
+    return client
 
 
 @lru_cache(maxsize=1)
