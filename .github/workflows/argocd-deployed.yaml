@@ -1,0 +1,25 @@
+name: Wait for the Argo CD deploy
+
+# After a "Deploy vX.Y.Z" pull request is merged (#171), Argo CD syncs on its own; this only watches the PUBLIC URL until
+# it reports the new version, so a deploy that did not happen shows as a failed run. No cluster access, no secrets.
+on:
+  push:
+    branches: [main]
+    paths: [deploy/argocd/apps/openprism.yaml]
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Wait until the public URL serves the deployed release
+        run: |
+          set -euo pipefail
+          tag="$(sed -nE 's|^      targetRevision: (v[0-9][0-9.]*)  +# the release: .*$|\1|p' deploy/argocd/apps/openprism.yaml)"
+          [ -n "$tag" ] || { echo "::error::no release tag in deploy/argocd/apps/openprism.yaml"; exit 1; }
+          echo "waiting for $tag"
+          # Argo CD polls git every ~3 minutes, then runs migrations and rolls the pods: allow about 20 minutes.
+          SMOKE_ATTEMPTS=24 SMOKE_DELAY=10 bash deploy/smoke-release.sh https://openprism.cent-su.org "${tag#v}"
