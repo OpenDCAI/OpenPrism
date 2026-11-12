@@ -5,13 +5,15 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from collab.views import flush_room, live_room
+from common import ratelimit
+from django.conf import settings
 from projects import files
 from projects.access import get_project
 from projects.models import Membership, ProjectFile
 from projects.workspaces import membership_for, require_admin
 from projects.paths import InvalidPath, safe_path
 
-from . import audit, bibtex, crypto, llmconfig, userkeys, zotero
+from . import audit, bibtex, crypto, llmconfig, provider, userkeys, zotero
 from .models import CredentialEvent, WorkspaceLlmConfig, ZoteroConnection
 
 
@@ -218,6 +220,35 @@ def workspace_llm(request, pk):
     except llmconfig.LlmConfigError as exc:
         return Response({'ok': False, 'error': str(exc)})
     return Response(_llm_status(config, membership))
+
+
+@api_view(['POST'])
+def workspace_llm_models(request, pk):
+    """Load the provider's model list for the settings form (#76). Admins only. The typed key (or, for an unchanged
+    endpoint, the stored one) is used for the call and never returned. Not counted against the daily limit."""
+    membership_for(request.user, pk)
+    require_admin(request.user, pk)
+    ratelimit.enforce('ai', request.user, settings.AI_RATE_PER_MINUTE)
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        endpoint, key = provider.resolve(pk, b.get('endpoint'), b.get('apiKey'))
+        return Response({'ok': True, 'models': provider.list_models(endpoint, key)})
+    except provider.ProviderError as exc:
+        return Response({'ok': False, 'error': str(exc)})
+
+
+@api_view(['POST'])
+def workspace_llm_test(request, pk):
+    """Send one tiny chat request to the chosen model (#76). Admins only; advice, not a gate on saving."""
+    membership_for(request.user, pk)
+    require_admin(request.user, pk)
+    ratelimit.enforce('ai', request.user, settings.AI_RATE_PER_MINUTE)
+    b = request.data if isinstance(request.data, dict) else {}
+    try:
+        endpoint, key = provider.resolve(pk, b.get('endpoint'), b.get('apiKey'))
+        return Response({'ok': True, 'latencyMs': provider.chat_check(endpoint, key, b.get('model'))})
+    except provider.ProviderError as exc:
+        return Response({'ok': False, 'error': str(exc)})
 
 
 @api_view(['GET'])
