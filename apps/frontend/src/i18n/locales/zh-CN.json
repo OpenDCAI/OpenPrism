@@ -1097,5 +1097,10 @@
   "Each setting follows the workspace unless you override it here. Overriding one leaves the others inherited.": "每项设置默认跟随工作区，除非你在此处覆盖。覆盖其中一项不会影响其他项。",
   "These settings come from the workspace unless the project overrides them. Workspace owners and admins can change them.": "这些设置来自工作区，除非项目另行覆盖。工作区所有者和管理员可以更改它们。",
   "Project AI settings": "项目 AI 设置",
-  "The AI model, Search, Vision and MinerU for this project: inherited from the workspace, or overridden here.": "此项目的 AI 模型、搜索、视觉和 MinerU：继承自工作区，或在此处覆盖。"
+  "The AI model, Search, Vision and MinerU for this project: inherited from the workspace, or overridden here.": "此项目的 AI 模型、搜索、视觉和 MinerU：继承自工作区，或在此处覆盖。",
+  "AI requests per day (UTC) paid by this setting. Reaching it stops the requests; no other key is used instead. Empty: no limit.": "此设置每天（UTC）可支付的 AI 请求数。达到上限后请求将被停止，不会改用其他密钥。留空表示不限。",
+  "the {{profile}} API key": "{{profile}} API 密钥",
+  "Projects in this workspace will use the server default, if there is one, until a new provider is set.": "在设置新的服务商之前，此工作区的项目将使用服务器默认值（如有）。",
+  "No workspace AI provider is set. An admin can set one here.": "工作区未设置 AI 服务商。管理员可以在此处设置。",
+  "Members who can edit use this provider for AI features in this workspace and its projects, unless a project overrides it. The key is stored encrypted and is never shown again.": "有编辑权限的成员在此工作区及其项目中使用此服务商提供 AI 功能，除非项目另行覆盖。密钥已加密存储，不会再次显示。"
 }

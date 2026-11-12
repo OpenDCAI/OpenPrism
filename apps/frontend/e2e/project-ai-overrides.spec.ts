@@ -105,3 +105,39 @@ test('an editor sees where each setting comes from but cannot override; a viewer
   const denied = await fetch(`${base()}/api/projects/${projectId}/ai/search`, { method: 'PUT', headers: auth(editor), body: JSON.stringify({ apiKey: 'sk-x' }) });
   expect(denied.status).toBe(403);
 });
+
+test('a project override has its own daily limit and usage, and its own key history', async ({ page }) => {
+  const { admin, ws, projectId } = await setup('limit');
+  await signIn(page, admin);
+  await setActiveWorkspace(page, admin, ws);
+  await page.goto(`/editor/${projectId}`);
+  await openDialog(page);
+
+  await page.getByTestId('proj-ai-llm-override').click();
+  const form = page.getByTestId('proj-ai-llm-form');
+  await form.getByLabel('Endpoint').fill('https://api.openai.com/v1');
+  await form.getByLabel('Model').fill('proj-main');
+  await form.getByLabel('API key').fill('sk-project-main-5151');
+  await form.getByLabel('Daily limit').fill('3');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(form.getByTestId('proj-ai-llm-form-key-set')).toContainText('ending 5151');
+  await expect(form.getByLabel('Daily limit')).toHaveValue('3');
+  await expect(form.getByTestId('proj-ai-llm-form-usage')).toContainText('0 requests today');
+
+  // a limit must be a whole number; clearing it removes the limit
+  await form.getByLabel('Daily limit').fill('abc');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(form).toContainText('whole number');
+  await form.getByLabel('Daily limit').fill('');
+  await form.getByRole('button', { name: 'Save' }).click();
+  await expect(form.getByLabel('Daily limit')).toHaveValue('');
+
+  // the history names what changed and who, never the key
+  await page.getByText('Key history').click();
+  const dialog = page.getByRole('dialog');
+  await expect(dialog).toContainText('set the llm API key');
+  await expect(dialog).toContainText('the daily limit to none');
+  expect(await dialog.innerText()).not.toContain('sk-project-main');
+  await form.getByRole('button', { name: 'Reset to workspace' }).click();
+  await expect(dialog).toContainText('removed the llm API key');
+});

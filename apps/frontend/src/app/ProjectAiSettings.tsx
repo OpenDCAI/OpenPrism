@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { getProjectAi, listProjectAiModels, removeProjectAiProfile, saveProjectAiProfile, testProjectAi } from '../api/client';
+import { getProjectAi, listProjectAiModels, projectCredentialEvents, removeProjectAiProfile, saveProjectAiProfile, testProjectAi } from '../api/client';
 import type { AiProfileName, ProjectAiProfileStatus, ProjectAiStatus } from '../api/client';
 import { Button, FieldError } from '@design';
 import AiProfileForm from './AiProfileForm';
+import CredentialHistory from './CredentialHistory';
 
 const ORDER: AiProfileName[] = ['llm', 'search', 'vision', 'mineru'];
 
@@ -20,7 +21,7 @@ function Card({ projectId, profile, status, canManage, onSaved }: {
   const [editing, setEditing] = useState(false);
   const title = { llm: t('AI model'), search: t('Search model'), vision: t('Vision model'), mineru: t('MinerU (template transfer)') }[profile];
   const open = status.overridden || editing;
-  const saved = { configured: status.overridden, endpoint: status.endpoint, model: status.model, lastFour: status.lastFour };
+  const saved = { configured: status.overridden, endpoint: status.endpoint, model: status.model, lastFour: status.lastFour, dailyLimit: status.dailyLimit, usage: status.usage };
 
   return (
     <section className="aikeys-profile" data-testid={`proj-ai-${profile}`}>
@@ -69,6 +70,8 @@ export default function ProjectAiSettings({ projectId, onStatus }: { projectId: 
     return () => { live = false; };
   }, [projectId]);
 
+  const loadEvents = useCallback((before?: string) => projectCredentialEvents(projectId, before), [projectId]);
+
   const onSaved = useCallback((s: ProjectAiStatus, msg: string) => {
     setStatus(s);
     onStatus(msg);
@@ -83,6 +86,7 @@ export default function ProjectAiSettings({ projectId, onStatus }: { projectId: 
           : t('These settings come from the workspace unless the project overrides them. Workspace owners and admins can change them.')}
       </p>
       {ORDER.map((p) => <Card key={p} projectId={projectId} profile={p} status={status.profiles[p]} canManage={Boolean(status.canManage)} onSaved={onSaved} />)}
+      {status.canManage && <CredentialHistory load={loadEvents} reloadKey={status} />}
     </div>
   );
 }
