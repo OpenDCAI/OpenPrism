@@ -29,7 +29,7 @@ spec:
             enabled: true
           secrets:
             create: false
-            revision: "20261113174207"      # bumped by the Seal secrets workflow so a re-seal rolls the pods
+            revision: "20261113180003"      # bumped by the Seal secrets workflow so a re-seal rolls the pods
           postgres:
             host: storage.cent-su.org
             port: 5432
