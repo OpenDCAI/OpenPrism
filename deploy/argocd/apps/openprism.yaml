@@ -17,7 +17,7 @@ spec:
   project: openprism
   sources:
     - repoURL: https://github.com/cent-ischool/OpenPrism.git
-      targetRevision: v0.1.8  # the release: the Deploy pull request changes this line only
+      targetRevision: v0.1.9  # the release: the Deploy pull request changes this line only
       path: deploy/helm/openprism
       helm:
         releaseName: openprism            # keeps the resource names and labels of the Helm release it replaces
