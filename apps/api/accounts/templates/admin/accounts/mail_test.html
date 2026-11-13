@@ -1,0 +1,17 @@
+{% extends "admin/base_site.html" %}
+{% block breadcrumbs %}<div class="breadcrumbs"><a href="{% url 'admin:index' %}">Home</a> &rsaquo; Send a test email</div>{% endblock %}
+{% block content %}
+<div id="content-main">
+{% if outcome %}
+{% if outcome.ok %}<ul class="messagelist"><li class="success">Sent to {{ to }}. Check that it arrived (and the spam folder).</li></ul>
+{% else %}<ul class="messagelist"><li class="error">Not sent to {{ to }}: {{ outcome.error }}</li></ul>{% endif %}
+{% endif %}
+<p>The test mail goes through the mail worker, like every mail the app sends. The page waits up to {{ wait }} s for the outcome.</p>
+<h2>Mail settings</h2>
+<table>{% for label, value in config %}<tr><th>{{ label }}</th><td>{{ value }}</td></tr>{% endfor %}</table>
+<form method="post" style="margin-top:1em">{% csrf_token %}
+{{ form.as_p }}
+<input type="submit" value="Send test email" class="default">
+</form>
+</div>
+{% endblock %}

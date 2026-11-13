@@ -1,0 +1,5 @@
+{% extends "admin/index.html" %}
+{% block sidebar %}
+<div class="module"><h2>Tools</h2><p style="padding:8px"><a href="{% url 'admin:mail_test' %}">Send a test email</a></p></div>
+{{ block.super }}
+{% endblock %}

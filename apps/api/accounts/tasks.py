@@ -45,3 +45,11 @@ def clear_expired_sessions():
     """The admin is the only user of Django sessions; delete the expired ones daily (#104)."""
     from django.core.management import call_command
     call_command('clearsessions')
+
+
+@shared_task(name='accounts.tasks.send_test_email')
+def send_test_email(to):
+    """One test mail, no retries, for the admin's *Send a test email* page (#179). Runs on the mail worker, so it tests
+    the path real mail takes (in k8s only that worker may reach the SMTP ports). Returns the outcome; never raises."""
+    from .mailtest import attempt
+    return attempt(to)
