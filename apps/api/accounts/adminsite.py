@@ -55,8 +55,35 @@ class SuperuserPasswordChangeForm(PasswordChangeForm):
         return user
 
 
+class MailTestForm(forms.Form):
+    to = forms.EmailField(label='Send to')
+
+
 class SuperuserAdminSite(AdminSite):
     login_form = SuperuserAuthenticationForm
+    index_template = 'admin/openprism_index.html'
+
+    def get_urls(self):
+        from django.urls import path
+        return [path('mail-test/', self.admin_view(self.mail_test), name='mail_test'), *super().get_urls()]
+
+    def mail_test(self, request):
+        """*Send a test email* (#179): send through the mail worker and show the outcome."""
+        from django.contrib.admin.models import CHANGE, LogEntry
+        from django.template.response import TemplateResponse
+        from . import mailtest
+        form = MailTestForm(request.POST or None, initial={'to': request.user.email})
+        outcome = to = None
+        if request.method == 'POST' and form.is_valid():
+            to = form.cleaned_data['to']
+            outcome = mailtest.run(to)
+            LogEntry.objects.log_actions(
+                request.user.pk, [request.user], CHANGE,
+                change_message=f"Test email to {to}: {'sent' if outcome['ok'] else 'failed: ' + outcome['error']}",
+                single_object=True)
+        context = {**self.each_context(request), 'title': 'Send a test email', 'form': form, 'outcome': outcome,
+                   'to': to, 'config': mailtest.config(), 'wait': mailtest.WAIT_SECONDS}
+        return TemplateResponse(request, 'admin/accounts/mail_test.html', context)
 
     def password_change(self, request, extra_context=None):
         defaults = {
