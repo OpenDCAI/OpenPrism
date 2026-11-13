@@ -144,8 +144,10 @@ def _database():
         'PASSWORD': unquote(url.password or ''),
         'HOST': url.hostname,
         'PORT': url.port or 5432,
-        # Tests: close connections after every call so collab's worker-thread connections don't block DROP DATABASE.
-        'CONN_MAX_AGE': 0 if TESTING else 60,
+        # 0 = close after each request / db_async call (#182). Persistent connections leak under ASGI: collab's db_async
+        # runs in a thread pool, and a pool thread that goes idle never closes its connection, so 60 s held ~95 of the
+        # shared server's 100 slots after a day. Tests need 0 as well (DROP DATABASE).
+        'CONN_MAX_AGE': 0 if TESTING else int(env('DB_CONN_MAX_AGE', '0')),
     }
 
 
