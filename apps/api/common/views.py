@@ -40,3 +40,12 @@ def ready(request):
         checks['s3'] = str(exc)
     ok = all(v is True for v in checks.values())
     return JsonResponse({'ok': ok, 'version': settings.VERSION, 'checks': checks}, status=200 if ok else 503)
+
+
+def status(request):
+    """Every dependent service, `up` or `down` (#188). 200 when all are up, else 503. Public: see common/status.py."""
+    from . import status as st
+    result = st.cached()
+    response = JsonResponse(result, status=200 if result['ok'] else 503)
+    response['Cache-Control'] = 'no-store'
+    return response
